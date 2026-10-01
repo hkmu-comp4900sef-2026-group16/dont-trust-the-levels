@@ -84,6 +84,17 @@ Scripts/test_bp_spawn.py
 Scripts/verify_player.py
 
 # ---------------------------------------------------------------------------
+# Catch-all for scratch / diagnostic scripts and screenshots.
+#   check_*.py  - one-off inspection scripts
+#   test_*.py   - one-off experiments
+#   _*          - scratch output (txt / png / py)
+# Reusable tools must NOT match these patterns.
+# ---------------------------------------------------------------------------
+Scripts/check_*.py
+Scripts/test_*.py
+Scripts/_*
+
+# ---------------------------------------------------------------------------
 # Local repair backups (not project content)
 # ---------------------------------------------------------------------------
 _repair_backup/
