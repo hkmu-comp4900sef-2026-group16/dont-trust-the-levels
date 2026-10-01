@@ -51,6 +51,26 @@ Thumbs.db
 ~$*.xlsx
 ~$*.pptx
 Scripts/_*.txt
+Scripts/_*.py
+
+# ---------------------------------------------------------------------------
+# One-off diagnostic / inspection scripts (keep locally, do not commit)
+# ---------------------------------------------------------------------------
+Scripts/check_sprite_geometry.py
+Scripts/inspect_level.py
+Scripts/verify_sprites.py
+
+# One-off diagnostics from the Level 0 / tilemap investigation
+Scripts/cleanup_tilemap_test.py
+Scripts/clear_test_collision.py
+Scripts/fix_tilemap_align.py
+Scripts/fix_tilemap_scale.py
+Scripts/move_tilemap.py
+Scripts/rebuild_tilemap_collision.py
+Scripts/remove_test_floor.py
+Scripts/test_floor.py
+Scripts/_block_grass.png
+Scripts/_block_stone.png
 
 # ---------------------------------------------------------------------------
 # Local repair backups (not project content)
