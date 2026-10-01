@@ -72,6 +72,17 @@ Scripts/test_floor.py
 Scripts/_block_grass.png
 Scripts/_block_stone.png
 
+# One-off fixes / diagnostics from the player setup session
+Scripts/create_bp_player.py
+Scripts/fix_camera_flip.py
+Scripts/fix_flip_setup.py
+Scripts/fix_player_setup.py
+Scripts/reset_flip.py
+Scripts/set_gamemode.py
+Scripts/setup_player.py
+Scripts/test_bp_spawn.py
+Scripts/verify_player.py
+
 # ---------------------------------------------------------------------------
 # Local repair backups (not project content)
 # ---------------------------------------------------------------------------
