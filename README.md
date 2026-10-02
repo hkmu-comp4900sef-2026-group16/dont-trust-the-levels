@@ -20,6 +20,24 @@ COMP 4900SEF — Creative Programming for Games · Group Project
 folder layout, naming standard, and ownership rules. Read it before creating or
 moving any asset.
 
+It also documents the things that cost us the most time to work out:
+
+- **§9 Interfaces** — how systems talk to each other (and why not to cast)
+- **§10 Rendering** — pixel-art settings, the vignette trap, pixel-perfect scaling
+- **§11 Automation boundary** — what Python can and cannot do
+
+## Current state
+
+| System | Status |
+|---|---|
+| Project structure + naming standard | ✅ documented |
+| Level 0 (`L_Level_00`) | ✅ floor, collision, background tilemap, fixed camera |
+| Player (`BP_Player`) | ✅ Ninja Frog, moves, jumps, flips, animation states |
+| Death & respawn | ✅ `BPI_Killable` → instant respawn at level start |
+| Trap base (`BP_TrapBase`) | ✅ overlap → interface → kill |
+| Trap art | ✅ Spikes, Saw imported |
+| Weapons / enemies / UI | ⬜ not started |
+
 ## Folder layout
 
 | Path | What | Committed? |

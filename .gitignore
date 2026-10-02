@@ -94,6 +94,14 @@ Scripts/check_*.py
 Scripts/test_*.py
 Scripts/_*
 
+# One-off fixes / diagnostics from the trap + background session
+Scripts/capture_pie.py
+Scripts/stop_pie.py
+Scripts/fix_ppv_and_collision.py
+Scripts/restore_ppv.py
+Scripts/create_trapbase.py
+Scripts/verify_traps.py
+
 # ---------------------------------------------------------------------------
 # Local repair backups (not project content)
 # ---------------------------------------------------------------------------

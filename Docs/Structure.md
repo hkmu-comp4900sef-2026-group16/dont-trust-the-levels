@@ -48,8 +48,10 @@ Content/
     │   └── Textures/            T_Player_*_D
     ├── Traps/
     │   ├── Blueprints/          BP_TrapBase + children
-    │   ├── Sprites/
-    │   └── Textures/
+    │   ├── Sprites/             SPR_*  (single-frame)
+    │   │   └── Frames/          SPF_*  (animation frames)
+    │   ├── Animations/          FLB_*
+    │   └── Textures/            T_*_D
     ├── Weapons/
     │   ├── Blueprints/          BP_Weapon_Pistol, BP_Weapon_Blade, BP_Projectile
     │   ├── Sprites/
@@ -298,12 +300,11 @@ Do not delete the template folders early — the character and GameMode are stil
 
 ## 7. Open decisions
 
-- **`BP_Player` inheritance:** from the template's `2DSideScrollerCharacter` (free
-  movement, but carries template baggage) or from `PaperCharacter` directly (cleaner,
-  movement rebuilt). **Recommendation:** inherit from the template character for now,
-  migrate to `PaperCharacter` once movement is tuned.
 - **`Environment/` owner:** assigned to pillar 5 (level design) — it has no dedicated
   pillar in the work-allocation table.
+
+**Resolved:** `BP_Player` inherits from **`PaperCharacter`** directly (not the template
+character). The template is to be deleted, so nothing may depend on it.
 
 ---
 
@@ -317,3 +318,188 @@ Do not delete the template folders early — the character and GameMode are stil
   editor has **this** project open. Multicast discovery finds *any* editor on the machine,
   so an unguarded script can write foreign asset paths into the wrong project. Always
   pass `expected_project="DontTrustTheLevels"`.
+
+---
+
+## 9. Interfaces — how systems talk to each other
+
+**Rule: systems communicate through Blueprint Interfaces, not direct casts.**
+
+```
+BPI_Killable    "I can be killed"      → BP_Player implements it
+BPI_Resettable  "I can be reset"       → traps implement it (planned)
+BPI_Fireable    "I can be fired"       → weapons implement it (planned)
+BPI_NoiseSource "I make noise"         → weapons implement it (planned)
+```
+
+**Why not `Cast To BP_Player`?** A cast hard-codes the class name. The player class has
+already been renamed once (Pink Man → Ninja Frog); a cast would have broken every trap.
+An interface asks *"can you be killed?"* instead of *"are you this specific class?"*.
+
+### Creating an interface
+
+1. Content Browser → `Core/Interfaces/` → **Blueprint Interface** → `BPI_Killable`
+2. **My Blueprint → Functions → +** → name it `Kill`
+3. **Compile + Save**
+
+⚠️ **Do this BEFORE adding the interface to any class.** If a class adds an interface
+while it has no functions, the class does not retroactively pick up functions added
+later. Fix: remove and re-add the interface to that class.
+
+### Implementing an interface function
+
+⚠️ **The rule that catches everyone:**
+
+| Interface function has… | Implemented as |
+|---|---|
+| **No outputs** (void) | **Implement Event** → an event node in the Event Graph |
+| **Has outputs** | **Implement Function** → its own graph |
+
+`Kill` has no outputs, so it is an **event**. Looking for "Implement Function" will
+never appear — that is expected, not a bug.
+
+### Calling an interface function
+
+**Always drag off an object pin first**, then search the function name:
+
+```
+Other Actor ──> Kill (Message)
+```
+
+The **(Message)** variant is the correct one. A plain `Kill` node will fail with
+*"not marked as callable"*.
+
+⚠️ **Message nodes need a Target.** Dragging off `Other Actor` auto-wires it; creating
+the node from empty space leaves Target blank and the compile fails with
+*"must have a valid target"*.
+
+### The guard pattern
+
+```
+Overlap ─Exec─> Branch ─True─> Kill (Message)
+                  ↑                 ↑
+     Does Implement Interface ─────┘
+     (Other Actor, BPI_Killable)          (Other Actor)
+```
+
+`Does Implement Interface` first, so a trap only kills things that can actually die.
+
+---
+
+## 10. Rendering — 2D pixel art in UE4
+
+Getting crisp, evenly-lit pixel art needs four things. Miss one and it looks wrong.
+
+### 10.1 Texture settings (every texture)
+
+| Setting | Value |
+|---|---|
+| Filter | `TF_NEAREST` (Nearest) |
+| Compression | `TC_EDITOR_ICON` (UserInterface2D RGBA) |
+| Mip Gen | `TMGS_NO_MIPMAPS` (No Mipmaps) |
+| sRGB | on |
+
+### 10.2 Vignette — the "some parts darker" problem
+
+UE4 enables a **vignette** by default (`vignette_intensity = 0.4`), which darkens the
+screen edges relative to the centre. On a uniform floor this reads as shading that
+isn't in the art.
+
+**Fix: an unbound `PostProcessVolume` in the level** with:
+
+```
+unbound              = True
+vignette_intensity   = 0.0    override ✓
+bloom_intensity      = 0.0    override ✓
+auto_exposure_bias   = 0.0    override ✓
+motion_blur_amount   = 0.0    override ✓
+```
+
+⚠️ **The `override_*` flags must be set to `True`** — without them the volume's values
+are ignored.
+
+⚠️ **An unbound volume OVERRIDES project renderer settings.** So set bloom etc. *in the
+volume*, not only in `DefaultEngine.ini` — otherwise the volume silently re-enables
+what the config disabled.
+
+⚠️ **`r.DefaultFeature.Vignette` is not a real cvar in 4.27.** Adding it to the config
+does nothing. The vignette is applied by the tonemapper; a volume is the way to control it.
+
+### 10.3 Exposure and bloom (config)
+
+`Config/DefaultEngine.ini` → `[/Script/Engine.RendererSettings]`:
+
+```ini
+r.DefaultFeature.AutoExposure=False
+r.DefaultFeature.Bloom=False
+r.DefaultFeature.MotionBlur=False
+r.DefaultFeature.AmbientOcclusion=False
+```
+
+**Why auto-exposure matters:** Paper2D sprites are *unlit*, but they still pass through
+tonemapping. In a level with no lights or sky the scene is mostly black, so
+auto-exposure cranks up and blows out the sprites.
+
+### 10.4 Pixel-perfect scaling — the "blurry" problem
+
+Crispness requires **whole-number screen pixels per texel**:
+
+```
+px_per_texel = screen_width / (ortho_width / sprite_uu * sprite_px)
+```
+
+For 16px tiles at 100 uu each, at 1080p:
+
+```
+px_per_texel = 1920 / (ortho_width / 100 * 16)
+```
+
+**Only these ortho widths are crisp at 1080p** (i.e. room widths dividing 120 tiles):
+
+| Room width | Ortho width | px/texel @1080p |
+|---|---|---|
+| 12 tiles | 1200 | 10.00 |
+| 15 tiles | 1500 | 8.00 |
+| 20 tiles | 2000 | 6.00 |
+| 24 tiles | 2400 | 5.00 |
+| 30 tiles | 3000 | 4.00 |
+| 40 tiles | 4000 | 3.00 |
+
+⚠️ **A 16-tile room (ortho 1600) gives 7.50 px/texel — fractional, so it shimmers.**
+⚠️ **A 32-tile room (ortho 3200) gives 3.75 — also fractional.**
+
+**Design rooms at 15, 20, 24, 30 or 40 tiles wide** to stay pixel-perfect.
+
+### 10.5 Verifying rendering effects — a trap
+
+**Automation screenshots cannot show post-process effects.** The default gameplay
+screenshot options set `disable_tonemapping: True`, and the vignette is applied by the
+tonemapper. So a scripted screenshot will show a uniform floor while PIE shows shading.
+
+**To check a post-process effect, look at PIE directly** — or disable tonemapping in
+the screenshot options.
+
+---
+
+## 11. Automation boundary (verified in this project)
+
+**What Python can do:**
+
+- Create assets: textures, sprites, flipbooks, tilemaps, tilesets, Blueprint *classes*
+- Set CDO properties (movement tuning, `default_pawn_class`, camera ortho width)
+- Place/position level actors, save maps
+- Import art, slice sprites, build flipbooks
+
+**What Python CANNOT do:**
+
+| Limitation | Consequence |
+|---|---|
+| No Blueprint graph editing (no `K2Node`, `EdGraph`) | **All graph logic is human work** |
+| **CDO components do not instantiate on spawn** | Components must be added in the editor's SCS |
+| Cannot read SCS components back | A script cannot verify hand-added components |
+| `KismetEditorUtilities` not exposed | Cannot force a Blueprint recompile |
+| Cannot set tile collision geometry | `SpriteGeometryShape.shape_type` is read-only |
+| `world_settings` not exposed | GameMode override must be set in the UI |
+
+**Rule of thumb:** Python handles *assets and properties*; humans handle *graphs and
+components*.
