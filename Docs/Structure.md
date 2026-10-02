@@ -388,9 +388,37 @@ Overlap ─Exec─> Branch ─True─> Kill (Message)
 
 ## 10. Rendering — 2D pixel art in UE4
 
-Getting crisp, evenly-lit pixel art needs four things. Miss one and it looks wrong.
+Getting crisp, evenly-lit pixel art needs five things. Miss one and it looks wrong.
 
-### 10.1 Texture settings (every texture)
+**Do §10.1 first.** It is the single biggest cause of blurry pixel art, and we
+found it last — after chasing ortho widths and texture filters for hours.
+
+### 10.1 Anti-aliasing — THE biggest cause of blur
+
+**UE4 defaults to TemporalAA, which is designed for 3D and actively ruins pixel art.**
+
+TAA blends multiple frames together to smooth edges. On pixel art that smears
+adjacent texels into each other and makes everything look soft.
+
+**Fix:** `Project Settings → Rendering → Anti-Aliasing Method → None`
+
+Or in `Config/DefaultEngine.ini`:
+
+```ini
+r.DefaultFeature.AntiAliasing=0
+```
+
+| Method | Value | Verdict |
+|---|---|---|
+| **None** | `0` | ✅ **crispest — use this** |
+| FXAA | `1` | ⚠️ still softens edges |
+| TemporalAA | `2` | ❌ **UE4 default — the blur** |
+| MSAA | `3` | ⚠️ works, costs performance |
+
+Expect slight shimmer on thin lines while moving. That is the correct trade for
+crisp pixels.
+
+### 10.2 Texture settings (every texture)
 
 | Setting | Value |
 |---|---|
@@ -399,7 +427,7 @@ Getting crisp, evenly-lit pixel art needs four things. Miss one and it looks wro
 | Mip Gen | `TMGS_NO_MIPMAPS` (No Mipmaps) |
 | sRGB | on |
 
-### 10.2 Vignette — the "some parts darker" problem
+### 10.3 Vignette — the "some parts darker" problem
 
 UE4 enables a **vignette** by default (`vignette_intensity = 0.4`), which darkens the
 screen edges relative to the centre. On a uniform floor this reads as shading that
@@ -425,7 +453,7 @@ what the config disabled.
 ⚠️ **`r.DefaultFeature.Vignette` is not a real cvar in 4.27.** Adding it to the config
 does nothing. The vignette is applied by the tonemapper; a volume is the way to control it.
 
-### 10.3 Exposure and bloom (config)
+### 10.4 Exposure and bloom (config)
 
 `Config/DefaultEngine.ini` → `[/Script/Engine.RendererSettings]`:
 
@@ -440,7 +468,7 @@ r.DefaultFeature.AmbientOcclusion=False
 tonemapping. In a level with no lights or sky the scene is mostly black, so
 auto-exposure cranks up and blows out the sprites.
 
-### 10.4 Pixel-perfect scaling — the "blurry" problem
+### 10.5 Pixel-perfect scaling — the "blurry" problem
 
 Crispness requires **whole-number screen pixels per texel**:
 
@@ -470,7 +498,7 @@ px_per_texel = 1920 / (ortho_width / 100 * 16)
 
 **Design rooms at 15, 20, 24, 30 or 40 tiles wide** to stay pixel-perfect.
 
-### 10.5 Verifying rendering effects — a trap
+### 10.6 Verifying rendering effects — a trap
 
 **Automation screenshots cannot show post-process effects.** The default gameplay
 screenshot options set `disable_tonemapping: True`, and the vignette is applied by the
