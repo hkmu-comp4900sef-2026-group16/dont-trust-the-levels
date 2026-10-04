@@ -45,62 +45,18 @@ __pycache__/
 Thumbs.db
 
 # ---------------------------------------------------------------------------
-# Office lock files + scratch output
+# Office lock files
 # ---------------------------------------------------------------------------
 ~$*.docx
 ~$*.xlsx
 ~$*.pptx
-Scripts/_*.txt
-Scripts/_*.py
 
 # ---------------------------------------------------------------------------
-# One-off diagnostic / inspection scripts (keep locally, do not commit)
+# Scripts - local tooling, one-off diagnostics and scratch files
+# Gitignore does not affect files git already tracks; the committed tooling
+# (ue_remote.py, import_art.py, ...) stays tracked. New scripts are ignored.
 # ---------------------------------------------------------------------------
-Scripts/check_sprite_geometry.py
-Scripts/inspect_level.py
-Scripts/verify_sprites.py
-
-# One-off diagnostics from the Level 0 / tilemap investigation
-Scripts/cleanup_tilemap_test.py
-Scripts/clear_test_collision.py
-Scripts/fix_tilemap_align.py
-Scripts/fix_tilemap_scale.py
-Scripts/move_tilemap.py
-Scripts/rebuild_tilemap_collision.py
-Scripts/remove_test_floor.py
-Scripts/test_floor.py
-Scripts/_block_grass.png
-Scripts/_block_stone.png
-
-# One-off fixes / diagnostics from the player setup session
-Scripts/create_bp_player.py
-Scripts/fix_camera_flip.py
-Scripts/fix_flip_setup.py
-Scripts/fix_player_setup.py
-Scripts/reset_flip.py
-Scripts/set_gamemode.py
-Scripts/setup_player.py
-Scripts/test_bp_spawn.py
-Scripts/verify_player.py
-
-# ---------------------------------------------------------------------------
-# Catch-all for scratch / diagnostic scripts and screenshots.
-#   check_*.py  - one-off inspection scripts
-#   test_*.py   - one-off experiments
-#   _*          - scratch output (txt / png / py)
-# Reusable tools must NOT match these patterns.
-# ---------------------------------------------------------------------------
-Scripts/check_*.py
-Scripts/test_*.py
-Scripts/_*
-
-# One-off fixes / diagnostics from the trap + background session
-Scripts/capture_pie.py
-Scripts/stop_pie.py
-Scripts/fix_ppv_and_collision.py
-Scripts/restore_ppv.py
-Scripts/create_trapbase.py
-Scripts/verify_traps.py
+Scripts/
 
 # ---------------------------------------------------------------------------
 # Local repair backups (not project content)
