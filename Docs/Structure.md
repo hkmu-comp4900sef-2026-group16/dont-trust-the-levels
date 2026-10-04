@@ -511,6 +511,12 @@ the screenshot options.
 
 ## 11. Automation boundary (verified in this project)
 
+**The Python tooling is local-only and no longer tracked by git.** The scripts
+used to live in `Scripts/` (tracked); they were untracked in
+`57caa67` ("stop tracking Scripts tooling") and the folder is now gitignored.
+This section is retained as the record of what engine automation could and
+could not do — relevant to anyone rebuilding that tooling.
+
 **What Python can do:**
 
 - Create assets: textures, sprites, flipbooks, tilemaps, tilesets, Blueprint *classes*

@@ -46,7 +46,6 @@ It also documents the things that cost us the most time to work out:
 | `Content/2DSideScroller/` `Content/2DSideScrollerBP/` | UE template — **delete after migration** | ✅ LFS |
 | `Assets/PixelAdventure/` | Source PNGs (Pixel Adventure, CC0 by Pixel Frog) | ✅ LFS |
 | `Docs/` | Proposal, Structure.md, figures | ✅ |
-| `Scripts/` | Python tooling (import, level build, remote exec) | ✅ |
 | `Config/` | Engine config (input, maps, plugins) | ✅ |
 | `Intermediate/` `Saved/` `DerivedDataCache/` | Generated — **never commit** | ❌ ignored |
 
@@ -83,32 +82,24 @@ Paper2D chain: `T_` → `SPR_` (sliced) → `FLB_` → `BP_`
 **Rule: two people never edit the same asset.** Levels reference Blueprints by
 class — a trap fix never breaks a map.
 
-## Python tools
+## Python tooling (local-only, not in the repo)
 
-```bat
-:: run a script in the live editor (editor must be OPEN)
-py -3 Scripts\make_folders.py
-py -3 Scripts\import_art.py
+The Python tooling (asset import, level building, live-editor remote
+execution) is **not tracked by git** — it lives in `Scripts/` on machines
+that already have it, and is gitignored everywhere else. If you need a
+script workflow, ask the person who wrote it; do not expect it on a fresh
+clone.
 
-:: headless, no editor
-Scripts\runpy.bat Scripts\yourscript.py
-```
-
-### ⚠️ Remote execution is project-guarded
-
-`Scripts/ue_remote.py` discovers editors by **UDP multicast broadcast** — it finds
-*any* UE editor on the machine, regardless of which project is open. An unguarded
-script can therefore write foreign asset paths into the wrong project. (This
-actually happened: an old-project script rewrote this project's flipbooks with
-`/Game/DTF/...` references.)
-
-**Always pass the guard:**
+Historical note for whoever rebuilds it: the bridge client was
+`Scripts/ue_remote.py` (UDP multicast 239.0.0.1:6766, `ue_py` protocol,
+editor dials back into a local TCP server on 6776). It discovers *any*
+UE editor on the machine — an unguarded script can write foreign asset
+paths into the wrong project (this actually happened once). Anyone
+rebuilding it must keep the project guard:
 
 ```python
 ue.connect(timeout=15, expected_project="DontTrustTheLevels")
 ```
-
-It refuses to run if the connected editor has a different project open.
 
 ## Git workflow
 
