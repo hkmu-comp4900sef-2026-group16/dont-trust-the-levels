@@ -26,6 +26,13 @@ It also documents the things that cost us the most time to work out:
 - **§10 Rendering** — pixel-art settings, the vignette trap, pixel-perfect scaling
 - **§11 Automation boundary** — what Python can and cannot do
 
+**[`Docs/LfsLocking.md`](Docs/LfsLocking.md)** — **every member must read this
+once and do its one-time setup**: UE4 binaries cannot be merged by git, so the
+project uses **Git LFS file locking**. Blueprint/map files are read-only until
+you lock them; the editor locks a file the moment you edit it; teammates get a
+red padlock and are refused. Without this setup, two people editing the same
+blueprint silently destroys one person's work.
+
 ## Current state
 
 | System | Status |
@@ -103,11 +110,15 @@ ue.connect(timeout=15, expected_project="DontTrustTheLevels")
 
 ## Git workflow
 
-1. `git pull` before you start
-2. Work only in **your pillar's folder** (and your own level map)
-3. Commit small: one feature per commit, message = what changed
-4. `git push` when the editor is **closed** (`.uasset` files lock while open)
-5. Never edit someone else's map — ask, or make your own level
+1. **Connect Source Control first** (Git + ✓ Use Git LFS Locking) — see
+   [`Docs/LfsLocking.md`](Docs/LfsLocking.md). Editing without a lock is how
+   blueprints get destroyed.
+2. `git pull` before you start (editor **closed**)
+3. Work only in **your pillar's folder** (and your own level map)
+4. Commit small: one feature per commit, message = what changed
+5. `git push` when the editor is **closed** — pushing **releases your locks**,
+   so teammates can edit what you finished
+6. Never edit someone else's map — ask, or make your own level
 
 ## Credits
 
