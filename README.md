@@ -26,6 +26,10 @@ It also documents the things that cost us the most time to work out:
 - **§10 Rendering** — pixel-art settings, the vignette trap, pixel-perfect scaling
 - **§11 Automation boundary** — what Python can and cannot do
 
+Feature guides: **[`Docs/FakeFloorTrap.md`](Docs/FakeFloorTrap.md)** (paintable
+collapsing floor). Camera dead-zone: see the blueprint diagrams in
+`Saved/Screenshots/Windows/DeadZoneCamera_Diagrams.html` (local only).
+
 **[`Docs/LfsLocking.md`](Docs/LfsLocking.md)** — **every member must read this
 once and do its one-time setup**: UE4 binaries cannot be merged by git, so the
 project uses **Git LFS file locking**. Blueprint/map files are read-only until
