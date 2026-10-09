@@ -164,6 +164,11 @@ change both offsets. Because the Image is anchored top-left at (0,0), the
 widget itself is 16×16, so `mouse − half` centres the art exactly on the
 cursor.
 
+> **As built (post-PIE):** the slot ended up 32×32 with the Image rendering
+> 16×16 in its top-left — same rule either way: offset = half the
+> **displayed** size (8). If the display size changes, change the image size
+> and **both** `- 8` constants together.
+
 4. **Compile + Save.**
 
 ## Part 8 — Show it from `BP_Player`
@@ -191,6 +196,31 @@ click, the viewport just lost focus — click it once.
 - crosshair follows the mouse with no OS arrow visible
 - character still faces the crosshair (Part 3 chain unchanged)
 - crosshair drawn **above** level art (ZOrder 10) at any window size
+
+## Part 10 — Fix: falling animation never plays (found in Phase 2 PIE)
+
+**Symptom:** `FLB_Player_Fall` never played — the Jump flipbook looped for
+the whole flight, including the descent.
+
+**Cause:** `BP_Player`'s animation composite (the Tick-driven collapsed
+region) picks Jump-vs-Fall in mid-air with `VSize(Get Velocity) > 0`.
+VSize is a 3-D length — it includes the vertical speed, and gravity keeps
+|Z| large the whole flight, so that test stays true all the way down and the
+Fall branch is unreachable (except for a frame at the apex of a
+stationary jump). It also explains why fake-floor/falling-platform drops
+never showed Fall.
+
+**Fix — test the direction of travel instead.** In the animation composite,
+the in-air Branch condition becomes `Break Vector (Get Velocity) → Z > 0`:
+
+| In-air state | Flipbook |
+|---|---|
+| rising (Z > 0), `JumpCurrentCount > 1` | DoubleJump |
+| rising (Z > 0) | Jump |
+| falling / apex (Z ≤ 0) | **Fall** |
+
+Unchanged: the grounded Run/Idle check (`VSize > 10`), the DoubleJump check
+(`JumpCurrentCount > 1`), the `bIsDead` gate, and the Kill chain (Hit).
 
 ---
 
@@ -225,13 +255,20 @@ the PlayerController so weapons can call it without casting to `BP_Player`
 | Both OS arrow and crosshair visible (Phase 2) | uncheck **Show Mouse Cursor** on `BP_PlayerController` |
 | Crosshair sits off-centre | offset must equal half the image size (8 px for 16 px art) |
 | Crosshair lags one frame behind | normal (widget ticks with the game); invisible in practice |
+| Falling anim never plays — Jump loops all flight | in-air branch tested `VSize > 0`; VSize includes the falling Z speed so it's never false mid-flight — use `Break Vector → Z > 0` (Part 10) |
 
 ## Commit
 
 One feature per commit, editor closed:
 
 ```
-feat: cursor crosshair + character faces cursor (Player)
+feat: pixel crosshair widget + fix in-air Jump/Fall animation
 ```
 
 Include this file in the same commit.
+
+Files: `Assets/crosshair.png`,
+`Content/DontTrustTheLevels/UI/Textures/T_Crosshair_D.uasset`,
+`Content/DontTrustTheLevels/UI/WBP_Crosshair.uasset`,
+`Content/DontTrustTheLevels/Player/Blueprints/BP_Player.uasset`,
+`Content/DontTrustTheLevels/Core/Blueprints/BP_PlayerController.uasset`.
