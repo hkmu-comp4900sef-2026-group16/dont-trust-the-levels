@@ -14,6 +14,7 @@ gun stays muzzle-right with it.
 | Import art, create `T_M92_D` + `SPR_M92` | `Scripts/_import_m92.py` (live editor) | ✅ done, idempotent — re-run any time |
 | Add the Gun component to `BP_Player` | **human**, editor UI | Part 2 below |
 | Flip-graph wiring | **human**, editor UI | Part 3 below |
+| Aim-at-crosshair wiring (Part 5) | **human**, editor UI | ✅ done — `Scripts/_verify_gun.py` ALL PASS + PIE |
 
 Per Structure.md §11: Python handles *assets and properties*; humans handle
 *graphs and components*. `unreal.BlueprintEditorLibrary` is not exposed in
