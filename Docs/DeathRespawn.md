@@ -95,7 +95,7 @@ Event Kill
   → SET bRespawning = true
   → Print String ("YOU DIED - respawning")                     ← visible until UI exists
   → Delay (0.5)
-  → Open Level (by object reference: THIS level)               ← reload resets all
+  → Open Level (by name: Get Current Level Name)               ← reload resets all
 ```
 
 ### Variables (My Blueprint → Variables → +)
@@ -113,12 +113,14 @@ Event Kill
 4. **Print String** — `"YOU DIED - respawning"` (temporary; UI pillar will own
    the real death screen later).
 5. **Delay** — **0.5** seconds (short pause so the death reads on screen).
-6. **Open Level** — search **Open Level (by object reference)**. Wire the
-   level asset reference of the level you are in. For `L_Level_00`:
-   in the Content Browser, right-click `Levels/L_Level_00` → **Reference** →
-   drag the reference into the graph → wire into **Level**.
-   *(Why not "Open Level (by name)": by-name needs the level's name string;
-   by-reference survives level renames.)*
+6. **Open Level (by name)** — search **Get Current Level Name** (pure node;
+   click the node's ⌄ expander and tick **Remove Prefix** — otherwise in PIE
+   the name reads `UEDPIE-0-..._L_Level_01` and the open fails) → wire its
+   Return Value into **Open Level (by name) → Level Name**.
+   *(Changed 19 Oct — the original by-object-reference pattern was per-level
+   and broke: `BP_Player` is one shared class, its reference default stayed
+   `L_Level_00`, so dying in Level 2 reloaded Level 1. "Ask the engine where
+   you are" needs no per-level maintenance and cannot desync.)*
 
 **Compile + Save.**
 
@@ -180,6 +182,7 @@ hand-verifiable step: see Structure.md §11 table.)
 | Compile error "must have valid target" | Message node created from empty space — re-drag off Other Actor |
 | "Does Implement Interface" always False | Interface set to wrong asset; must be `BPI_Killable` from `Core/Interfaces/` |
 | Player dies, level doesn't reload | Open Level not wired, or level reference pin empty |
+| Dying in Level 2 reloads Level 1 | The old by-reference default was still wired — use Get Current Level Name (Remove Prefix ✓) per Part 3 |
 | Reloads but floor still gone | You teleported instead of reloading — use Open Level |
 | Dies twice / double reload | Missing `bRespawning` guard |
 | Level reloads instantly, no pause | Delay not 0.5 or bypassed |
