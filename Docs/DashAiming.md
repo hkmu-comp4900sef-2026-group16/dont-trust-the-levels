@@ -147,6 +147,9 @@ must not add sideways drift — the sweep is the only mover.)
 Character event **Landed** → `SET bAirDashUsed = false`. (Respawn needs nothing —
 the level reloads, which resets instance defaults.)
 
+> The landing dust puff hangs off this same chain — `Docs/PlayerDust.md` §4.1
+> appends a `SpawnDust` call after the `SET`.
+
 ## Part 6 — Animation during dash (freeze, one node edit)
 
 The anim composite's first gate (`IfThenElse_5`) tests `NOT bIsDead`. Change its

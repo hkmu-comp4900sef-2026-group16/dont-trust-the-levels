@@ -9,6 +9,10 @@ the pit.
 texture ("paintable"), the grid can be any width and any number of rows, the
 floor any height. All of that is per-instance data — no per-level copies.
 
+> **Traps rule (all traps):** an overlap may only react to an actor that
+> implements `BPI_Killable`, never to a bullet. `Docs/TrapTriggers.md` has the
+> gate, the 19 Oct spike-trap bug, and the verifier (`Scripts/_verify_traps.py`).
+
 ```
 BP_Trap_FakeFloor (Actor)
 ├── DefaultSceneRoot
@@ -148,7 +152,7 @@ Two chains, both required. See diagram §9.
 
 ```
 OnComponentBeginOverlap (Target = TriggerBox)
-  → Does Implement Interface (Target = Other Actor, Interface = BPI_Killable)
+  → Does Implement Interface (Target = OtherActor, Interface = BPI_Killable)
   → Branch
       True → ① FloorBox.SetCollisionEnabled(NoCollision)
              ② SET bFalling = true

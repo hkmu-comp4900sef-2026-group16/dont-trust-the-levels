@@ -202,6 +202,7 @@ General rules (from the unit standard):
 | `TS_` | PaperTileSet | `TS_Terrain` |
 | `TM_` | PaperTileMap | `TM_Background` |
 | `FXS_` | Niagara System | `FXS_Explosion` |
+| `PS_` | Cascade Particle System | `PS_Player_Dust` |
 | `SM_` / `SK_` | Static / Skeletal Mesh | *(unused — 2D game)* |
 
 ### Texture suffixes

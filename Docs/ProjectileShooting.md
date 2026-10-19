@@ -7,9 +7,10 @@ bullet's **behavior is a swappable port**: the player holds one *effect class*
 variable, every shot spawns a tiny effect actor from it, and the effect
 answers two questions — *"can the gun fire?"* and *"what happens when the
 bullet hits a wall?"* — through **data defaults** (`Can Fire`, `Damage`,
-`Speed`, `Bounces`) plus **one interface message** (`BPI_ProjectileEffect →
-On Wall Hit`). Switching between Basic / Ricochet / Heavy / Jammed is a
-runtime class swap — **no graph rewiring, ever**.
+`Speed`, `Bounces`, `Gravity Scale`, `Can Hit Shooter`) plus **one interface
+message** (`BPI_ProjectileEffect → On Wall Hit`). Switching between Basic /
+Ricochet / Heavy / Jammed is a runtime class swap — **no graph rewiring,
+ever**.
 
 ```text
 BP_Player (gun side)                      BP_Projectile (bullet side)
@@ -17,13 +18,18 @@ BP_Player (gun side)                      BP_Projectile (bullet side)
   Gun Effect    ── ref ─┐                 Shooter        (exposed on spawn)
   Set Effect Class()  ←─ THE PORT          Effect         ── spawned from Effect Class
        ▲                                  BeginPlay:  velocity = forward x Effect.Speed
-       │                                              IgnoreActorWhenMoving(Shooter)
+       │                                              IgnoreActorWhenMoving(Shooter, true)
+       │                                              gravity scale = Effect.Gravity Scale
   any trigger: keys 1-4, traps,           OnComponentHit (Box):
-  pickups, volumes → call this                  OtherActor == Shooter  → ignore
+  pickups, volumes → call this                  OtherActor == Shooter  → ignore ‡
   one function                                  implements BPI_Killable → Apply Point
        │                                        Damage(Effect.Damage) + Kill + Destroy
   Can Fire ← Gun Effect.Can Fire                else → Effect: "On Wall Hit" message
 ```
+
+`‡` the shooter is skipped *while the bullet still ignores it*. `Bounce` lifts
+that ignore when `Effect.Can Hit Shooter` is true (Ricochet), so a returning
+ricochet is a legit kill — Part 5.4 / Part 8 item 8.
 
 **Two kinds of work:**
 
@@ -34,32 +40,116 @@ BP_Player (gun side)                      BP_Projectile (bullet side)
 | Add `Fire` / `Effect_*` action mappings to `DefaultInput.ini` | `Scripts/_make_shooting.py` | ✅ done — **live in the running editor** |
 | Add the `On Wall Hit` function to `BPI_ProjectileEffect` | **human**, editor UI | ✅ done (Part 2) |
 | `BP_EffectBase` variables (`Can Fire`, `Damage`, `Speed`, `Bounces`, `My Projectile`) | **human**, editor UI | ✅ done (Part 3.1) |
+| `BP_EffectBase` per-effect knobs (`Gravity Scale`, `Can Hit Shooter`) | **human**, editor UI | ✅ done (Part 3.1 — both variables added 18 Oct; the two base reads and all 8 child values PASS) |
 | `BP_EffectBase` implements `BPI_ProjectileEffect` | **human**, editor UI | ✅ done (Part 3.2 — *Class Settings*, not Class Defaults) |
 | `BP_EffectBase` `On Wall Hit` logic (Bounces decrement + `Bounce` call) | **human**, editor UI | ✅ done (Part 3.3 — 13 nodes / 24 wires, all three markers PASS) |
-| Per-child default values | `Scripts/_make_shooting.py` re-run | ✅ done — scripted, 16/16 PASS |
-| `BP_Projectile` components + Details | **human**, editor UI | ✅ done (Part 5.1 — Box is the root, Extent `(20,50,20)`, presets `BlockAllDynamic` / `NoCollision`, Source Sprite `SPR_PistolAmmoSmall`, gravity 0.0; the two eyeball-only WARNs stay) |
+| Per-child default values | `Scripts/_make_shooting.py` re-run | ✅ 24/24 PASS — 6 per child (the 18 Oct re-run wrote the two new fields: Ricochet `CanHitShooter=true`, Heavy `GravityScale=1.0`) |
+| `BP_Projectile` components + Details | **human**, editor UI | ✅ done (Part 5.1 — Box is the root, Extent `(20,50,20)`, presets `BlockAllDynamic` / `NoCollision`, Source Sprite `SPR_PistolAmmoSmall`, gravity 0.0, **Should Bounce ✓ / Bounciness 1.0 / Friction 0.0**; the two eyeball-only WARNs stay) |
 | `BP_Projectile` variables (`Effect Class`, `Shooter`, `Effect`) | **human**, editor UI | ✅ done (Part 5.2) |
-| `BP_Projectile` `Bounce` function | **human**, editor UI | ✅ done (Part 5.4 — 24 nodes; drawn in `Scripts/bounce_graph.html`) |
-| `BP_Projectile` BeginPlay chain | **human**, editor UI | ✅ done (Part 5.3 — `AlwaysSpawn` + `bShouldIgnore` pin fixes landed) |
-| `BP_Projectile` `On Component Hit` graph | **human**, editor UI | ✅ done (Part 5.5 — built 18 Oct 01:04, all 22 wires matched against the export at 01:05; drawn in `Scripts/hit_graph.html`) |
-| `BP_Player` port + fire chain | **human**, editor UI | 🔶 6.1 / 6.2 / 6.3 built 18 Oct 01:56 (2 nits left), **6.4 next** (Part 6 — boards + panel 6.0b in `Scripts/player_graph.html`) |
+| `BP_Projectile` `Bounce` function | **human**, editor UI | ✅ done (Part 5.4 — 27 nodes with step 16's second `Ignore Actor When Moving`; read back from the 19 Oct 00:03 export) |
+| `BP_Projectile` BeginPlay chain | **human**, editor UI | ✅ done (Part 5.3 — 17 nodes; step 7's `Set Projectile Gravity Scale` writes the component's own `ProjectileGravityScale` from the effect) |
+| `BP_Projectile` `On Component Hit` graph | **human**, editor UI | ✅ done (Part 5.5 — 17 nodes / 26 wires; step 2b's `==` AND NOT gate feeds the shooter Branch's `Condition`) |
+| `BP_Player` port + fire chain | **human**, editor UI | ✅ 6.1–6.4 built (saved 18 Oct 02:09; the verifier reads all four `Effect_*` keys PASS). Two nits left, both in Part 6 below |
 
 **Resume here.** With the editor open, `py -3 Scripts/_verify_shooting.py` is
 the ground truth for the scripted half *and* presence-checks the manual half
 (effect CDO defaults, `BP_EffectBase` variables + graph markers, BP_Projectile
 component *details* and variables + graph markers, BP_Player variables + graph
-markers). As of 18 Oct 01:57 it reports **77 PASS · 0 FAIL · 2 WARN ·
-4 PENDING**; the four PENDINGs are Part 6.4's `Effect_*` keys, and the built
-half of Part 6 is re-read node by node in panel **6.0b** of
-`Scripts/player_graph.html` (the boards for every step are in the same page).
+markers, and — since the 18 Oct PIE pass — the four `Effect_*` key chains and
+the movement's bounce settings). The 19 Oct 00:03 run read **97 PASS · 0 FAIL ·
+2 WARN · 0 PENDING**; the PIE fixes below take it to **104 PASS · 0 FAIL · 2
+WARN · 0 PENDING**. The **19 Oct 00:41 run** (after the Projectile Movement fix
+and a first attempt at the key fix) read **101 PASS · 1 FAIL · 2 WARN**:
+`Should Bounce` / `Bounciness` / `Friction` PASS, but the four `Effect_*`
+**event nodes were deleted along with the setters**, so no key fired at all (see
+bug 3 below). After the key events were rebuilt the run read **102 PASS · 1
+FAIL · 2 WARN** — the four key chains PASS again, the FAIL being the kill gate
+(bug 4). **The current run reads 103 PASS · 1 FAIL · 2 WARN**: the `Interface`
+pin is now set to `BPI_Killable` (that FAIL is gone), and the one remaining FAIL
+is bug 5 — the effect actor each shot leaves behind. Wiring 5.6's `Destroyed`
+hook is the **104 PASS** line; both fixes are drawn in
+`Scripts/fix_pie_bugs.html` (5.5 step 3 / 5.6).
+The last four PASSes are the counted graph markers of the per-effect wiring:
+the BeginPlay
+gravity setter, the second `Ignore Actor When Moving` in `Bounce`, `NOT` on
+`Can Hit Shooter`, and `Can Hit Shooter` read in both graphs.
+
+**PIE pass (18 Oct) — two build bugs, both regression-checked now (plus one
+self-inflicted regression from the first fix attempt):**
+
+1. **`4` still fires.** The four `Effect_*` keys only *set the `Effect Class`
+   variable*; they never call the `Set Effect Class` **function**, so `Gun
+   Effect` keeps pointing at the Basic instance and the fire gate reads its
+   stale `Can Fire = true`. The bullets still pick up the new class (the player
+   passes `Effect Class` to the spawn), which is why `2`/`3` changed the bullet
+   but `4` did not jam the gun. Fix: **Part 6.4** — each key's `Pressed` pin
+   goes to the **call** node (`New Effect Class` pin), not the variable setter.
+2. **Ricochet bullets freeze at the wall.** `Projectile Movement → Should
+   Bounce` is **off**; on the first blocking hit `HandleImpact()` calls
+   `StopSimulating()` (velocity 0, updated component detached) *after* the
+   ComponentHit delegate, so `Bounce`'s `Set Velocity` is wiped a few lines
+   later. The bullet never moves or hits again, so `Bounces` never reaches 0
+   and the effect never destroys it. Fix: **Part 5.1** — **Should Bounce ✓**,
+   **Bounciness 1.0**, **Friction 0.0**.
+3. **`2`/`3`/`4` stopped switching** (19 Oct 00:41 — the first attempt at the
+   fix above). Deleting the four setters took the four `InputAction` key events
+   with them: EventGraph's `Nodes()` list no longer contains
+   `K2Node_InputAction_3..6`, so `Pressed` never fires, `Effect Class` stays
+   `BP_Effect_Basic`, `Gun Effect` is never replaced and every bullet keeps
+   `Gravity Scale 0.0` — pressing `3` no longer drops. Fix: **Part 6.4** —
+   right-click → `Effect_Heavy` (under *Action Events*) to get the event back,
+   then `Pressed` → the `Set Effect Class` **call**. The verifier names it:
+   `Effect_Heavy (event node deleted - it is only left in the transaction
+   buffer)`.
+
+4. **A ricochet bounces off the player instead of killing them** (same PIE
+   run, after the keys worked — **fixed 19 Oct**). Gate 3 of the hit graph is
+   built — `Does Implement Interface` → True → `Apply Point Damage` → `Kill` →
+   `Destroy Actor` — but its **`Interface` pin was empty**. The stock pin
+   defaults to *None*, and `Does Implement Interface(Other, None)` is **false
+   for every actor**, so every hit took the False branch: the effect was told it
+   hit a wall and `Bounces > 0` turned the return shot into one more bounce.
+   Fix: **Part 5.5 step 3** — pick `BPI_Killable` in the pin's dropdown. The
+   pin is set now (the export carries
+   `DefaultObject=…BPI_Killable.BPI_Killable_C`), so the verifier's
+   `Does Implement Interface has no Interface set ...` FAIL is gone.
+
+5. **One effect actor is left behind per shot** (19 Oct PIE: "even when the
+   bullets are gone there is an effect actor left"). `BeginPlay` spawns a fresh
+   `BP_Effect_*` actor for every bullet (5.3 steps 2–3) and **nothing destroys
+   it** — the hit graph kills the bullet, and `BP_EffectBase` is component-less,
+   so the leftovers are invisible in the viewport but pile up in the World
+   Outliner, each still holding a hard `MyProjectile` reference to the dead
+   projectile. Fix: **Part 5.6** — `Event Destroyed` → `Branch` (`Is Valid`,
+   Input ← `Get Effect`) → True → `Destroy Actor` (Target ← `Get Effect`). The
+   verifier names it: `nothing destroys the per-shot effect ...`.
+
+The build half is therefore **closed except 5.6's `Destroyed` hook** — then
+the Part 8 PIE checklist, not more nodes.
+**Part 6 is finished** once the four key events exist again and each `Pressed`
+chain ends on the `Set Effect Class` **call** — the verifier follows each chain
+and FAILs a missing or variable-only one (`PASS  the four debug keys call Set
+Effect Class (the function)` is the gate). The built half is re-read node by node
+in panel **6.0b** of `Scripts/player_graph.html` (the boards for every step are
+in the same page).
 Both WARNs are values this Python build cannot read
 at all — the sprite *asset*'s baked collision (Part 1) and the Box's
 *Simulation Generates Hit Events* flag (Part 5.1) — so they are eyeball-only and
-can never PASS. The hand work is down to **Part 6**; the Part 8 PIE checklist
+can never PASS. The Part 8 PIE checklist
 needs no restart — the verifier already reads the five mappings as **LIVE** in
 the running session (see *Input mappings* below).
+With the editor **closed** the live half cannot run at all — the T3D re-export
+happens inside the editor, so the offline half would only re-check whatever the
+last live run left on disk. A shorter run is not a better run: the first line of
+the output must read `success: True`, and `T3D exports: 8/8 written` proves the
+markers were read from a fresh export.
 `Scripts/_check_markers.py` re-checks the T3D markers offline, with controls on
 `BP_Player`'s hand-wired events, whenever a marker looks wrong.
+`Scripts/_check_pin_links.py` flags input pins that the export says carry **two**
+wires (an undo/duplicate leftover: the extra source is an orphan node or a
+mirror of the same value, and the graph still compiles) — BP_Projectile showed
+2, BP_Player 2 older ones. The two findings are drawn on their own graphs in
+`Scripts/cleanup_graphs.html` (red dashes = delete, nothing else marked).
 `Scripts/_dump_graph.py <t3d> <out> <name>` reads a finished graph out of an
 export node by node, pins and links included — that is how Part 5.5's 22 wires
 were verified, since a marker only proves that a node exists.
@@ -173,11 +263,14 @@ teleport, …).
 renders, never collides; it is a per-shot data holder that owns hit
 policy). Per-shot instances are spawned by `BP_Projectile`'s BeginPlay.
 
-**Status:** ✅ done — all three sub-parts. 3.1 the five variables are live
-(verified by the script); 3.2 the export carries `ImplementedInterfaces` and the
+**Status:** ✅ 3.1 + 3.2 + 3.3 all done. All seven variables are live — the
+verifier reads `MyProjectile`, `GravityScale` and `CanHitShooter` on the base
+plus all 24 child values; 3.2 the export carries `ImplementedInterfaces` and the
 verifier reads `PASS implements BPI_ProjectileEffect`; 3.3 the `On Wall Hit`
 event node, the `Bounces` decrement and the `Bounce` call are all in the
 EventGraph's 13 nodes / 24 wires, and the verifier's three graph markers PASS.
+The two per-effect rows were data-only — nothing else in this file changed —
+and Parts 4–5 now read them.
 
 ### 3.1 Variables (My Blueprint → Variables → +)
 
@@ -187,7 +280,15 @@ EventGraph's 13 nodes / 24 wires, and the verifier's three graph markers PASS.
 | `Damage` | Float | ✓ | `1.0` | fed to **Apply Point Damage** on killable hits |
 | `Speed` | Float | ✓ | `3000.0` | bullet velocity magnitude (uu/s; player walk ≈ 600, dash ≈ 1400) |
 | `Bounces` | Integer | ✓ | `0` | remaining ricochets, decremented per wall hit |
+| `Gravity Scale` | Float | ✓ | `0.0` | how hard gravity pulls *this* effect's bullet: `0.0` = dead straight (Basic / Ricochet / Jammed), `1.0` = world gravity, so **Heavy visibly arcs**. BeginPlay copies it into the bullet's `Projectile Movement → Projectile Gravity Scale` (Part 5.3 step 7) |
+| `Can Hit Shooter` | Boolean | ✓ | `false` | may this effect's *bounced* bullet stop ignoring the player who fired it? `false` = never (Basic / Heavy / Jammed), `true` = **Ricochet**, so a return shot is a legit kill. Read twice: in `Bounce` (Part 5.4 step 16) and in the hit graph's second gate (Part 5.5 step 2b) |
 | `My Projectile` | Object → `BP_Projectile` | ✗ | — | runtime back-reference the projectile sets in its BeginPlay, used to command the bullet (bounce / destroy) |
+
+Both new rows are plain **data** — no new interface message and no per-effect
+graph. The bullet already holds the effect reference, so the values reach it
+through the same `Effect` get it uses for `Speed` and `Damage`; a brand-new
+child inherits `0.0` / `false` and behaves exactly like Basic until you type a
+number or tick the box (Part 4).
 
 ### 3.2 Implement the interface
 
@@ -284,36 +385,64 @@ future effect a copy-paste of this file.
 ## Part 4 — The four effects (defaults, mostly scripted)
 
 Each child is **only a row in Class Defaults** — that is the entire
-"strategy". **Status: ✅ done (17 Oct) — scripted and verified 16/16.**
-Re-run any time (after Part 3 compiles the variables onto `BP_EffectBase`):
+"strategy". **Status: ✅ 24/24 (18 Oct) — 6 values × 4 children. The original
+four were scripted on 17 Oct; once Part 3.1 compiled the two new variables onto
+`BP_EffectBase`, a plain re-run wrote `GravityScale` / `CanHitShooter` too and
+all 24 values read back from the CDOs. (While the variables were still missing
+the verifier said `PENDING BP_Effect_Basic.GravityScale: variable not added yet
+(doc Part 3)` — the expected state then, not a failure.)**
+Re-run any time (idempotent):
 
 ```
 py -3 Scripts/_make_shooting.py
 ```
 
-(the script is idempotent; it finds the new variables and sets each child
-CDO). Target values — verify by opening each child's **Class Defaults**, or
-in the editor with `py -3 Scripts/_verify_shooting.py`:
+(the script is idempotent; it finds the new variables and sets all 24 values —
+6 per child). Target values — verify by opening each child's **Class Defaults**,
+or in the editor with `py -3 Scripts/_verify_shooting.py`:
 
-| Blueprint | Can Fire | Damage | Speed | Bounces | Reads as |
-|---|---|---|---|---|---|
-| `BP_Effect_Basic` | true | 1.0 | 3000 | 0 | the starting pistol |
-| `BP_Effect_Ricochet` | true | 1.0 | 3000 | **3** | pinball rounds |
-| `BP_Effect_Heavy` | true | **5.0** | **2200** | 0 | slow, lethal |
-| `BP_Effect_Jammed` | **false** | 1.0 | 3000 | 0 | click — nothing |
+| Blueprint | Can Fire | Damage | Speed | Bounces | Gravity Scale | Can Hit Shooter | Reads as |
+|---|---|---|---|---|---|---|---|
+| `BP_Effect_Basic` | true | 1.0 | 3000 | 0 | 0.0 | false | the starting pistol |
+| `BP_Effect_Ricochet` | true | 1.0 | 3000 | **3** | 0.0 | **true** | pinball rounds — and they can come back at you |
+| `BP_Effect_Heavy` | true | **5.0** | **2200** | 0 | **1.0** | false | slow, lethal, drops while it flies |
+| `BP_Effect_Jammed` | **false** | 1.0 | 3000 | 0 | 0.0 | false | click — nothing |
 
-If you prefer by hand: open each child, **Class Defaults**, type the four
-numbers, Compile + Save — identical result.
+If you prefer by hand: open each child, **Class Defaults**, type the six
+values (four numbers, one number, one tick), Compile + Save — identical
+result.
 
 ---
 
 ## Part 5 — BP_Projectile: the bullet (human, ~25 minutes)
 
-**Status: ✅ done (18 Oct 2026)** — 5.1 the component Details, 5.2 the three
-variables, 5.4 the `Bounce` function, 5.3 the BeginPlay chain and 5.5 the hit
-are all in the export, and the verifier's `---- BP_Projectile.T3D ----` block
-reads 5/5 PASS. Drawings: `Scripts/shooting_graph.html` (every part) and
-`Scripts/hit_graph.html` (5.5, wire-for-wire against the export).
+**Status: ✅ built (19 Oct 2026) except 5.6** — 5.1 the component Details, 5.2
+the three variables, 5.3 the BeginPlay chain, 5.4 the `Bounce` function and 5.5
+the hit are all in the export (the kill gate's `Interface` pin is now set to
+`BPI_Killable`), and `_verify_shooting.py` reports **103 PASS · 1 FAIL · 2 WARN**
+— the FAIL is 5.6: `BeginPlay` spawns an effect per bullet and nothing destroys
+it (bug 5); wiring that hook is the **104 PASS** line (97 before the 18 Oct
+fixes, the PIE pass found Should Bounce off, which is why ricochet bullets froze
+at the wall) with all four per-effect markers among them. The three additions this port
+needed are in: **step 7** of 5.3 (`Set Projectile Gravity Scale`, read from the
+effect), **step 16** of 5.4 (lift the shooter ignore in `Bounce`) and **step 2b**
+of 5.5 (the `Can Hit Shooter` gate) — the boards number them 17 / 21, 27 / 35
+and 17 / 26 nodes / wires, and the wires read back from the 19 Oct 00:03 export
+match.
+`Scripts/edit_graphs.html` has exactly those three boards for a rebuild;
+`Scripts/shooting_graph.html` and `Scripts/hit_graph.html` keep the older,
+fuller versions.
+
+Two cosmetic leftovers, both from the same export via
+`Scripts/_check_pin_links.py`: BeginPlay's `Ignore Actor When Moving` had a
+second `execute` wire from a stray, exec-less `Set Projectile Gravity Scale`
+(at ~1088,64 — it never runs, but it sits in the chain), and `Bounce`'s
+`Ignore Actor When Moving` target had two wires (`Box` and `Get Updated
+Primitive`, the same component). `Scripts/cleanup_graphs.html` draws both on
+the real boards — the node and the wire to delete in red dashes, nothing else
+marked. **The 19 Oct re-export reads `0 duplicate input link(s)`** — the
+in-editor cleanup is done in memory, so the page can be ignored; just make
+sure the asset is saved (`Ctrl+S`) before closing.
 
 Open `/Game/DontTrustTheLevels/Weapons/Blueprints/BP_Projectile`.
 
@@ -332,7 +461,10 @@ with the `Component` suffix stripped
 |---|---|---|---|
 | 1 | **Box Collision** (search "Box") | `Box` | becomes the root. **Mobility: Movable**. **Box Extent (20, 50, 20)**. **Collision Presets: BlockAllDynamic**. **Simulation Generates Hit Events: ✓** (needed for the hit event). |
 | 2 | **Paper Sprite** | `Sprite` | child of `Box`. **Source Sprite: `SPR_PistolAmmoSmall`**. **Collision Presets: `NoCollision`** ← required, the Box does collision (python could not fix this at asset level — see Part 1). Location (0,0,0), Rotation (0,0,0). Mobility: Movable. |
-| 3 | **Projectile Movement** (search "Projectile") | `ProjectileMovement` | not attached to anything (it is a plain actor component, not a scene one) — it drives the actor's **root**. **Projectile Gravity Scale: 0.0** ← the game plane is 2D top-down (see Troubleshooting). Leave everything else default: **Initial Speed / Max Speed** stay 0 (BeginPlay sets **Velocity** directly, step 5 of 5.3) and **Bounciness** stays off (ricochet is our own `Bounce` function, 5.4). |
+| 3 | **Projectile Movement** (search "Projectile") | `ProjectileMovement` | not attached to anything (it is a plain actor component, not a scene one) — it drives the actor's **root**. **Projectile Gravity Scale: 0.0** ← the component stays at zero; the *effect* decides per shot and BeginPlay copies `Effect.Gravity Scale` in (5.3 step 7). If you type anything else here, every effect inherits it as a baseline. **Should Bounce: ✓ on**, **Bounciness: 1.0**, **Friction: 0.0** ← **required**: with Should Bounce off, the first blocking hit calls `StopSimulating()` (`Velocity = 0`, the updated component is detached) *after* the hit delegate has run, so `Bounce`'s `Set Velocity` is wiped and the bullet freezes at the wall forever (the 18 Oct PIE pass: "ricochet bullets stick and never disappear"). The custom `Bounce` (5.4) already computed the reflection; `Bounciness 1.0` / `Friction 0.0` keep the engine's own fallback bounce a pure reflection instead of the 0.6 / 0.2 defaults. **Initial Speed / Max Speed** stay 0 (BeginPlay sets **Velocity** directly, step 5 of 5.3). |
+
+The Should Bounce / Bounciness / Friction fix above is drawn, with the three
+values highlighted, in `Scripts/fix_pie_bugs.html` (board *5.1*).
 
 Expected tree once 5.1 is finished (the Components panel shows it parent →
 child):
@@ -415,10 +547,24 @@ One straight exec chain, no branches:
 | 5 | **Set Velocity** *(property setter on the ProjectileMovement component)* | **Target** ← `ProjectileMovement` (component get) · **New Velocity** ← node 5b |
 | 5b | **Multiply** *(Vector × Float)* | A ← `Get Actor Forward Vector` (self) · B ← node 5c |
 | 5c | **Get Speed** *(property get on the effect)* | **Target** ← `Get Effect` (variable) |
-| 6 | **Ignore Actor When Moving** | **Target** ← `ProjectileMovement` · **Actor** ← `Get Shooter` |
+| 6 | **Ignore Actor When Moving** | **Target** ← **Get Updated Primitive** dragged off `ProjectileMovement` (the pin is a *Primitive* pin, so the component itself will not connect — the component's `UpdatedPrimitive` is the Box) · **Actor** ← `Get Shooter` · **bShouldIgnore** = `true` (hard-coded here: the bullet must always survive its own muzzle) |
+| 7 | **`Set Projectile Gravity Scale`** *(property setter on the ProjectileMovement component — the pin really is `ProjectileGravityScale`)* | **Target** ← **`Get ProjectileMovement`** (component get on self) · **Projectile Gravity Scale** ← **`Get Gravity Scale`** *(variable get on the effect, Target ← **`Get Effect`**)*. **Append after step 6** (its `then` pin is free). This is the only gravity writer: `0.0` = straight (Basic / Ricochet / Jammed), `1.0` = world gravity (Heavy). There is **no** plain "Set Gravity Scale" to pick: 4.27's `UMovementComponent` has no `GravityScale`, and the projectile only applies gravity when `ProjectileGravityScale != 0` (`ShouldApplyGravity()` gates `GetGravityZ()`, which then multiplies by it). |
 
 So: BeginPlay → spawn effect → remember it → tell it who I am → velocity =
-forward × effect's Speed → ignore the shooter.
+forward × effect's Speed → ignore the shooter → copy the effect's gravity.
+
+> **Which gravity node? `Set Projectile Gravity Scale`.** The component's
+> property is `ProjectileGravityScale` (Details: **Projectile Gravity Scale** —
+> the one Part 5.1 leaves at `0.0`), so the setter is titled **Set Projectile
+> Gravity Scale** and its value pin is labelled **Projectile Gravity Scale**,
+> *not* "Gravity Scale". The number itself comes from **Get Gravity Scale** on
+> the *effect* (`BP_EffectBase`), whose Target is the `Effect` variable — that
+> node keeps the shorter title because the effect's variable is called
+> `GravityScale`. Rule of thumb: the node whose **Target** is `ProjectileMovement`
+> must say **Projectile**; the node whose **Target** is the effect must not.
+> Dragging the effect variable and picking "Get Gravity Scale" gives the value
+> node; if the context menu on the component offers only "Get Projectile Gravity
+> Scale", you are on the component and need the **Set** variant.
 
 Why a fresh instance per shot (not a shared one): every ricochet bullet
 must count **its own** `Bounces` down from its effect's default. Two
@@ -428,7 +574,9 @@ keeps the design stateless anywhere else.
 
 ### 5.4 Function — `Bounce` (My Blueprint → Functions → + → `Bounce`)
 
-Input: `Wall Normal` (Vector). This runs when the effect says "bounce":
+Input: `Wall Normal` (Vector). This runs when the effect says "bounce", and
+it is also where the **owner policy** is applied (step 16) — the only moment
+the bullet knows it has left the muzzle and is at a wall:
 
 | Step | Node | Pins |
 |---|---|---|
@@ -446,7 +594,35 @@ Input: `Wall Normal` (Vector). This runs when the effect says "bounce":
 | 12 | **<** (float) | A ← node 8's X · B = `0` → condition of Select |
 | 13 | **Select** (Integer) | condition ← node 12 · **Pick A** = `180` · **Pick B** = `0` → **Yaw** (left-facing when X is negative) |
 | 14 | **Make Rotator** | Pitch ← node 11 · Yaw ← node 13 · Roll = `0` |
-| 15 | **Set Actor Rotation** (self) | New Rotation ← node 14 |
+| 15 | **`SetActorRotation`** (self — the node title really is one word in 4.27: `K2_SetActorRotation` ships `meta=(DisplayName="SetActorRotation")`; typing "Set Actor Rotation" in the palette still finds it) | `execute` ← `Set Velocity` · **New Rotation** ← node 14 · `bTeleportPhysics` left `false` · **`then` unconnected** |
+| 16 | **`Ignore Actor When Moving`** (no DisplayName meta, so the camel-case split gives the spaced title you see) | **Target** ← **`Get Updated Primitive`** off **`Get ProjectileMovement`** · **Actor** ← **`Get Shooter`** · **bShouldIgnore** ← **`NOT Boolean`** of **`Get Can Hit Shooter`** (Target ← **`Get Effect`**) · **append after node 15** — `SetActorRotation`'s `then` pin is free, so nothing already built gets rewired |
+
+Step 16 is the **owner policy**, and this is the only safe place for it.
+BeginPlay's ignore (5.3 step 6) is hard-coded `true` because the Box extends
+50uu *behind* the spawn point: the bullet starts inside the player's capsule,
+so lifting the ignore at spawn would kill the shooter on frame 1. By the time
+`Bounce` runs the bullet is at a wall, far from the muzzle — so
+`bShouldIgnore = NOT Can Hit Shooter` costs nothing and means: `true` for
+Basic / Heavy / Jammed (keeps ignoring, a harmless repeat) and `false` for
+Ricochet, which is what lets the return shot connect (5.5 step 2b then stops
+filtering it). Without step 16 the flag does nothing at all: `Ignore Actor
+When Moving` filters the projectile's *sweeps*, so no hit event is ever
+generated for the shooter no matter what the hit graph says.
+
+Wiring notes for step 16, read off the 18 Oct export: `Bounce` holds just two
+variable gets (`ProjectileMovement`, for nodes 1 and 9), so the step drops
+**6 new nodes** — `Ignore Actor When Moving`, **Get Updated Primitive** (its
+`self` ← `ProjectileMovement`; the Target pin is a *Primitive* pin), `Get
+Shooter`, `Get Effect`, **Get Can Hit Shooter** (`self` ← the `Effect` get) and
+**NOT Boolean** — taking the graph from 24 to 30. Node 15's title in the
+editor is `SetActorRotation` (one word — that is 4.27's `meta=(DisplayName=...)`
+for `K2_SetActorRotation`; the palette search "Set Actor Rotation" still finds
+it) and its `then` is unconnected, so the exec wire is
+`15.then → Ignore Actor When Moving.execute`; the other six wires are
+`Target` and `Actor`, the `bShouldIgnore` boolean, plus the three internal feeds
+(`Get ProjectileMovement` → `Get Updated Primitive` self · `Get Effect` →
+`Get Can Hit Shooter` self · `Get Can Hit Shooter` → `NOT Boolean` A). All of
+them are fresh: nothing already built gets rewired.
 
 The ricochet is exactly two cases in 2D — a horizontal surface flips Z, a
 vertical surface flips X — and the bigger component of the wall normal
@@ -462,11 +638,17 @@ the two tell the same story, which is the whole test of Part 8.
 
 ### 5.5 Event graph — the hit
 
-**Status: ✅ done** (BP_Projectile saved 18 Oct 01:04, export read back 01:05).
-`Scripts/hit_graph.html` is this graph as built — 14 nodes, 22 wires, every wire
-matched pin by pin against
+**Status: ✅ done, step 2b included** (saved 19 Oct 00:00, export read back
+00:03). 17 nodes / 26 wires; every wire matched pin by pin against
 `Scripts/_shooting_out/Game/DontTrustTheLevels/Weapons/Blueprints/BP_Projectile.T3D`
-with `py -3 Scripts/_dump_graph.py <t3d> <out> BP_Projectile`.
+with `py -3 Scripts/_dump_graph.py <t3d> <out> BP_Projectile`. The built gate is
+the one drawn in `Scripts/edit_graphs.html`: **3 nodes** (`Get Can Hit Shooter`,
+**NOT Boolean**, **AND Boolean**) and 4 wires (`==` → AND.A · Can Hit Shooter →
+NOT → AND.B · AND → the shooter Branch's Condition). The export shows exactly
+that — `K2Node_IfThenElse_0.Condition ← BooleanAND.ReturnValue`, `A ←` the `==`
+call, `B ← Not_PreBool`, whose `A ←` the `CanHitShooter` get off `Effect`. It is
+an **AND in the Branch's condition**, not a second Branch — see the note under
+the table.
 
 Select the **Box** component in the Components panel → Details → Events →
 click **On Component Hit** (+). That drops `Event On Component Hit (Box)`
@@ -476,22 +658,43 @@ Component**, **Normal Impulse**, **Hit** outputs.
 | Step | Node | Pins |
 |---|---|---|
 | 1 | `Event On Component Hit (Box)` | Other Actor + Hit feed everything |
-| 2 | **Branch** — "is it my shooter?" | Condition ← **==** (Object) A ← Other Actor · B ← `Get Shooter` · **True: wire nothing** (ignore entirely) · **False** → 3 |
-| 3 | **Branch** — "is the target killable?" | Condition ← **Does Implement Interface** (Class `BPI_Killable`, Target ← Other Actor) |
+| 2 | **Branch** — "is it my shooter?" | Condition ← 2b · **True** → wire nothing · **False** → 3 |
+| 2b | **AND Boolean** + **NOT Boolean** — "is it my shooter *and* may I not hit it?" | Rewires the shooter Branch's **Condition** only: **AND** A ← `==` (Object) · B ← **NOT Boolean** (A ← **Get Can Hit Shooter**, Target ← `Get Effect`) · AND → **Condition**. `True` = shooter this effect may not hit → wire nothing, ignored; `False` = everything else (including a shooter the effect *may* hit) → still step 3. **No exec wire is touched.** |
+| 3 | **Branch** — "is the target killable?" | Condition ← **Does Implement Interface** · **Target** ← Other Actor · **Interface** ← **`BPI_Killable`** (pick it in the pin's dropdown: the stock pin is *None*, and the check then returns false for **every** actor — bug 4, the 19 Oct "ricochet bounces off me" report) |
 | 4 | **True — damage:** **Apply Point Damage** | **Target** ← Other Actor · **Base Damage** ← **Get Damage** (Target ← `Get Effect`) · **Hit From Direction** ← `Break Hit Result` (Hit) → **Normal** · **Hit** ← event Hit · **Damage Causer** ← **Get a reference to self** · **Event Instigator** — leave unwired |
 | 5 | → **Kill** *(BPI_Killable message)* | **Target** ← Other Actor |
 | 6 | → **Destroy Actor** | Target ← self (the bullet dies with the target) |
 | 7 | **False — plain geometry:** **On Wall Hit** *(BPI_ProjectileEffect message)* | **Target** ← `Get Effect` · **Hit** ← event Hit |
 
-Three cases in order: shooter → ignore; killable → point damage + `Kill` +
-self-destruct; anything else → hand the hit to the effect, which either
-bounces the bullet or destroys it.
+Three cases in order: shooter the effect may not hit → ignore; killable → point
+damage + `Kill` + self-destruct; anything else → hand the hit to the effect,
+which either bounces the bullet or destroys it.
+
+> **The `Interface` pin is the whole gate.** `Does Implement Interface` with an
+> empty `Interface` pin still compiles and still runs — and returns `false` for
+> **every** actor, with no warning. If a ricochet comes back at you and bounces
+> off, this pin is why: the hit takes the False branch (treat it as a wall)
+> instead of True (damage → `Kill` → self-destruct). Only the T3D pin line
+> carries the chosen class, so the verifier reads it and FAILs with `Does
+> Implement Interface has no Interface set`.
+
+> **Why 2b is an AND and not a second Branch.** An **exec input pin takes
+> exactly one wire**. The killable Branch's `execute` already holds the shooter
+> Branch's `False`, so a second Branch's `True` cannot land on it too — the
+> editor would *replace* that link and every non-shooter hit would fall into
+> nothing. Two exec paths can only merge through one condition, so the policy
+> folds into the shooter Branch's own condition: `(Other == Shooter) AND NOT
+> Can Hit Shooter`. It is also strictly less work — 3 pure nodes and 4 wires, no
+> existing wire moved. The verifier counts the same two reads either way
+> (`CanHitShooter` in `Bounce` + in this graph).
 
 > **Order matters:** test the shooter first, killable second, wall last.
 > `BP_Player` implements `BPI_Killable` itself — without the shooter check,
-> the first shot kills the player. (`Ignore Actor When Moving` normally
-> makes this branch moot — it is belt and braces for ricochets arcing back
-> at you, which is a *feature*.)
+> the first shot kills the player. Gate 2b is the deliberate exception and it
+> is opt-in per effect: `Bounce` has already lifted the movement ignore
+> (5.4 step 16) for Ricochet, so a return shot really is a hit — while a
+> shooter whose effect leaves `Can Hit Shooter` at `false` makes the AND true
+> and stays harmless, exactly as before the extension.
 >
 > Note on `Kill`: BPI_Killable is binary (no params), so death is not
 > damage-scaled. Point damage runs alongside it so future health systems
@@ -499,21 +702,77 @@ bounces the bullet or destroys it.
 
 ---
 
+### 5.6 Event graph — the bullet takes its effect with it
+
+**Status: ❌ open (19 Oct PIE: "every time I shoot, even when the bullets are
+gone, there is an effect actor left").** Every shot runs 5.3 steps 2–3, which
+**spawn a fresh `BP_Effect_*` instance into the world**, and nothing ever
+destroys it: the hit graph kills the *bullet*, `BP_EffectBase` has no
+components (so the leftovers are invisible — you see them in the World Outliner,
+not in the viewport), and each one keeps a hard `MyProjectile` reference to the
+destroyed projectile, so that actor cannot be collected either. Fifty shots leak
+fifty actors and fifty dead projectiles. This is the effect-side twin of the
+`Gun Effect` swap in 6.2: whoever spawns an instance owns its lifetime.
+
+Add one hook to `BP_Projectile`'s **EventGraph**:
+
+| Step | Node | Pins |
+|---|---|---|
+| 1 | **Event Destroyed** (right-click the graph → **Add Event** → *Actor* → **Destroyed**, or search `Destroyed` in the palette) | no input pins; its `then` fires on **every** path that kills the bullet — the hit graph's `Destroy Actor` (5.5 step 6), the effect's `On Wall Hit` false branch (3.3), and PIE shutdown |
+| 2 | **Branch** | **Condition** ← **Is Valid** (*Input* ← `Get Effect`) |
+| 3 | **True → Destroy Actor** | **Target** ← `Get Effect` |
+
+So: the bullet dies → if its effect instance is still alive, it dies too. The
+`Is Valid` guard matters: `Destroy Actor` on an unset Target logs *Accessed
+None* every time a bullet dies, and the effect can legitimately be gone already
+(PIE shutdown destroys in arbitrary order).
+
+> **Why `Event Destroyed` and not a `Lifespan`.** `Set Life Span` on the effect
+> would need one number that fits every effect — a Basic bullet lives ~0.3 s, a
+> ricochet up to 3 bounces, a Heavy arc for seconds. The bullet already knows
+> the exact moment it is done; hook that.
+
+> **Why not `Destroy Actor` on self in `BP_EffectBase`'s `On Wall Hit`.** That
+> only covers the wall-death path. A bullet that kills the player (5.5 step 6)
+> or dies inside the wall it spawned in never reaches the effect's graph, so it
+> would still leak. The `Destroyed` hook covers all three, and it keeps 3.3's
+> authority rule intact (the effect still commands the bullet, never itself).
+
+The verifier reads the **exec chain**, not the node's presence: `Destroy Actor`
+must be reachable from `ReceiveDestroyed` **and** its Target pin must come from
+the `Effect` variable. Until it is wired it FAILs with `nothing destroys the
+per-shot effect …` (doc 5.6).
+
+---
+
 ## Part 6 — BP_Player: the port + the trigger (human, ~20 minutes)
 
-**Status (checked 18 Oct 02:10): 6.1, 6.2 and 6.3 are built, 6.4 is not.**
-`BP_Player.uasset` was saved **18 Oct 02:09**; `_verify_shooting.py` reads
-**77 PASS / 4 PENDING** (the four `Effect_*` keys of 6.4) and the graph dump
-shows both variables, an 11-node `Set Effect Class` function, the BeginPlay
-hook (collapsed as a box named `Update Effect Class` at 976,−480) and the whole
-Fire chain. **The step-1 bug is fixed**, verified in the dump: step 1 is now
-`K2Node_VariableSet_2` (`var EffectClass`), its `execute` fed by
-`ExecutionSequence.then_0`, its **Effect Class** input by the entry's
-`NewEffectClass`, its `then` by the Branch — the self-call is gone. For the
-record, the old symptom was: step 1 was a *call* of `Set Effect Class` — the
-function calling itself — so `Effect Class` was never written and the call
-recursed into itself. The pin is the tell: `Effect Class` = the variable,
-`New Effect Class` = the function.
+**Status (re-checked 19 Oct, PIE pass 18 Oct): 6.1–6.4 are built.** `BP_Player`
+was saved **18 Oct 02:09** and rewired **19 Oct** (the four key events were
+recreated and each `Pressed` goes to the `Set Effect Class` **call**);
+`_verify_shooting.py` reads **104 PASS / 0 PENDING** once 5.6's `Destroyed`
+hook is in (**103 PASS / 1 FAIL** before it — that FAIL is Part 5's leaked
+effect actor, not Part 6). The graph dump shows both variables, an 11-node
+`Set Effect Class` function, the BeginPlay hook (collapsed as a box named
+`Update Effect Class` at 976,−480) and the whole Fire chain. **The step-1 bug
+is fixed**, verified in the dump: step 1 is now `K2Node_VariableSet_2`
+(`var EffectClass`), its `execute` fed by `ExecutionSequence.then_0`, its
+**Effect Class** input by the entry's `NewEffectClass`, its `then` by the
+Branch — the self-call is gone. For the record, the old symptom was: step 1
+was a *call* of `Set Effect Class` — the function calling itself — so `Effect
+Class` was never written and the call recursed into itself. The pin is the
+tell: `Effect Class` = the variable, `New Effect Class` = the function.
+
+**The 6.4 keys repeat that mistake** — found in PIE on 18 Oct: each key's
+`Pressed` pin feeds a `K2Node_VariableSet` on `EffectClass`
+(`EventGraph/K2Node_VariableSet_0..3`, at x≈912, y≈−1376 … −912), so the
+palette's *variable* entry was picked instead of the function. Consequence:
+`Gun Effect` is never replaced, the fire gate keeps the Basic instance's
+`Can Fire = true`, and **press 4 → LMB still fires** (the bullet itself does
+use the new class — that is why 2 and 3 changed the bullet). Delete the four
+variable-set nodes and put one **call** of `Set Effect Class` in their place
+(6.4 below); `_verify_shooting.py` now follows each key's exec chain and
+FAILs a variable-only chain.
 
 **One detail is still wrong:**
 * **both** Spawn Actor nodes — 6.1's (inside the function) and 6.3's — still
@@ -633,6 +892,37 @@ Four one-node chains, placed near the **Dash** input event:
 The input pin is a Class Reference — leave it **unwired** and pick the
 class from the pin's dropdown. **Compile + Save.**
 
+> **The pin is the tell — the 18 Oct build got it wrong here.** The palette
+> lists two nodes called `Set Effect Class`: the **variable setter**
+> (`Effect Class` pin, `Target` = self) and the **function call**
+> (`New Effect Class` pin, `Target` hidden). The built keys use the setter
+> (`K2Node_VariableSet_0..3` at x≈912, y≈−1376/−1232/−1072/−928), which only
+> changes what the *next bullet* will spawn — `Gun Effect` is never replaced,
+> so the fire gate keeps the old instance's `Can Fire` and **`4` still
+> fires**. Fix per key: delete the `Set Effect Class` *variable* node (the one
+> whose body shows `Effect Class`), drop the **call** node in its place and
+> pick the class in `New Effect Class`. The resulting chain is exactly one
+> wire: `Pressed` → call's `execute`. Compile + Save.
+>
+> **Delete only that node — keep the key event.** The 19 Oct attempt
+> box-selected the row and deleted the four `InputAction` events
+> (`K2Node_InputAction_3..6`) along with it. The export then has no key event at
+> all: `Pressed` never fires, `Effect Class` stays `BP_Effect_Basic`, every
+> bullet keeps `Gravity Scale 0.0` (pressing `3` stops dropping) and `4` stops
+> jamming. Recreate the event with right-click → `Effect_Heavy` under
+> **Action Events**, then wire it as above.
+>
+> Regression check: `py -3 Scripts/_verify_shooting.py` follows each key's
+> `Pressed` chain and prints
+> `FAIL  debug keys must CALL Set Effect Class (the function) … [Effect_Jammed
+> -> K2Node_VariableSet_3]` while a setter is in the chain, plus
+> `FAIL  EffectClass variable set outside Set Effect Class: EventGraph/…` for
+> each leftover. A deleted key event reads
+> `[Effect_Heavy (event node deleted - it is only left in the transaction
+> buffer)]`, which distinguishes "never built" from "deleted by mistake".
+> Both fixes are drawn side by side (before / after) in
+> `Scripts/fix_pie_bugs.html`.
+
 ---
 
 ## Part 7 — Switching effects from anywhere (the payoff)
@@ -697,8 +987,20 @@ way (probes in `Scripts/_probe_cdo.py`, `Scripts/_probe_parent.py`):
   for you (it uses `AssetEditorSubsystem.open_editor_for_assets`).
 
 The verifier reports PENDING for anything not built yet (naming the doc part
-that fixes it) and a standing WARN for the sprite `collision_source`
-(Part 1 — not fixable in this build).
+that fixes it) and standing WARNs for the sprite `collision_source` and the Box's
+`Simulation Generates Hit Events` (Part 5.1 — this Python build cannot read
+either, so both stay eyeball checks). The four per-effect markers are
+**counted, not presence-checked**, because the export already contained one
+`IgnoreActorWhenMoving` (BeginPlay) and one `Bounces` read (in `Bounce`) — a
+plain "does this node exist?" test would have PASSed before step 16 / 2b were
+built. `marker_min()` demands the next occurrence, so they could only flip on
+the run after the hand work landed — they all did on 19 Oct (4/4). The gravity marker is doubly narrow: it wants a
+`K2Node_VariableSet` whose `VariableReference` carries a `…MovementComponent`
+parent **and** `MemberName="ProjectileGravityScale"`, so neither the effect's
+`Get Gravity Scale` nor a `Get Projectile Gravity Scale` dragged off the
+component can stand in for the setter (step 7 writes
+`ProjectileGravityScale`; the base `GravityScale` does not exist on 4.27's
+`UMovementComponent`).
 
 Live half — re-run `py -3 Scripts/_make_shooting.py` any time (it is
 idempotent): it re-asserts the child CDO defaults against the now-existing
@@ -708,23 +1010,36 @@ project can script, so if a part is still open, anything it reports as
 part above; the verify script's spawned reads are the ground truth that
 catches a silent no-op.
 
-PIE checklist (editor **restarted** first so the five mappings are live):
+PIE checklist (editor **restarted** first so the five mappings are live).
+
+One mechanical pass before the checklist, in this order: `py -3
+Scripts/_verify_shooting.py` (it re-exports the 8 T3D files — expect **104
+PASS · 0 FAIL · 2 WARN · 0 PENDING**; while 5.6's `Destroyed` hook is still
+missing it is 103 PASS + 1 FAIL, and before the 18 Oct fixes 97 PASS + 3 FAIL +
+4 WARN — every FAIL line names its own fix, and the
+edits are drawn in `Scripts/fix_pie_bugs.html`), then `py -3
+Scripts/_check_pin_links.py` (expect **no output**, exit
+0; anything else is drawn in `Scripts/cleanup_graphs.html`), then `py -3
+Scripts/_make_shooting.py` if an effect value below looks wrong.
 
 | # | Expect | Tests |
 |---|---|---|
 | 1 | LMB fires a bullet from the muzzle toward the crosshair, both facings | spawn, rotation inheritance, velocity |
 | 2 | Bullet dies on walls/floors; no error spam | hit event → effect → destroy |
-| 3 | Press 2 → bullets bounce up to 3 times, sprite re-tilts after each bounce | ricochet + re-orientation |
-| 4 | Press 3 → visibly slower bullets | speed default |
+| 3 | Press 2 → bullets bounce up to 3 times, sprite re-tilts after each bounce, **and the next contact destroys them** (nothing may sit at the wall) | ricochet + re-orientation + `Should Bounce` on the movement |
+| 4 | Press 3 → visibly slower bullets that **drop** as they fly (an arc, not a straight line) | speed default + `Gravity Scale` 1.0 copied in BeginPlay |
 | 5 | Press 4 → LMB does nothing, no bullet spawned | Can Fire gate |
 | 6 | Press 1 → back to normal | port reset |
-| 7 | Walking while shooting never kills the player | shooter ignore, hit-event order |
-| 8 | A ricochet CAN come back and kill you (intended — pinball risk) | owner-check blocks the shooter's collision, not its killability |
-| 9 | Aim/crosshair behavior unchanged | BP_Player untouched except Part 6 |
+| 7 | Walking while shooting never kills the player | shooter ignore on spawn (5.3 step 6) |
+| 8 | Switch to 2, bounce a shot off a nearby wall and stand in its return path → **you die** | `Can Hit Shooter` true → `Bounce` lifts the ignore (5.4 step 16) → gate 2b lets it through (5.5) |
+| 9 | The same return shot with 1 / 3 / 4 selected passes harmlessly through you | `Can Hit Shooter` false → gate 2b returns False |
+| 10 | Aim/crosshair behavior unchanged | BP_Player untouched except Part 6 |
+| 11 | Fire ~20 shots at walls and stop → the World Outliner holds **exactly one** `BP_Effect_*` actor (the player's `Gun Effect`), not one per shot | 5.6 `Destroyed` hook destroys each bullet's effect instance with it |
 
-Item 8 is the design, not a bug: a returning ricochet is a legit kill. If
-playtests hate it, the fix is one extra `Branch` in Part 5.5 (skip killables
-whose reference equals `Shooter`) — not an architecture change.
+Item 8 is the design, not a bug: a returning ricochet is a legit kill, and it is
+now **data** — one tick on `BP_Effect_Ricochet`. If playtests hate it, untick
+`Can Hit Shooter` on that child (or leave 5.4 step 16 out) and the behaviour
+returns to "bullets never hurt their owner"; no architecture change.
 
 ---
 
@@ -734,15 +1049,22 @@ whose reference equals `Shooter`) — not an architecture change.
 |---|---|
 | `Fire` not in the Action Events list | Editor started before the ini write → restart the editor |
 | LMB does nothing at all | Same restart reason; or the `Can Fire` branch's Target is not `Get Gun Effect` |
-| Bullet spawns but sits still | BeginPlay exec chain broken (steps 2→3→4→5→6 are one chain); or `Effect Class` default is None → the effect spawn fails, `Get Speed` returns 0. Set default `BP_Effect_Basic` in Class Defaults |
-| Bullet falls downward | `Projectile Movement → Projectile Gravity Scale` left at 1.0 — set **0.0** (2D plane) |
+| Bullet spawns but sits still | BeginPlay exec chain broken (steps 2→3→4→5, then 6→7, are one chain); or `Effect Class` default is None → the effect spawn fails, `Get Speed` returns 0. Set default `BP_Effect_Basic` in Class Defaults |
+| Bullet falls downward | If **every** effect drops, `Projectile Movement → Projectile Gravity Scale` was typed on the *component* — reset it to **0.0**; the effect owns gravity (5.3 step 7). If only Heavy drops, that is correct |
 | Bullet passes through floors | Box preset not `BlockAllDynamic`, or `Simulation Generates Hit Events` off, or the sprite still collides (must be `NoCollision`) |
 | Bullet dies at the spawn point | Spawned inside a wall (fired while hugging one) — keep `Always Spawn, Ignore Collisions` on the player's SpawnActor; confirm `Ignore Actor When Moving` runs with `Shooter` set |
-| First shot kills the player | Hit-event order wrong — the `== Shooter` branch must come **first** and wire nothing on True |
+| First shot kills the player | Hit-event order wrong — the `== Shooter` branch must come **first**; or the effect's `Can Hit Shooter` gate (2b) is missing/shorted so the True path falls straight through |
+| Heavy bullets fly dead straight | `Gravity Scale` is 0.0 on `BP_Effect_Heavy` (re-run `_make_shooting.py`), or 5.3 step 7 is missing / wired to the wrong node. The node must be **Set Projectile Gravity Scale** (Target `ProjectileMovement`), fed by **Get Gravity Scale** on the effect — without it the effect value never reaches the component |
+| Ricochet never hurts me | **First: 5.5 step 3's `Does Implement Interface` has no `Interface` set** — an empty pin is false for *every* actor, so the hit is treated as a wall and the bullet bounces instead of dying (the verifier FAILs it with `Does Implement Interface has no Interface set`). Then: `Can Hit Shooter` is false on `BP_Effect_Ricochet`, or 5.4 step 16 is missing (the movement ignore then filters the sweep, so no hit event exists), or 2b is not wired to 3 on True |
+| Every effect hurts me, even Basic | `bShouldIgnore` is not `NOT Can Hit Shooter` but wired/crossed — Basic must end at `true`; check 5.4 step 16's NOT node sits between the getter and the pin |
 | Ricochet bullet points the wrong way after a bounce | Pitch inverted → the `−Vz` Multiply feeds Atan2's **Y**, `|Vx|` feeds **X**; or yaw Select swapped → Pick A = `180` is the *condition-true* case |
 | Ricochet bounces forever | `Set Bounces` not wired before `Bounce`, or child default wrong → re-run `py -3 Scripts/_make_shooting.py` |
+| Press 4 → LMB still fires (a bullet spawns) | The key is wired to the **variable** setter called `Set Effect Class` instead of the **function**: `Gun Effect` is never replaced, so the fire gate reads the old instance's `Can Fire = true`. Fix per 6.4 — one call node, `Pressed` → `execute`; the verifier names the offending chain (`Effect_Jammed -> K2Node_VariableSet_3`) |
+| Ricochet bullet stops dead at the wall and never disappears | `Projectile Movement → Should Bounce` is off: `HandleImpact()` calls `StopSimulating()` (velocity 0, updated component detached) right after the hit delegate, so `Bounce`'s `Set Velocity` is wiped. Tick **Should Bounce**, set **Bounciness 1.0** / **Friction 0.0** (5.1); the verifier FAILs with `Should Bounce is OFF` |
 | Effects won't switch | `Set Effect Class` — the SpawnActor must read the variable **after** step 1 sets it; and BeginPlay must call `Set Effect Class` (6.2) or `Gun Effect` stays None and the gate blocks |
+| None of 2/3/4 changes anything; bullets fly straight like Basic and `4` still fires | The four `InputAction` **key events** were deleted together with the setters (a box-select delete) — `Pressed` fires no more, so `Effect Class` never leaves `BP_Effect_Basic`. Recreate each event (6.4: right-click → `Effect_Heavy` under *Action Events*), then `Pressed` → the `Set Effect Class` **call**. The verifier FAILs with `Effect_Heavy (event node deleted - it is only left in the transaction buffer)` |
 | Switching leaves two effects | The `Is Valid` True path must `Destroy Actor` the old one before the SpawnActor (False path goes straight to SpawnActor) |
+| An **effect actor** is left in the World Outliner after every shot | Nothing destroys the per-shot instance: `BP_Projectile`'s BeginPlay spawns one `BP_Effect_*` (5.3 steps 2–3) and the hit graph only destroys the bullet. Add the 5.6 `Destroyed` hook → the count stays at one (the player's `Gun Effect`); until then every shot also pins a dead projectile through the effect's `MyProjectile` ref |
 | Sprite looks flipped relative to travel | Spawn rotation comes from the gun — check the gun's facing flip chain first (GunAiming.md Part 5); only then suspect `Bounce`'s yaw Select |
 
 ---
@@ -754,9 +1076,12 @@ The entire point of the port — no graph in this file is touched:
 1. Content Browser → right-click **BP_EffectBase** → **Create Child
    Blueprint Class** → name it (say `BP_Effect_Poison`) → save in
    `/Game/DontTrustTheLevels/Weapons/Blueprints/`.
-2. **Class Defaults** → type new numbers (Damage 2, Speed 2600, …).
+2. **Class Defaults** → type new numbers (Damage 2, Speed 2600, Gravity
+   Scale 0.4 if it should lob, Can Hit Shooter if its bounces may hurt you).
 3. Wire any trigger — a key, a trap volume, a pickup — to
-   `Set Effect Class` with the new class. Done.
+   `Set Effect Class` with the new class. Done. No new variable, node or
+   interface — the two knobs added in this revision are exactly so that
+   "gravity" and "owner policy" are *numbers and a tick*, not new graphs.
 4. *If the new effect needs new behavior*, not just new numbers: grow the
    message protocol (e.g. `On Killable Hit` on BPI_ProjectileEffect),
    implement it in BP_EffectBase once, default it differently per child.
@@ -783,4 +1108,8 @@ feat: BP_Player fire chain + effect-swap keys (manual build per Docs/ProjectileS
    `Scripts/` belongs in a commit.)
 2. Manual half (after Parts 2–6 build and the PIE checklist passes): the
    7 edited `.uasset`s — `BPI_ProjectileEffect`, `BP_EffectBase` + its 4
-   children, `BP_Projectile`, `BP_Player`.
+   children, `BP_Projectile`, `BP_Player`. This revision adds two variables to
+   `BP_EffectBase` and nodes to `BP_Projectile`, so those two assets change
+   again; the children change only in Class Defaults (`Gravity Scale`,
+   `Can Hit Shooter`) and are normally *not* re-saved by
+   `_make_shooting.py`'s CDO writes unless the values differ.
