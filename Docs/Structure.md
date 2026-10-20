@@ -1,4 +1,4 @@
-# Structure.md — Don't Trust The Levels
+﻿# Structure.md — Don't Trust The Levels
 
 The asset-folder structure, naming standard, and ownership rules for this project.
 **Read this before creating or moving any asset.**
@@ -57,13 +57,15 @@ Content/
     │   ├── Sprites/
     │   └── Textures/
     ├── Enemies/
-    │   ├── Blueprints/          BP_Mimic, BP_Sentinel, BP_Lurker, BP_Chaser
+    │   ├── Blueprints/          BP_EnemyBase + nine enemies (Docs/Enemies.md)
     │   ├── Sprites/
     │   │   └── Frames/
     │   ├── Animations/
     │   └── Textures/
     ├── Environment/             terrain, background, toxic platforms
     │   ├── Sprites/
+    │   │   └── Frames/
+    │   ├── Animations/
     │   ├── Textures/
     │   ├── TileSets/            TS_*  (background tilemap)
     │   ├── TileMaps/            TM_*  (background tilemap)
@@ -235,6 +237,12 @@ T_  (texture)  ->  SPR_ (sprite, sliced)  ->  FLB_ (flipbook)  ->  BP_ (logic)
                     SPF_ = individual frames feeding a flipbook
 ```
 
+See `Docs/Paper2DArt.md` for the generated asset map, exclusions, and rebuild
+commands (`Scripts/make_paper2d_assets.py`). See `Docs/Enemies.md` for the
+enemy shells, the `BP_EnemyBase` contract, and the hand-built behaviour sheets;
+`Docs/EnemyAI.md` for the AI rules; and `Docs/EnemyPlacement.md` for level
+placement.
+
 ---
 
 ## 4. Ownership (one pillar = one folder)
@@ -244,7 +252,7 @@ T_  (texture)  ->  SPR_ (sprite, sliced)  ->  FLB_ (flipbook)  ->  BP_ (logic)
 | 1 | Player controller & movement | `BP_Player`, movement, respawn | `Player/` + `Core/` |
 | 2 | Trap system | `BP_TrapBase` + children | `Traps/` |
 | 3 | Weapons & shooting | `BP_Weapon_*`, projectiles, melee | `Weapons/` |
-| 4 | Enemies | `BP_Mimic`, `BP_Sentinel`, `BP_Lurker`, `BP_Chaser` | `Enemies/` |
+| 4 | Enemies | `BP_EnemyBase` + nine enemy BPs, projectiles, hazards | `Enemies/` |
 | 5 | Level design & layout | level maps, difficulty curve | `Levels/` + `Environment/` |
 | 6 | UI, audio & progression | menus, HUD, SFX, save | `UI/` + `Audio/` |
 
@@ -322,68 +330,90 @@ character). The template is to be deleted, so nothing may depend on it.
 
 ---
 
-## 9. Interfaces — how systems talk to each other
+## 9. Interfaces - how systems talk to each other
 
 **Rule: systems communicate through Blueprint Interfaces, not direct casts.**
+One exception is a *player-only trigger*: there the question is ownership, not
+capability, so compare the overlapping actor to `Get Player Character(0)`.
 
 ```
-BPI_Killable    "I can be killed"      → BP_Player implements it
-BPI_Resettable  "I can be reset"       → traps implement it (planned)
-BPI_Fireable    "I can be fired"       → weapons implement it (planned)
-BPI_NoiseSource "I make noise"         → weapons implement it (planned)
+BPI_Killable    "I can be killed"      -> BP_Player and BP_EnemyBase implement it
+BPI_Resettable  "I can be reset"       -> traps implement it (planned)
+BPI_Fireable    "I can be fired"       -> weapons implement it (planned)
+BPI_NoiseSource "I make noise"         -> weapons implement it (planned)
 ```
 
-**Why not `Cast To BP_Player`?** A cast hard-codes the class name. The player class has
-already been renamed once (Pink Man → Ninja Frog); a cast would have broken every trap.
-An interface asks *"can you be killed?"* instead of *"are you this specific class?"*.
+**Why not `Cast To BP_Player`?** A cast hard-codes the class name. The player
+class has already been renamed once (Pink Man -> Ninja Frog); a cast would have
+broken every trap. `Equal(OtherActor, Get Player Character(0))` asks the engine
+for the local player without naming the class.
+
+**Why not use `BPI_Killable` for trap triggering any more?** Enemies implement
+it too (for bullets and pit death). A trap that gates on `BPI_Killable` would
+start reacting to enemies - they would pop spikes, drop fake floors and take
+trap damage. The 19 Oct rule is: ordinary traps are **player-only**; enemies are
+trap-neutral. `BP_KillVolume` is the deliberate exception: it keeps the
+killable gate and destroys `Enemy`-tagged actors that fall into the pit (so
+`bInvulnerable` enemies still die). See `Docs/TrapTriggers.md` sections 2.1 and
+4.5.
 
 ### Creating an interface
 
-1. Content Browser → `Core/Interfaces/` → **Blueprint Interface** → `BPI_Killable`
-2. **My Blueprint → Functions → +** → name it `Kill`
+1. Content Browser -> `Core/Interfaces/` -> **Blueprint Interface** -> `BPI_Killable`
+2. **My Blueprint -> Functions -> +** -> name it `Kill`
 3. **Compile + Save**
 
-⚠️ **Do this BEFORE adding the interface to any class.** If a class adds an interface
-while it has no functions, the class does not retroactively pick up functions added
-later. Fix: remove and re-add the interface to that class.
+**Do this BEFORE adding the interface to any class.** If a class adds an
+interface while it has no functions, the class does not retroactively pick up
+functions added later. Fix: remove and re-add the interface to that class.
 
 ### Implementing an interface function
 
-⚠️ **The rule that catches everyone:**
+**The rule that catches everyone:**
 
-| Interface function has… | Implemented as |
+| Interface function has... | Implemented as |
 |---|---|
-| **No outputs** (void) | **Implement Event** → an event node in the Event Graph |
-| **Has outputs** | **Implement Function** → its own graph |
+| **No outputs** (void) | **Implement Event** - an event node in the Event Graph |
+| **Has outputs** | **Implement Function** - its own graph |
 
-`Kill` has no outputs, so it is an **event**. Looking for "Implement Function" will
-never appear — that is expected, not a bug.
+`Kill` has no outputs, so it is an **event**. Looking for "Implement Function"
+will never appear - that is expected, not a bug.
 
 ### Calling an interface function
 
 **Always drag off an object pin first**, then search the function name:
 
 ```
-Other Actor ──> Kill (Message)
+Other Actor -> Kill (Message)
 ```
 
 The **(Message)** variant is the correct one. A plain `Kill` node will fail with
 *"not marked as callable"*.
 
-⚠️ **Message nodes need a Target.** Dragging off `Other Actor` auto-wires it; creating
-the node from empty space leaves Target blank and the compile fails with
-*"must have a valid target"*.
+**Message nodes need a Target.** Dragging off `Other Actor` auto-wires it;
+creating the node from empty space leaves Target blank and the compile fails
+with *"must have a valid target"*.
 
-### The guard pattern
+### The guard patterns
+
+Ordinary trap - player-only:
 
 ```
-Overlap ─Exec─> Branch ─True─> Kill (Message)
-                  ↑                 ↑
-     Does Implement Interface ─────┘
-     (Other Actor, BPI_Killable)          (Other Actor)
+Overlap -> Branch (Condition = Equal(OtherActor, Get Player Character(0)))
+              -> True -> Kill (Message) Target = Other Actor
 ```
 
-`Does Implement Interface` first, so a trap only kills things that can actually die.
+`BP_KillVolume` - killable actors (player AND enemies):
+
+```
+Overlap -> Branch (Condition = Does Implement Interface(OtherActor, BPI_Killable))
+              -> True -> Branch (Actor Has Tag(OtherActor, "Enemy"))
+                           True  -> Destroy Actor (OtherActor)   # pit fall
+                           False -> Kill (Message) Target = Other Actor  # player
+```
+
+Do not put the killable gate on spikes or fake-floor triggers; do not put the
+player-equality gate on `BP_KillVolume`.
 
 ---
 

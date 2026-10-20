@@ -1,4 +1,4 @@
-# Death & Respawn — pit death via BP_KillVolume · build guide
+# Death & Respawn - pit death via BP_KillVolume - build guide
 
 **Concept (Level Devil rule):** falling into a pit = death. The fake floor drops
 the player into the pit; a **`BP_KillVolume`** at the pit bottom kills them
@@ -13,16 +13,24 @@ for free. A soft-respawn (`BPI_Resettable` on traps) is a later feature.
 zero per-frame Blueprint cost. The player-side KillZ tick check was rejected
 for exactly that reason (polling every frame vs. waking only on contact).
 
+> **Enemy exception (19 Oct 2026):** this is the **only** trap-like actor that
+> may kill an enemy. Every ordinary trap (`BP_TrapBase` children, spikes, fake
+> floor trigger, saw, etc.) is player-only and must not damage or react to
+> enemies. `BP_KillVolume` deliberately keeps the `BPI_Killable` gate and
+> destroys `Enemy`-tagged actors in the pit, so even an invulnerable enemy that
+> physically falls in dies. See `Docs/TrapTriggers.md` §2.1 and §4.5.
+
 ---
 
-## Part 0 — What already exists (verified 18 Oct 2026)
+## Part 0 — What already exists (verified 19 Oct 2026)
 
 | Asset | State |
 |---|---|
-| `BPI_Killable` | ✅ exists — `Kill` has **no outputs**, so it is implemented as an **event** (Structure.md §9) |
+| `BPI_Killable` | ✅ exists — `Kill` has **no outputs**, so it is implemented as an **event** (Structure.md §9); both `BP_Player` and `BP_EnemyBase` implement it |
 | `BP_Player` | ✅ exists, **already implements `BPI_Killable`** — the Kill message will reach it |
-| `BP_KillVolume` | ✅ **created** (empty Actor BP at `Traps/Blueprints/`) — needs its component + graph |
-| Trap overlap chain | ✅ `BP_Trap_FakeFloor` correctly wired (screenshot verified) |
+| `BP_EnemyBase` | ✅ implements `BPI_Killable` (19 Oct 2026); its health/Kill behaviour graph is the next block in `Docs/Enemies.md` §7.1 |
+| `BP_KillVolume` | ✅ `KillBox` (OverlapAllDynamic, overlap events) + player `Kill` **PASS**; enemy `Actor Has Tag` → `Destroy Actor` **PASS** with `Target = OtherActor` (§Part 2) |
+| Trap overlap chain | ✅ player-only gate verified on `BP_TrapBase`, `BP_Trap_Spikes`, `BP_Trap_FakeFloor`; `BP_Trap_FallPlat` inherits (`Docs/TrapTriggers.md` §4.0) |
 
 **Verified via remote Python** (`Scripts/_killrespawn_state.py`):
 `BPI iface class: BPI_Killable_C`, `implements BPI_Killable: True`,
@@ -49,25 +57,47 @@ Leave the box extent at the default (100 uu half-extent) — you size it
 
 ---
 
-## Part 2 — BP_KillVolume: event graph (4 nodes, hand work)
+## Part 2 — BP_KillVolume: event graph (hand work)
 
-Same chain as every trap (FakeFloorTrap.md Chain A):
+This volume is the deliberate exception to the player-only trap rule. It keeps
+the **killable** gate and adds an enemy branch because some enemies are
+`bInvulnerable` (spikes-out turtle, Rhino), so a plain `Kill` would be ignored:
 
 ```
 OnComponentBeginOverlap (Target = KillBox)
   → Does Implement Interface (Test Object = Other Actor, Interface = BPI_Killable)
   → Branch (True →)
-  → Kill (Message)   Target ← Other Actor
+      → Actor Has Tag (Target = Other Actor, Tag = "Enemy")
+          True  → Destroy Actor (Other Actor)      # pit fall, bypasses bInvulnerable
+          False → Kill (Message) Target = Other Actor  # player → reload
 ```
+
+**Why `Destroy Actor` for enemies?** `BP_EnemyBase.Kill` returns early when
+`bInvulnerable` is true. A spikes-out turtle or a Rhino would otherwise survive
+the pit. Falling out of the world is the one allowed enemy trap death, so the
+volume removes the enemy outright; the player still gets the normal `Kill`
+event and respawn. The player-only equality gate belongs on the **trap
+activation** graphs (`BP_TrapBase`, `BP_Trap_Spikes`, `BP_Trap_FakeFloor`), not
+on this bottom-of-pit volume.
 
 1. Click **KillBox** in the Components panel → Details → Events →
    **+ On Component Begin Overlap**.
 2. Drag off **Other Actor** → search **Does Implement Interface** →
    set **Interface = BPI_Killable**.
-3. Drag off **Return Value** → **Branch**.
-4. **True** → drag off **Other Actor** again → search **Kill** → pick the
-   **(Message)** variant (the plain `Kill` node fails to compile) →
-   the Target pin auto-wires from Other Actor.
+3. Drag off **Return Value** -> **Branch**.
+4. **True** -> drag from the **exec** pin -> search **Actor Has Tag**;
+   set **Target = Other Actor**, **Tag = Enemy**. The live graph has the
+   **pure** form (no `exec` pins); that is fine, feed its `Return Value` to the
+   second Branch. If your node has `exec` / `then`, insert it in the chain.
+5. Second **Branch**; **Condition** = `Actor Has Tag.Return Value`. If your
+   `Actor Has Tag` is impure, `Actor Has Tag.then` -> this Branch's exec.
+6. **True** -> drag off **Other Actor** -> **Destroy Actor** (this is the
+   invulnerable-enemy fallback). **Check the Target pin**: drag `Other Actor`
+   onto `Destroy Actor`'s **Target** (`self`). An empty Target compiles clean
+   but destroys nothing - that was the 19 Oct failure; the live wire now
+   targets `Other Actor`.
+7. **False** -> drag off **Other Actor** -> **Kill (Message)**; the Target pin
+   auto-wires from Other Actor.
 
 ### ⚠️ THE RULE (broke earlier attempts — FakeFloorTrap.md)
 
@@ -171,6 +201,15 @@ hand-verifiable step: see Structure.md §11 table.)
   lowest walkable surface).
 - Standing on solid floor must not trigger it (KillBox only in the pit).
 
+### 5.4 Enemy pit test
+
+1. Place a `BP_SpikeTurtle` with `bSpikesOut=true` (or a Rhino) above the pit.
+2. Let it fall into the `KillBox`.
+3. **Expect:** the `Enemy` tag branch fires -> `Destroy Actor` -> the enemy is
+   removed. It must not survive because `bInvulnerable` short-circuits `Kill`.
+4. Repeat with a normal enemy: it is also destroyed in the pit, but ordinary
+   traps/spikes never damage it.
+
 ---
 
 ## Troubleshooting
@@ -181,6 +220,7 @@ hand-verifiable step: see Structure.md §11 table.)
 | Overlap fires, player doesn't die | Kill node is the plain `Kill` not **(Message)**, or Target not wired from Other Actor |
 | Compile error "must have valid target" | Message node created from empty space — re-drag off Other Actor |
 | "Does Implement Interface" always False | Interface set to wrong asset; must be `BPI_Killable` from `Core/Interfaces/` |
+| Enemy falls in pit but survives | Missing `Actor Has Tag(OtherActor, Enemy)` -> `Destroy Actor` branch, or the enemy lacks the `Enemy` tag |
 | Player dies, level doesn't reload | Open Level not wired, or level reference pin empty |
 | Dying in Level 2 reloads Level 1 | The old by-reference default was still wired — use Get Current Level Name (Remove Prefix ✓) per Part 3 |
 | Reloads but floor still gone | You teleported instead of reloading — use Open Level |

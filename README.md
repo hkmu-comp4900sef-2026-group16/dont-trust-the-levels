@@ -27,7 +27,10 @@ It also documents the things that cost us the most time to work out:
 - **§11 Automation boundary** — what Python can and cannot do
 
 Feature guides: **[`Docs/FakeFloorTrap.md`](Docs/FakeFloorTrap.md)** (paintable
-collapsing floor). Camera dead-zone: see the blueprint diagrams in
+collapsing floor), **[`Docs/Enemies.md`](Docs/Enemies.md)** (enemy base class
+and the nine mechanics), and **[`Docs/EnemyAI.md`](Docs/EnemyAI.md)** +
+**[`Docs/EnemyPlacement.md`](Docs/EnemyPlacement.md)** (AI rules and level
+placement). Camera dead-zone: see the blueprint diagrams in
 `Saved/Screenshots/Windows/DeadZoneCamera_Diagrams.html` (local only).
 
 **[`Docs/LfsLocking.md`](Docs/LfsLocking.md)** — **every member must read this
@@ -45,9 +48,11 @@ blueprint silently destroys one person's work.
 | Level 0 (`L_Level_00`) | ✅ floor, collision, background tilemap, fixed camera |
 | Player (`BP_Player`) | ✅ Ninja Frog, moves, jumps, flips, animation states |
 | Death & respawn | ✅ `BPI_Killable` → instant respawn at level start |
-| Trap base (`BP_TrapBase`) | ✅ overlap → interface → kill |
+| Trap base (`BP_TrapBase`) | ✅ player-only gate verified; enemies trap-neutral |
+| Pit death (`BP_KillVolume`) | ✅ player `Kill` + `Enemy`-tagged `Destroy Actor` verified (14 PASS) |
 | Trap art | ✅ Spikes, Saw imported |
-| Weapons / enemies / UI | ⬜ not started |
+| Enemies | 🟡 19 BP shells + Paper2D art; behaviour per `Docs/EnemyAI.md`; placement per `Docs/EnemyPlacement.md` |
+| Weapons / UI | ⬜ not started |
 
 ## Folder layout
 
@@ -56,7 +61,7 @@ blueprint silently destroys one person's work.
 | `Content/DontTrustTheLevels/` | **All game assets** (levels, blueprints, sprites, textures) | ✅ LFS |
 | `Content/2DSideScroller/` `Content/2DSideScrollerBP/` | UE template — **delete after migration** | ✅ LFS |
 | `Assets/PixelAdventure/` | Source PNGs (Pixel Adventure, CC0 by Pixel Frog) | ✅ LFS |
-| `Docs/` | Proposal, Structure.md, figures | ✅ |
+| `Docs/` | Proposal, Structure.md, Enemies.md, figures | ✅ |
 | `Config/` | Engine config (input, maps, plugins) | ✅ |
 | `Intermediate/` `Saved/` `DerivedDataCache/` | Generated — **never commit** | ❌ ignored |
 
@@ -86,7 +91,7 @@ Paper2D chain: `T_` → `SPR_` (sliced) → `FLB_` → `BP_`
 | 1 | Player controller & movement | `BP_Player`, movement, respawn | `Player/` + `Core/` |
 | 2 | Trap system | `BP_TrapBase` + children | `Traps/` |
 | 3 | Weapons & shooting | `BP_Weapon_*`, projectiles, melee | `Weapons/` |
-| 4 | Enemies | `BP_Mimic`, `BP_Sentinel`, `BP_Lurker`, `BP_Chaser` | `Enemies/` |
+| 4 | Enemies | `BP_EnemyBase` + nine enemy BPs, projectiles, hazards | `Enemies/` |
 | 5 | Level design & layout | level maps, difficulty curve | `Levels/` + `Environment/` |
 | 6 | UI, audio & progression | menus, HUD, SFX, save | `UI/` + `Audio/` |
 

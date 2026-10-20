@@ -9,9 +9,12 @@ the pit.
 texture ("paintable"), the grid can be any width and any number of rows, the
 floor any height. All of that is per-instance data — no per-level copies.
 
-> **Traps rule (all traps):** an overlap may only react to an actor that
-> implements `BPI_Killable`, never to a bullet. `Docs/TrapTriggers.md` has the
-> gate, the 19 Oct spike-trap bug, and the verifier (`Scripts/_verify_traps.py`).
+> **Traps rule (all traps):** an overlap may only react to the **player**, never
+> to a bullet or an enemy. Gate with
+> `Equal(OtherActor, Get Player Character(0))`; `BPI_Killable` is reserved for
+> damage and for `BP_KillVolume` at the pit bottom.
+> `Docs/TrapTriggers.md` has the gate, the 19 Oct spike-trap bug, and the
+> verifier (`Scripts/_verify_traps.py`).
 
 ```
 BP_Trap_FakeFloor (Actor)
@@ -218,9 +221,11 @@ Target the actor (Self), NOT a component — otherwise only one piece moves.
 4. "Paint": edit `CellPaint` — one palette index per cell, reading order
 5. Per-level look → re-point `TileSprites`; per-level height → move the actor
 
-**Pit death:** the player falls into the pit. Put `BP_Trap_Spikes` at the pit
-bottom, or build a reusable `BP_KillVolume` (same overlap→BPI_Killable→Kill
-chain, one box) for every future pit.
+**Pit death:** the player falls into the pit. Use a reusable `BP_KillVolume`
+(same overlap -> `BPI_Killable` -> `Kill` chain, one box) at the pit bottom, not
+spikes: the volume is the one trap-like actor allowed to kill **enemies** too
+(it destroys `Enemy`-tagged actors so even invulnerable enemies die).
+Spikes are player-only and must not hurt or be triggered by an enemy.
 
 ---
 
