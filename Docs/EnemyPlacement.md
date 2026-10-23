@@ -1,10 +1,15 @@
 # Enemy Placement Guide — what to place, where, and why
 
 **Audience:** level designers and anyone placing enemies in `L_Level_00`–`L_Level_02`.
-**Status (21 Oct 2026):** placement contract for the AI design in
-**`Docs/EnemyAI.md`**. `BP_EnemyPlatform` and the child AI graphs are not built
-yet; this is the target layout. Do not place enemies on the assumption that the
-old unlimited-range or follow-off-ledge behavior still exists.
+**Status (24 Oct 2026):** placement contract for the AI design in
+**`Docs/EnemyAI.md`**. The `BP_EnemyPlatform` marker and editor-time
+auto-placement exist; the child AI graphs are not built yet, so this is still
+the target layout. Do not place enemies on the assumption that the old
+unlimited-range or follow-off-ledge behavior still exists.
+
+**Team execution:** the owner split and the M4 placement gate are in
+**`Docs/EnemyWorkPlan.md`**. Only Owner A saves `L_Level_01`; B/C provide
+coordinates and test results.
 
 ---
 
@@ -44,6 +49,10 @@ home and as proof that a surface is a valid combat platform.
 | `bEnabled` | `true`; set `false` for safe rooms/cutscenes |
 | `PlatformId` | optional debug name, e.g. `P_01_Arena` |
 
+> **Current asset check (24 Oct 2026):** the boolean variable in
+> `BP_EnemyPlatform` is named `bEnable`. Rename it to `bEnabled` to match this
+> table and `Docs/EnemyAI.md`; the marker generator accepts both temporarily.
+
 **Do not** place a zone on a stair step, narrow trim, a pit, a wall top, or a
 moving platform. Do not let two zones overlap: `FindHomePlatform` takes the
 first matching actor, so overlap makes the result order-dependent.
@@ -78,6 +87,161 @@ enemy almost no travel range and can fall back to the edge-probe/stranded path.
 For a 400-wide zone, set `Box Extent.X = 200`; use `Box Extent.Y` for the
 platform depth and `Box Extent.Z = 20`. The actor origin Z is the floor surface.
 
+> **`Box Extent` is half-size, not a diameter.** The `200` above is only the
+> half-width of the 400-uu minimum Rock1 zone; it is **not** a default for every
+> platform. The walkable terrain grid in `L_Level_01` is **100 uu per tile**
+> (`TM_Background`: 16 px × 6.25 actor scale). Size the zone from the platform:
+>
+> | Walkable width | Terrain tiles | `Box Extent.X` |
+> |---:|---:|---:|
+> | 100 uu | 1 | 50 |
+> | 200 uu | 2 | 100 |
+> | 300 uu | 3 | 150 |
+> | 400 uu | 4 | 200 |
+>
+> The 400-uu tiles in `TM_BackgroundLayer` are background art, not the walkable
+> grid. `BP_Trap_FakeFloor` is 200 uu wide (2 terrain tiles), so its maximum
+> zone is `X = 100`; a 200-wide zone covers the whole floor. A Rock1 needs a
+> 400-uu / 4-tile platform before `X = 200` is correct.
+
+### One zone per surface, not per tile
+
+Do **not** place a `BP_EnemyPlatform` on every 100-uu tile. A zone describes a
+whole patrol surface, not one tile:
+
+- Adjacent floor tiles with the **same surface Z** and no gap form one run.
+  Place **one marker for the run**, centred on the run, with
+  `Box Extent.X = run width / 2`.
+- A different surface Z (step, ledge) or a missing tile (gap) starts a new run,
+  so use a separate marker.
+- If a run is very long, you may split it into encounter-sized zones (for
+  example, a maximum of 600–900 uu). Do not overlap the split zones.
+- The tile map already merges the collision; the marker only records patrol
+  bounds. Do not use one actor per tile, and do not merge zones at runtime.
+
+`L_Level_01` currently has two flat floor runs on the `TM_Background` `Floor`
+layer at Z = 0: a 9-tile / 900-uu run and a 27-tile / 2700-uu run. That is
+two markers, not forty. `BP_Trap_FakeFloor` is a separate 2-tile / 200-uu
+surface and needs its own marker (`X = 100`).
+
+To avoid hand-calculating every run, use:
+
+```text
+py -3 Scripts/_plan_enemy_platforms.py
+py -3 Scripts/_plan_enemy_platforms.py --max-width 900
+```
+
+It scans every walkable Floor surface and prints each marker's `centerX`,
+`centerY`, `surfaceZ` and `BoxExtent.X`. By default it keeps one marker per
+run; `--max-width` optionally splits long floors into non-overlapping patrol
+segments (with `--max-width 900`, the 2700-uu run becomes three 900-uu
+markers, so the level gets four markers total).
+
+Add `--apply` to delete the previous auto markers and create the new ones, and
+`--save` to save the level immediately:
+
+```text
+py -3 Scripts/_plan_enemy_platforms.py --apply --save
+```
+
+`--apply` refuses to run if `BP_EnemyPlatform` has no `Zone` component, and it
+only deletes markers tagged `EnemyPlatform.Auto`. Manual markers such as the
+`BP_Trap_FakeFloor` zone are left alone.
+
+### Automatic generation (editor-time bake)
+
+`Content/Python/init_unreal.py` runs when the editor opens and keeps the
+markers in sync while you paint:
+
+- It watches `TM_Background`'s `Floor` layer. After a tile change settles for
+  1.5 s, it rescans and rebuilds the auto markers.
+- Only that one source layer produces markers. Other layers (decoration,
+  background art, foreground art, etc.) are ignored even if they contain tiles
+  over the Floor. Layer lookup prefers an exact name first, so a
+  `FloorDecoration` layer cannot hijack the real `Floor`; if there is no exact
+  match it falls back to the first partial match.
+- `Floor` is a semantic name, not a visual requirement: floating platforms,
+  bridges, wall tops, and any other surface an enemy may patrol should be
+  painted on this same source layer if they should get an automatic marker. If
+  a walkable surface is on a different layer, either move/duplicate its surface
+  tiles onto `Floor`, select that layer as the source (`--layer`), or use a
+  hand-placed marker. The marker does not create collision; the platform still
+  needs its own tile or mesh collision.
+- **Paper2D collision is per tile, not per tile map or layer.** The tile map
+  only builds collision from the `CollisionData` shapes stored on each tile in
+  the tile set; a tile can render normally and still be walk-through. In
+  `TS_Terrain`, select a tile in the Tile Set Editor, use **Add Box Shape** to
+  cover the 16x16 tile, then click **Refresh Maps** (the refresh icon) and save
+  the tile set and any tile maps it reports dirty. The generator only checks
+  that a `Floor` cell has a tile, not whether that tile has collision, so it can
+  place a zone over a non-colliding surface.
+  **Fixed 24 Oct 2026:** Floor tiles 94–96 (the 8-cell platform at row 51,
+  world X ≈ -800..0, Z ≈ 800) now have a 16×16 collision box. Re-check this
+  section after any `TS_Terrain` edit; a tile can still render and be
+  walk-through until its collision shape is added.
+- It also reads the `Wall` layer as blockers. A Wall tile on a Floor cell, or
+  directly above it, is not walkable and splits the run there. Both layers are
+  hashed, so painting or erasing a Wall also triggers a rebuild. Change
+  `DEFAULT_OBSTACLE_LAYER` or pass `--obstacle-layer=` (empty) to disable this.
+- Other layers are not scanned for blockers either. Only the configured
+  obstacle layer can split a run; every other layer is completely ignored.
+- It only touches actors tagged `EnemyPlatform.Auto`; hand-placed markers are
+  never deleted.
+- It runs in the editor only. The generated actors live in the current level;
+  save (`Ctrl+S`) to bake them into the `.umap`. PIE uses the current editor
+  level, so the markers are present even before you save; packaging should use
+  a saved level.
+- It skips PIE/simulate and levels without the `Floor` tile map.
+- It uses one marker per run (`DEFAULT_MAX_WIDTH = 0`). If you want split
+  zones, set `DEFAULT_MAX_WIDTH` in `Content/Python/enemy_platforms.py` and
+  pass the same `--max-width` to the CLI.
+- To turn the watcher off for a session, set `AUTO_SYNC_ENABLED = False` in
+  `Content/Python/init_unreal.py`.
+
+The watcher is a convenience, not a runtime system. The final `.umap` contains
+ordinary `BP_EnemyPlatform` actors; `FindHomePlatform` never scans tiles.
+
+`BP_EnemyPlatform` needs `Zone`, `PatrolInset`, `bEnabled` and `PlatformId`
+once. The generator can create the markers before the three variables exist,
+but it warns until they are added; `Zone` is mandatory.
+
+### Optional: paint the zones like a tile map
+
+Scanning every floor tile is correct when all walkable floor is patrolable.
+The `Wall`-layer check only sees tile-map blockers on the configured obstacle
+layer; a collidable static mesh or sprite standing on a Floor tile, or a
+collidable tile on another layer, is invisible to the marker scan. For those,
+paint the free cells on an `EnemyZones` layer or leave a hand-placed marker
+instead; do not let one auto marker span something that splits the platform in
+two.
+
+If only some surfaces should host enemies, add a second `PaperTileLayer`
+named `EnemyZones` to `TM_Background` and paint a marker tile wherever a platform
+zone is allowed. Any tile asset works; it does not need collision and can be
+hidden in game. Then point the planner at that layer:
+
+```text
+py -3 Scripts/_plan_enemy_platforms.py --layer EnemyZones
+```
+
+Now the level designer paints zones in the tile map editor instead of placing
+markers one by one. Keep the zone tiles on the same grid positions as the
+floor; the planner reads their center and surface Z exactly like Floor tiles.
+If the `EnemyZones` layer does not exist, the planner reports an error; use
+`--layer Floor` when every walkable surface should be considered. To make the
+editor watcher read `EnemyZones` too, change `DEFAULT_LAYER` in
+`Content/Python/enemy_platforms.py` to `"EnemyZones"`.
+
+Both options only decide **where the markers go**. `FindHomePlatform` does not
+read the `Floor` or `EnemyZones` layer; it reads `BP_EnemyPlatform.Zone`. If no
+marker is baked into the level, the enemy has no home platform. The floor is
+the input to the planner, not a runtime substitute for the marker.
+
+The markers are independent actors, not children of the tile map. The editor
+watcher (or an explicit `--apply`) moves and resizes the auto-tagged ones after
+terrain edits; hand-placed markers such as the fake-floor zone still need to be
+updated by hand.
+
 ### Spawn clearance
 
 Place the enemy’s **capsule centre** at least `EffectiveInset` from the zone
@@ -109,9 +273,9 @@ player’s.
 | `BP_Rock2` | patrol + chase, splits ×2 | ground, `MoveSpeed=140` | rectangle `700×500`, de-aggro `2 s` | `1`; health `2` | Medium/broad platform |
 | `BP_Rock3` | patrol + chase, final tier | ground, `MoveSpeed=180` | rectangle `700×500`, de-aggro `2 s` | `1`; health `1` | Narrower ledge (min 300) |
 | `BP_Snail` | slow patrol; shell after death | ground, `MoveSpeed=50`; shell `600` for `8 s` | none | `1`; health `2`; shell invulnerable | Long flat platform with room to sweep |
-| `BP_Ghost` | phasing flyer | flying, `250`; direct XZ chase | sphere `550`, no de-aggro | `1` only visible; health `2` | Room or vertical shaft, away from spawn |
+| `BP_Ghost` | phasing flyer | flying, `MoveSpeed=80`, `MaxFlySpeed=250`; direct XZ chase | sphere `550`, no de-aggro | `1` only visible; health `2` | Room or vertical shaft, away from spawn |
 | `BP_ToxicSlime` | patrol + puddle trail | ground, `MoveSpeed=70` | none | `1`; health `3` | Flat floor/corridor, not a ledge |
-| `BP_Rhino` | wall-health charger | ground, `MoveSpeed=450`; horizontal charge | rectangle `1200×500`, de-aggro `2 s` | `1`; **4 wall hits**; bullets no-op | Long corridor with solid walls at both ends |
+| `BP_Rhino` | wall-health charger | ground, `MoveSpeed=120`; charge `600` | rectangle `1200×500`, de-aggro `2 s` | `1`; **4 wall hits**; bullets no-op | Long corridor with solid walls at both ends |
 | `BP_FloatingSkull` | bouncing toggle hazard | flying, `350`; `BounceSpeed≈300` | none | `1` only when ON; health `2` | Enclosed bounce corridor, not open sky |
 | `BP_Bat` | ceiling ambusher | hangs, then flying `400` | sphere `300`, no de-aggro | `1` after trigger; health `2` | Under a ceiling with clear flight space |
 | `BP_WoodLog` | moving ranged shooter | ground, `MoveSpeed=90`; stops to shoot | rectangle `1400×500`, de-aggro `2 s`; fire `2.5 s` | `1`; health `3` | Long horizontal lane with clear line of fire |

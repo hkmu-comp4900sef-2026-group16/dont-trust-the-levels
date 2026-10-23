@@ -1,11 +1,12 @@
 # Enemies — base class, nine mechanics, and build sheets
 
-**Status (19 Oct 2026):** the Enemy pillar has **19 Blueprint shells** under
+**Status (24 Oct 2026):** the Enemy pillar has **20 Blueprint shells** under
 `Content/DontTrustTheLevels/Enemies/Blueprints/`, created by
-`Scripts/_make_enemies.py`. All 19 were new (the folder contained only
-`.gitkeep`); the generator skips existing assets unless `--update-defaults` is
-passed. Their inherited Paper2D, capsule, movement, tag and lifespan defaults
-pass **196 / 0 / 0** in `Scripts/_verify_enemies.py`.
+`Scripts/_make_enemies.py`. The 19 enemy shells were new in the first pass; the
+20th, `BP_EnemyPlatform`, is the platform marker added for the `EnemyAI.md`
+rework. Their inherited Paper2D, capsule, movement, tag and lifespan defaults
+pass **199 / 0 / 2** in `Scripts/_verify_enemies.py` (the two warnings are the
+expected "Zone component not added yet" hand-work note on `BP_EnemyPlatform`).
 
 This build's Python **cannot create event graphs, variables, functions, SCS
 components or implemented interfaces** (probed in
@@ -13,6 +14,12 @@ components or implemented interfaces** (probed in
 real and configured; the behaviour below is the **hand work** left in the
 editor. The same boundary is documented in `ProjectileShooting.md` §“Limits”
 and `Structure.md` §11.
+
+**Team execution (24 Oct 2026):** `Docs/EnemyWorkPlan.md` assigns this work to
+three owners, defines the M1 base gate, the asset locks and the per-enemy
+acceptance tests. Walkers still cannot start before the `BP_EnemyBase` AI gate;
+stationary/flyers and the projectile/puddle/shooter support may run in parallel.
+The work plan does not override the technical rules below.
 
 > **⚠ 21 Oct 2026 AI revision.** Movement, patrol, detection, platform
 > ownership, stairs and contact-damage collision are redefined in
@@ -33,6 +40,7 @@ and `Structure.md` §11.
 | `BP_EnemyBase` | `PaperCharacter` | shared health / damage / death / contact / facing | — |
 | `BP_ShooterEnemyBase` | `BP_EnemyBase` | shared ranged logic (fire interval, muzzle, projectile) | — |
 | `BP_RockBase` | `BP_EnemyBase` | shared split logic / piece cap | — |
+| `BP_EnemyPlatform` | `Actor` | hidden walkable-platform marker for patrol/home zones | — |
 | `BP_SpikeTurtle` | `BP_EnemyBase` | spikes-out invulnerability | `FLB_Turtle_Idle01` |
 | `BP_PeaPlant` | `BP_ShooterEnemyBase` | **unused** — Wood Log is the only shooter | `FLB_Plant_Idle` |
 | `BP_WoodLog` | `BP_ShooterEnemyBase` | moving wood shooter | `FLB_Trunk_Idle` |
@@ -438,6 +446,8 @@ Branch: Get Game Time in Seconds < NextFireTime → return
 Get Player Character (0) → Is Valid? → false: return
 SetFacing (Player.X - Self.X)
 PlayStateFlipbook (AttackFlipbook, false)
+Set bCanShoot = false
+Set bCanMove  = false
 Spawn Actor from Class:
   Class = ProjectileClass
   Spawn Transform = Self.ActorTransform
@@ -548,6 +558,21 @@ All children inherit §3–§4. Only the child-specific additions are listed her
 Set each child's **Class Defaults** for the variables in the tables; the
 generator already set the capsule, movement mode/speeds and idle flipbook.
 
+**Movement authority (24 Oct 2026):** a child has exactly one movement loop.
+Walkers (`Rocks`, `Snail`, `Slime`, `Rhino`, `WoodLog`) use the base
+`Event Tick` → `PatrolStep` / `ChaseStep` and never add a second movement Tick.
+Stationary/flyers (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) set
+`bCanMove=false`; their own Tick / `LaunchCharacter` is the only movement.
+`ChaseSpeed=0` for Turtle/Ghost/Skull; Bat inherits `ChaseSpeed=300` because
+that value is also its `MaxFlySpeed`. `ChaseSpeed=0` also means "no detection"
+for Snail and Slime. See `EnemyAI.md` §4.3.
+
+**Do not duplicate inherited variables.** `bAggro`, `AggroRadius`, `ChaseSpeed`,
+`MoveSpeed`, `KnockbackForce`, `Facing`, the health/contact variables and
+`IdleFlipbook`/`HitFlipbook`/`DeathFlipbook` already exist on `BP_EnemyBase`.
+The tables list only **new** names; a child value for an inherited variable
+belongs in **Class Defaults**.
+
 ### 6.1 Spike Turtle — `BP_SpikeTurtle`
 
 **Goal:** cannot be damaged while thorns are out.
@@ -565,8 +590,8 @@ generator already set the capsule, movement mode/speeds and idle flipbook.
 | `IdleFlipbookB` | Paper Flipbook | `FLB_Turtle_Idle02` |
 | `bIdleAlt` | Boolean | `false` |
 
-**Defaults (21 Oct 2026 revision):** `bCanMove=false`, `bUseHealth=false`,
-`bInvulnerable=true`, `ContactDamage=1`, `MaxHealth=3`,
+**Defaults (21 Oct 2026 revision):** `bCanMove=false`, `ChaseSpeed=0`,
+`bUseHealth=false`, `bInvulnerable=true`, `ContactDamage=1`, `MaxHealth=3`,
 `HitFlipbook=FLB_Turtle_Hit`, `DeathFlipbook=FLB_Turtle_Hit`.
 
 **BeginPlay:** call `InitEnemy`; `Set Timer by Function Name("SpikeCycle",
@@ -628,6 +653,7 @@ component broadcasting a finish delegate.
 |---|---|---|---|
 | `MaxHealth` | `3.0` | `2.0` | `1.0` |
 | `MoveSpeed` | `100` | `140` | `180` |
+| `ChaseSpeed` | `120` | `160` | `200` |
 | `RockTier` | `1` | `2` | `3` |
 | `ChildRockClass` | `BP_Rock2` | `BP_Rock3` | `None` |
 | `bCanSplit` | `true` | `true` | `false` |
@@ -694,7 +720,7 @@ cannot be killed.
 | `ShellTopHitFlipbook` | Paper Flipbook | `FLB_Snail_ShellTopHit` |
 | `WithoutShellFlipbook` | Paper Flipbook | `FLB_Snail_WithoutShell` |
 
-**Defaults:** `MaxHealth=2`, `MoveSpeed=50`, `ContactDamage=1`,
+**Defaults:** `ChaseSpeed=0`, `MaxHealth=2`, `MoveSpeed=50`, `ContactDamage=1`,
 `IdleFlipbook=FLB_Snail_Idle`, `HitFlipbook=FLB_Snail_Hit`,
 `DeathFlipbook=FLB_Snail_Hit`.
 
@@ -717,6 +743,7 @@ Set ContactDamage        = ShellContactDamage
 Set MoveSpeed            = ShellSpeed
 Set MaxWalkSpeed         = ShellSpeed
 Set bCanMove             = true
+Set bAggro               = false
 PlayStateFlipbook (ShellIdleFlipbook, true)
 Set Life Span (ShellLifetime)
 ```
@@ -728,13 +755,20 @@ capsule). The shell remains a hazard.
 
 **Shell movement / wall reaction**
 
+The shell keeps the shared walker loop. `Die` sets `MoveSpeed=ShellSpeed`,
+`MaxWalkSpeed=ShellSpeed`, `bCanMove=true` and `bAggro=false`, so base
+`PatrolStep` sweeps the platform and `LedgeAhead` turns it at the edge. Do
+**not** add a second `Event Tick`; the base Tick is the only movement authority
+(`EnemyAI.md` §4.3).
+
 ```text
-Event Tick → Add Movement Input((Facing,0,0), 1)
 Event Hit  → Break Hit Result
   Branch: Abs(Normal.X) > 0.7 AND OtherActor != Get Player Character(0)
-    True → SetFacing(-Facing)
-           PlayStateFlipbook(ShellWallHitFlipbook, false)
-           Set Timer by Function Name("BackToShellIdle", 0.25, false)
+    True → SetFacing(-Facing)              # keep the normal wall reversal
+           Branch: bShellPhase
+             True  → PlayStateFlipbook(ShellWallHitFlipbook, false)
+                     Set Timer by Function Name("BackToShellIdle", 0.25, false)
+             False → RefreshStateFlipbook
 ```
 
 `BackToShellIdle` → `PlayStateFlipbook(ShellIdleFlipbook, true)`.
@@ -757,17 +791,17 @@ chases directly through walls.
 | Name | Type | Default |
 |---|---|---|
 | `bInvisible` | Boolean | `true` |
-| `bAggro` | Boolean | `false` |
-| `AggroRadius` | Float | `550.0` |
 | `VisibleTime` | Float | `2.5` |
 | `InvisibleTime` | Float | `2.0` |
 | `FadeTime` | Float | `0.5` |
 | `AppearFlipbook` | Paper Flipbook | `FLB_Ghost_Appear` |
 | `DisappearFlipbook` | Paper Flipbook | `FLB_Ghost_Disappear` |
 
-**Defaults:** `MaxHealth=2`, `MoveSpeed=80`, `ContactDamage=1`,
+**Defaults:** `bCanMove=false`, `ChaseSpeed=0`, `AggroRadius=550`,
+`MaxHealth=2`, `MoveSpeed=80`, `ContactDamage=1`,
 `IdleFlipbook=FLB_Ghost_Idle`, `HitFlipbook=FLB_Ghost_Hit`,
-`DeathFlipbook=FLB_Ghost_Hit`.
+`DeathFlipbook=FLB_Ghost_Hit`. `bAggro` and `AggroRadius` are inherited from
+`BP_EnemyBase`; do not add them again.
 
 **BeginPlay:** `InitEnemy`; start fully hidden and harmless:
 `bInvisible=true`, `Sprite0` visibility false, `CollisionCylinder` NoCollision,
@@ -854,7 +888,7 @@ visible phase. Visible = vulnerable, contact `1`. There is no
 | `PuddleOffset` | Vector | `(0, 0, -60)` |
 | `bLeaveTracks` | Boolean | `true` |
 
-**Defaults:** `MaxHealth=3`, `MoveSpeed=70`, `ContactDamage=1`,
+**Defaults:** `ChaseSpeed=0`, `MaxHealth=3`, `MoveSpeed=70`, `ContactDamage=1`,
 `IdleFlipbook=FLB_Slime_IdleRun`, `HitFlipbook=FLB_Slime_Hit`,
 `DeathFlipbook=FLB_Slime_Hit`.
 
@@ -899,7 +933,6 @@ hit or in a `BP_KillVolume`.
 | Name | Type | Default |
 |---|---|---|
 | `bCharging` | Boolean | `false` |
-| `MoveSpeed` | Float | `120.0` |
 | `ChargeSpeed` | Float | `600.0` |
 | `ChargeDirection` | Float | `1.0` |
 | `WallHitCooldown` | Float | `0.5` |
@@ -907,18 +940,22 @@ hit or in a `BP_KillVolume`.
 | `RunFlipbook` | Paper Flipbook | `FLB_Rino_Run` |
 | `HitWallFlipbook` | Paper Flipbook | `FLB_Rino_HitWall` |
 
-**Defaults:** `MaxHealth=4`, `CurrentHealth=4`, `bUseHealth=true`,
+**Defaults:** `MoveSpeed=120`, `ChaseSpeed=600`, `ChargeSpeed=600`,
+`MaxHealth=4`, `CurrentHealth=4`, `bUseHealth=true`,
 `bInvulnerable=true` (bullets/Kill no-op), `ContactDamage=1`,
 `IdleFlipbook=FLB_Rino_Idle`, `HitFlipbook=FLB_Rino_Hit`,
-`DeathFlipbook=FLB_Rino_HitWall`.
+`DeathFlipbook=FLB_Rino_HitWall`. `MoveSpeed` is inherited from
+`BP_EnemyBase`; do not add it again.
 
 **BeginPlay:** `InitEnemy`; `Set bInvulnerable=true`;
 `Set bDealContactDamage=true`; `SetFacing(ChargeDirection)`;
 `Set MaxWalkSpeed=MoveSpeed`; `PlayStateFlipbook(IdleFlipbook, true)`.
 The rectangle detection is the long one: `AggroHalfWidth=1200`,
-`AggroHalfHeight=500`, `DeAggroTime=2.0`. On aggro, `bCharging=true`,
-`MaxWalkSpeed=ChargeSpeed`, face the player horizontally. On de-aggro,
-`bCharging=false`, resume patrol. No vertical movement.
+`AggroHalfHeight=500`, `DeAggroTime=2.0`. `ChaseSpeed=600` makes the base
+`ChaseStep` use charge speed. Override `UpdateAggro`, call
+`Parent: UpdateAggro`, then set `bCharging=bAggro`: on aggro it faces the
+player horizontally and charges; on de-aggro it resumes patrol. No vertical
+movement.
 
 **`Event Hit` — the only damage path**
 
@@ -968,7 +1005,8 @@ a `BP_KillVolume`.
 | `bUseWallAlternate` | Boolean | `false` |
 | `BounceSpeed` | Float | `300.0` |
 
-**Defaults:** `MaxHealth=2`, `ContactDamage=1`, `MoveSpeed=300`,
+**Defaults:** `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`,
+`ContactDamage=1`, `MoveSpeed=300`,
 `HitFlipbook=FLB_Skull_Hit`, `DeathFlipbook=FLB_Skull_Hit`.
 
 **BeginPlay:** `InitEnemy`; `Set bPoweredOn=true`;
@@ -1034,14 +1072,14 @@ and floors**. No de-aggro once triggered.
 | `bTriggered` | Boolean | `false` |
 | `bChasing` | Boolean | `false` |
 | `TriggerRadius` | Float | `300.0` |
-| `ChaseSpeed` | Float | `300.0` |
 | `CeilingInFlipbook` | Paper Flipbook | `FLB_Bat_CeilingIn` |
 | `CeilingOutFlipbook` | Paper Flipbook | `FLB_Bat_CeilingOut` |
 | `FlyingFlipbook` | Paper Flipbook | `FLB_Bat_Flying` |
 | `HangingFlipbook` | Paper Flipbook | `FLB_Bat_Idle` |
 
-**Defaults:** `MaxHealth=2`, `ContactDamage=1`, `HitFlipbook=FLB_Bat_Hit`,
-`DeathFlipbook=FLB_Bat_Hit`.
+**Defaults:** `bCanMove=false`, `ChaseSpeed=300`, `MaxHealth=2`,
+`ContactDamage=1`, `HitFlipbook=FLB_Bat_Hit`, `DeathFlipbook=FLB_Bat_Hit`.
+`ChaseSpeed` is inherited from `BP_EnemyBase`; do not add it again.
 
 **BeginPlay:** `InitEnemy`; `Set bDealContactDamage=false`;
 `PlayStateFlipbook(CeilingInFlipbook,false)`;
@@ -1093,6 +1131,13 @@ damage is enabled only after the trigger, so a hanging bat is safe to touch.
 
 ### 7.1 Build order (do not skip ahead)
 
+> **Parallel split (24 Oct 2026):** `Docs/EnemyWorkPlan.md` assigns this order to
+> three owners. The "do not skip ahead" rule still applies to **walkers**: they
+> wait for the M1 `BP_EnemyBase` gate. Stationary/flyer children
+> (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/
+> shooter support may be built in parallel because they do not read the walker
+> AI.
+
 0. **Trap contract first (DONE - 14 PASS).** `Docs/TrapTriggers.md` §4.0
    audits the live graphs: `BP_TrapBase`, `BP_Trap_Spikes`, `BP_Trap_FakeFloor`
    and `BP_Trap_FallPlat` are player-only and **PASS**. `BP_KillVolume` passes
@@ -1100,25 +1145,25 @@ damage is enabled only after the trigger, so a hanging bat is safe to touch.
    with `Target = OtherActor`). `BP_EnemyBase` implements `BPI_Killable`. Run
    `py -3 Scripts\_verify_traps.py` to confirm 14 PASS before enemy behaviour
    work.
-0a. **Contact fix (do this first).** Add `ContactBox` to `BP_EnemyBase`
-    (`Pawn=Overlap`, all else `Ignore`, generate overlaps) and bind its
-    `On Component Begin Overlap` to the contact chain; or set the capsule's
-    `Pawn` response to `Overlap`. The current actor `ActorBeginOverlap` cannot
-    fire while both capsules are `Pawn=Block`. PIE-test one enemy touching the
-    player before building child AI. See `EnemyAI.md` §9.
-0b. **`BP_EnemyPlatform`** — box marker (no collision, hidden in game) and
-    place one on each intended enemy platform. See `EnemyPlacement.md` for the
-    per-enemy minimum widths and placement rules. Then `BP_EnemyBase` gets the
-    platform/aggro state from `EnemyAI.md` §4–7. Compile + save.
-1. **`BP_EnemyBase`** — Class Settings → `BPI_Killable`; add variables; build
-   `InitEnemy`, `AnyDamage`, `Kill`, contact overlap, `Die`,
-   `PlayStateFlipbook`, `SetFacing`, `ClearIFrames`, `RecoverFromHit`,
-   `RefreshStateFlipbook`, plus the `EnemyAI.md` §4–7 helpers. Compile + save.
+0a. **DONE — contact fix (24 Oct 2026).** `ContactBox` is on
+    `BP_EnemyBase` (`Pawn=Overlap`, all else `Ignore`, generate overlaps), and
+    its `On Component Begin Overlap` is bound to the contact chain. The verifier
+    reports **44 PASS / 0 FAIL**. See `EnemyAI.md` §9.
+0b. **DONE — `BP_EnemyPlatform`** — box marker (no collision, hidden in game);
+    seven auto zones exist in `L_Level_01`. Remaining cleanup: rename `bEnable`
+    to `bEnabled`. See `EnemyPlacement.md` for per-enemy minimum widths.
+1. **`BP_EnemyBase` — shared health block DONE; AI core NEXT.** Class Settings
+   already implements `BPI_Killable`; `InitEnemy`, `AnyDamage`, `Kill`, contact
+   overlap, `Die`, `PlayStateFlipbook`, `SetFacing`, `ClearIFrames`,
+   `RecoverFromHit` and `RefreshStateFlipbook` are verified. Add the
+   `EnemyAI.md` §4–7 variables and helpers next. Compile + save.
 
-   **Harness ready (19 Oct, base complete 21 Oct):**
+   **Harness ready (19 Oct, contact check added 24 Oct):**
    `py -3 Scripts\_verify_enemy_base.py` checks this whole block from a fresh
-   T3D + live CDO. It now reports **43 PASS / 0 FAIL / 0 PENDING** against the
-   finished base graph. Re-run it after the contact/platform additions.
+   T3D + live CDO + a transient spawned instance. It now also verifies the
+   compiled `ContactBox` and its `On Component Begin Overlap` chain. Expected
+   once the box's non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 0
+   PENDING**.
 2. **`BP_EnemyProjectile`** — add `SphereCollision` + `ProjectileMovement`;
    add `InitProjectile`, `BeginPlay`, `On Component Hit`. Compile + save the
    `_Wood` child. `_Pea` is unused and can remain a shell.
@@ -1160,10 +1205,12 @@ capsule radius/half-height, movement defaults, tags, `InitialLifeSpan`, and the
 base `AutoPossessAI`. It does **not** test event graphs.
 
 `_verify_enemy_base.py` is the step-1 graph audit. It re-exports
-`BP_EnemyBase`, reads the live CDO + `BPI_Killable`, and checks every §3.2
-variable (type/default), §3.3 function signature, `Kill` event binding, and the
-§4 event/helper graphs. `PENDING` means not built yet; `FAIL` means present but
-mis-wired. Current baseline: **43 PASS / 0 FAIL / 0 PENDING**.
+`BP_EnemyBase`, reads the live CDO + `BPI_Killable`, spawns a transient
+instance for SCS components, and checks every §3.2 variable (type/default),
+§3.3 function signature, `Kill` event binding, the §4 event/helper graphs, and
+the `ContactBox` collision setup. `PENDING` means not built yet; `FAIL` means
+present but mis-wired. Expected baseline once `ContactBox` is compiled and its
+non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 0 PENDING**.
 
 ---
 
@@ -1219,10 +1266,16 @@ mis-wired. Current baseline: **43 PASS / 0 FAIL / 0 PENDING**.
 - **No graph authoring from Python.** Event graphs, functions, variables,
   interfaces and SCS components are hand work in this UE 4.27.2 build. The
   generator only creates/configured the shells.
-- **`BP_EnemyBase` behaviour graph is complete (43 PASS, 21 Oct).** `Kill`,
-  `AnyDamage`/health, `ActorBeginOverlap` contact damage, `Die` and the helper
+- **`BP_EnemyBase` health/contact block is complete (44 PASS, 24 Oct).** `Kill`,
+  `AnyDamage`/health, the `ContactBox` overlap chain, `Die` and the helper
   bodies are in place, so bullets damage enemies and `BP_KillVolume` can still
-  identify and destroy them. Ordinary traps must **never** damage enemies.
+  identify and destroy them. The AI core (patrol/aggro/knockback) is the next
+  block, not part of this completed health work. Ordinary traps must **never**
+  damage enemies.
+- **`bCanMove` is a shared-AI gate.** It is a Blueprint boolean, not a
+  `CharacterMovement` property. Walkers keep it true (Wood Log temporarily
+  false while firing); stationary/flyers set it false so the base walker loop
+  is skipped while their own Tick/Launch moves them. See `EnemyAI.md` §4.3.
 - **Wood Log is the only shooter; Pea Plant is intentionally unused.** The
   `BP_PeaPlant` and `BP_EnemyProjectile_Pea` assets remain in the project but
   are not part of the build order or required PIE tests. Wood Log now uses a
@@ -1231,10 +1284,11 @@ mis-wired. Current baseline: **43 PASS / 0 FAIL / 0 PENDING**.
   `EnemyAI.md` §8.9.
 - **`BP_EnemyProjectile` and `BP_ToxicPuddle` have no collision/movement**
   until the hand-added components in §5.2/§5.4.
-- **Contact damage is currently dead.** The inherited capsule is
-  `Pawn=Block` on both enemy and player, so actor-level `ActorBeginOverlap`
-  never fires. Add a `ContactBox` overlap component (recommended) or set the
-  capsule's `Pawn` response to `Overlap`. See `EnemyAI.md` §9.
+- **`ContactBox` contact fix is done (24 Oct).** The box is on
+  `BP_EnemyBase` (`Pawn=Overlap`, all other channels `Ignore`, generate
+  overlaps) and its `On Component Begin Overlap` is bound to the contact chain;
+  the verifier holds 44 PASS / 0 FAIL. Do not use the blocking capsule for
+  contact events. See `EnemyAI.md` §9.
 - **Player has no health.** Contact and projectiles call `Kill`; add health to
   `BP_Player` later if you want multi-hit damage. `ContactDamage` is `1.0`
   everywhere; the old `2.0` turtle/shell values are removed.
@@ -1272,9 +1326,11 @@ mis-wired. Current baseline: **43 PASS / 0 FAIL / 0 PENDING**.
   of jumping into a pit. See `EnemyAI.md` §3 and §7.
 - **No navmesh/pathfinding.** Walkers turn at walls; Bat can stick on a wall.
   This is accepted for the current scope.
-- **No enemy is placed in a level yet.** The shells exist in
-  `Enemies/Blueprints/`; drag instances into `L_Level_00` (or a test map) and
-  set their Class Defaults.
+- **Enemies are not placed for production yet.** Only `BP_Snail` is currently
+  in `L_Level_01` at `(-451, 9, 225)`; it does not match an auto zone, so treat
+  it as a leftover test instance. Drag production instances into `L_Level_01`
+  (or a test map), place a `BP_EnemyPlatform` under walkers, and set their Class
+  Defaults.
 - **Auto Possess AI is enabled** (`Placed In World Or Spawned`) so
   `Add Movement Input` works without a custom AI controller. There is still no
   Behavior Tree, perception, or navmesh logic.
@@ -1288,6 +1344,7 @@ mis-wired. Current baseline: **43 PASS / 0 FAIL / 0 PENDING**.
 | `Docs/Enemies.md` | this build sheet |
 | `Docs/EnemyAI.md` | 21 Oct movement/detection/platform/stairs revision |
 | `Docs/EnemyPlacement.md` | shared level-placement guide for all enemy types |
+| `Docs/EnemyWorkPlan.md` | three-owner execution split, gates and work cards |
 | `Docs/Structure.md` | enemy tree/ownership now points here |
 | `README.md` | enemy status + guide link |
 | `Scripts/_make_enemies.py` | local-only generator (gitignored) |

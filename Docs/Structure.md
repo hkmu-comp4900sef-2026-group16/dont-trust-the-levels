@@ -240,8 +240,8 @@ T_  (texture)  ->  SPR_ (sprite, sliced)  ->  FLB_ (flipbook)  ->  BP_ (logic)
 See `Docs/Paper2DArt.md` for the generated asset map, exclusions, and rebuild
 commands (`Scripts/make_paper2d_assets.py`). See `Docs/Enemies.md` for the
 enemy shells, the `BP_EnemyBase` contract, and the hand-built behaviour sheets;
-`Docs/EnemyAI.md` for the AI rules; and `Docs/EnemyPlacement.md` for level
-placement.
+`Docs/EnemyAI.md` for the AI rules; `Docs/EnemyPlacement.md` for level
+placement; and `Docs/EnemyWorkPlan.md` for the three-owner execution split.
 
 ---
 

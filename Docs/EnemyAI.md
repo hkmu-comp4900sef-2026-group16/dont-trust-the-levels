@@ -1,11 +1,16 @@
 # Enemy AI — platforms, patrol, detection, aggro and stairs
 
-**Status (21 Oct 2026): design locked, build sheet only.** The existing enemy
-Blueprints are still shells; `BP_EnemyBase` has its shared health/damage/death
-graph (43 PASS), but no child movement or detection graph is built yet. This
-document supersedes the movement/detection passages in `Docs/Enemies.md` where
-they disagree. The level-placement rules distilled from this document are in
-**`Docs/EnemyPlacement.md`** for level designers.
+**Status (24 Oct 2026): design locked; shared base only.** `BP_EnemyBase` has
+its shared health/damage/death graph and the `ContactBox` contact fix
+(**44 PASS**), and `BP_EnemyPlatform` auto-placement works (7 auto zones in
+`L_Level_01`). The AI core is **not built yet**: none of the new §4 AI variables
+(`ChaseSpeed`, `bAggro`, `HomePlatform`, …) or the §3/§5/§6 helper functions
+exist. The existing `MoveSpeed`/`bCanMove` remain. The next work item is §10
+step 2, not a child enemy. This document supersedes the movement/detection
+passages in `Docs/Enemies.md` where they disagree. The level-placement rules
+distilled from this document are in **`Docs/EnemyPlacement.md`** for level
+designers. The three-person execution split, gates and asset locks are in
+**`Docs/EnemyWorkPlan.md`**.
 
 **Engine:** Unreal Engine **4.27.2**, Blueprint-only, Paper2D. No C++, no
 Behavior Tree, no EQS, no NavMesh. Movement is `Add Movement Input` with a
@@ -75,6 +80,12 @@ Create a new `Actor` blueprint in `Enemies/Blueprints` named
 | `PatrolInset` | Float `80.0` — minimum edge margin; the enemy uses `Max(PatrolInset, CapsuleRadius + 20)` |
 | `bEnabled` | Boolean `true` — lets a designer disable a platform |
 | `PlatformId` | Name/Integer — optional debugging label |
+
+> **Current asset check (24 Oct 2026):** `BP_EnemyPlatform` has `Zone`,
+> `PatrolInset = 80` and `PlatformId`, but its boolean is currently named
+> **`bEnable`**, not `bEnabled`. Rename it to `bEnabled` before building
+> `FindHomePlatform` so the graph matches this document. The generator accepts
+> both spellings in the meantime.
 
 The box covers the **walkable top surface** of one intended enemy platform. Its
 `Box Extent.Z` can be small (e.g. `20`); the Z check uses a tolerance, not the
@@ -202,7 +213,7 @@ Add these in **My Blueprint → Variables**. Existing variables are in
 | `MaxPatrolStepZ` | Float | `15.0` | flat-platform tolerance |
 | `GroundZ` | Float | `0.0` | current platform surface Z |
 | `PlayerGroundProbeDepth` | Float | `600.0` | reachability trace below player |
-| `HomePlatform` | Actor | `None` | `BP_EnemyPlatform` reference |
+| `HomePlatform` | `BP_EnemyPlatform` object reference | `None` | current home zone |
 | `PatrolMinX` | Float | `0.0` | runtime world-space bound |
 | `PatrolMaxX` | Float | `0.0` | runtime world-space bound |
 | `RescueRadius` | Float | `500.0` | stranded search radius |
@@ -213,6 +224,55 @@ Add these in **My Blueprint → Variables**. Existing variables are in
 Child defaults override `MoveSpeed`, `ChaseSpeed`, the aggro box/sphere and
 `DeAggroTime`. Do **not** set `MaxWalkSpeed` in children any more; the movement
 functions set `MaxWalkSpeed = MoveSpeed` or `ChaseSpeed`.
+
+### 4.1 What is not a member variable
+
+`EffectiveInset`, `Candidate`, `SelfFeet`, `PlayerFeet`, `BoxExtent` and the
+trace hit/start/end values are **function-locals**. Compute them inside
+`FindHomePlatform`, `LedgeAhead` or `TryRescue`; do not add them as Blueprint
+variables.
+
+`HomePlatform` should be typed as a **`BP_EnemyPlatform` object reference**, not
+a generic `Actor` reference. That lets you read `Zone`, `PatrolInset` and
+`bEnabled` directly, without a Cast node at every use. If you already added it
+as `Actor`, either change the type or add one Cast in `FindHomePlatform` and
+store the typed result in a local.
+
+`bAllowRescueUp` / `RescueMaxRise` are **optional** and default off; add them
+only if you later choose upward rescue. `AggroRadius` is only used by flyers;
+it is harmless to add now but walkers never read it.
+
+### 4.2 Minimum set per milestone
+
+You can add the whole table now, but this is the order that keeps each test
+meaningful:
+
+| Milestone | Variables needed |
+|---|---|
+| Platform ownership + patrol | `HomePlatform`, `PatrolMinX`, `PatrolMaxX`, `GroundZ`, `bStranded`, `bAggro`, `LedgeProbeAhead`, `LedgeProbeDepth`, `MaxPatrolStepZ` |
+| Aggro + chase | `ChaseSpeed`, `AggroHalfWidth`, `AggroHalfHeight`, `DeAggroTime`, `UnreachableTime`, `MaxChaseStepZ`, `PlayerGroundProbeDepth`, `bRequireAggroLineOfSight` |
+| Knockback + rescue | `bWasKnockedBack`, `RescueRadius`, `MinPatrolWidth`, `MaxPatrolWidth`, `MaxDrop` |
+| Flyers only | `AggroRadius` |
+
+### 4.3 Movement authority (one loop per asset)
+
+Every child has exactly one movement authority:
+
+| Kind | `bCanMove` | `ChaseSpeed` | Movement code |
+|---|---|---|---|
+| Walker (Rock, Snail, Slime, Rhino, Wood Log) | `true` | `> 0` if it detects; `0` if it never detects | base `Event Tick` → `PatrolStep` / `ChaseStep`; child never adds a movement Tick |
+| Stationary / flyer (Spike Turtle, Ghost, Floating Skull) | `false` | `0` | child's own `Event Tick` / `LaunchCharacter`; base walker loop is skipped |
+| Bat | `false` | `300` (used only for `MaxFlySpeed`) | own `Event Tick`; base walker loop is skipped |
+
+`bCanMove` is a **shared-AI gate**, not a `CharacterMovement` property. Setting
+it `false` does not stop `Add Movement Input` or `LaunchCharacter`; it stops the
+base walker loop. This is how Ghost and Bat keep their own chase without the
+base patrol/aggro code also running. Wood Log is the one walker that
+temporarily sets `bCanMove=false` while firing; `EndAttack` restores it.
+
+`ChaseSpeed=0` means **never detect or chase**. Snail and Toxic Slime stay in
+`PatrolStep`; the base `UpdateAggro` must return to `PatrolStep` before it can
+set `bAggro`. This is a data switch, not a per-child Tick.
 
 ---
 
@@ -298,8 +358,9 @@ pit, the enemy **stands at the ledge** and does not follow.
 
 ```text
 Event Tick:
-  Branch: bIsDead OR bStranded -> return
+  Branch: bIsDead OR bStranded OR NOT bCanMove -> return
   Branch: bWasKnockedBack -> return
+  Branch: ChaseSpeed <= 0 -> PatrolStep(); return   # Snail/Slime: no detection
   Player = Get Player Character(0)
   InBox = IsPlayerInAggroBox(Player)
   Reachable = InBox AND IsPlayerOnHomePlatform(Player)
@@ -507,7 +568,7 @@ authoring contract.
 
 ### 8.1 Spike Turtle
 
-- `bCanMove=false`; no patrol Tick and no detection.
+- `bCanMove=false`, `ChaseSpeed=0`; no patrol Tick and no detection.
 - `bUseHealth=false`, `bInvulnerable=true` permanently.
 - `SpikeCycle`/`FinishSpikeChange` remain, but `FinishSpikeChange` sets
   `bDealContactDamage = bSpikesOut` and `ContactDamage = 1.0` (never `2.0`).
@@ -519,21 +580,25 @@ authoring contract.
 
 - Add the rectangle aggro/de-aggro loop from §6.
 - `MoveSpeed`/`ChaseSpeed` per tier; keep the existing `100 / 140 / 180`
-  identities and tune the chase values separately.
+  identities and use `120 / 160 / 200` for chase as a starting point. Tune
+  separately after PIE.
 - Split pieces are spawned with `LaunchCharacter`; each piece runs `Landed` and
   adopts the platform it lands on (or becomes stranded/rescued). Do not assume
   the parent's `HomePlatform` is still valid.
 
 ### 8.3 Snail
 
+- Set `ChaseSpeed=0`; no detection and no chase.
 - Keep the normal patrol and the shell death override.
-- No detection and no chase. Add the ledge guard to both the normal body and
-  the shell; a shell must sweep the platform, not fall off it.
+- Both the body and the shell use the base `PatrolStep` + `LedgeAhead`; do not
+  add a second shell Tick. The shell must sweep the platform, not fall off it.
 - `ShellContactDamage` must be `1.0`, not `2.0`.
 - Shell remains invulnerable and self-destructs after `ShellLifetime`.
 
 ### 8.4 Ghost
 
+- Set `bCanMove=false`, `ChaseSpeed=0`; use the inherited `bAggro` and
+  `AggroRadius`. The Ghost's own Tick is the only movement authority.
 - **Before aggro:** `bInvisible=true`, `Sprite0` hidden, `CollisionCylinder`
   `NoCollision`, `bInvulnerable=true`, `bDealContactDamage=false`. It hovers
   idle; it does not chase.
@@ -556,7 +621,8 @@ authoring contract.
 
 ### 8.5 Toxic Slime
 
-- Keep the patrol and puddle timer. No detection and no chase.
+- Set `ChaseSpeed=0`; no detection and no chase.
+- Keep the patrol and puddle timer.
 - Add the ledge guard; it must not walk onto a lower step or into a pit.
 - Contact `1`. Puddle kill unchanged; puddles are player-only.
 
@@ -566,6 +632,9 @@ authoring contract.
   - `MaxHealth=4`, `CurrentHealth=4`, `bUseHealth=true`;
   - `bInvulnerable=true` so player bullets and `Kill` are ignored;
   - `WallHitCooldown=0.5`, `LastWallHitTime=-1000`.
+- Movement: inherited `MoveSpeed=120`, `ChaseSpeed=600`; `ChargeSpeed=600`.
+  Override `UpdateAggro`, call `Parent: UpdateAggro`, then set
+  `bCharging=bAggro`. Do not duplicate detection.
 - On `Event Hit` with `Abs(Normal.X)>0.7` and `OtherActor != Player`:
 
 ```text
@@ -588,6 +657,8 @@ Branch: CurrentHealth <= 0
 
 ### 8.7 Floating Skull
 
+- Set `bCanMove=false`, `ChaseSpeed=0`; the base walker loop is skipped. The
+  `LaunchCharacter` bounce and `Event Hit` are its only movement.
 - Keep the ON/OFF toggle and `Event Hit` reflection.
 - `BounceSpeed` is now a **slow** bounce: `≈300` (bullet speed is `900`).
   Keep the Z component of the reflection; do not add gravity.
@@ -596,6 +667,8 @@ Branch: CurrentHealth <= 0
 
 ### 8.8 Bat
 
+- Set `bCanMove=false`; use the inherited `ChaseSpeed=300`. The Bat's own Tick
+  is the only movement authority.
 - Trigger sphere is smaller than Ghost: `300` (was `350` and effectively
   larger because of the old distance check).
 - After the `CeilingOut` animation, `bChasing=true` and it chases directly in
@@ -607,6 +680,9 @@ Branch: CurrentHealth <= 0
 
 ### 8.9 Wood Log
 
+- Override `ChaseStep` to stand: no `Add Movement Input` while aggroed.
+  `TryFire` sets `bCanShoot=false` and `bCanMove=false`; `EndAttack` restores
+  both.
 - Replace unlimited-range fire with the rectangle detection in §6:
   `1400×500`, same platform, `DeAggroTime=2.0`.
 - It **stops and shoots** while aggro; it does not chase around the platform.
@@ -622,7 +698,12 @@ Branch: CurrentHealth <= 0
 
 ---
 
-## 9. Contact damage: the current graph has a blind spot
+## 9. Contact damage: why the capsule alone was not enough
+
+**Fixed 24 Oct 2026:** option A is implemented — `ContactBox` is compiled with
+`QueryOnly`, `Pawn = Overlap`, all other channels `Ignore`, and the existing
+contact chain is bound to its component-overlap event. The base verifier reports
+**44 PASS / 0 FAIL**. The finding below is kept as the rationale.
 
 **Finding (21 Oct 2026):** `BP_EnemyBase`'s `Event ActorBeginOverlap` is bound to
 the inherited capsule, but both `BP_EnemyBase` and `BP_Player` use the `Pawn`
@@ -652,15 +733,31 @@ turtle and snail shell.
 
 ## 10. Build order
 
-0. **Contact fix first.** Add `ContactBox` (option A) or set `Pawn = Overlap`
-   (option B), then PIE-test one enemy touching the player. Do not build child
-   AI on a dead contact event.
-1. **`BP_EnemyPlatform`** — box marker, hidden in game, no collision.
-2. **`BP_EnemyBase` additions** — new variables, `FindHomePlatform`,
-   `AdoptPlatform`, `PointInPlatformZone`, `IsPlayerOnHomePlatform`,
-   `PointInPlatformXZ`, `LedgeAhead`, `PatrolStep`, `ChaseStep`,
-   `IsPlayerInAggroBox`, `IsPlayerInAggroSphere`, `UpdateAggro`, `Landed`,
-   `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`.
+**Current position (24 Oct 2026): steps 0 and 1 are done; step 2 is next.**
+Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
+`WoodLog` aggro) until the shared `PatrolStep` + `LedgeAhead` loop works on a
+`BP_Rock1` or `BP_Snail`. Stationary/flyer children (`SpikeTurtle`, `Ghost`,
+`Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be built in
+parallel because they do not read the walker AI. See
+`Docs/EnemyWorkPlan.md` for the owner split and M1 gate.
+
+0. **DONE — contact fix.** `ContactBox` is compiled and the
+   `On Component Begin Overlap` chain is verified: **44 PASS / 0 FAIL**.
+   Re-run `py -3 Scripts\_verify_enemy_base.py` if the base is edited.
+1. **DONE — `BP_EnemyPlatform` marker + auto-placement.** Seven auto zones
+   exist in `L_Level_01`. Remaining cleanup: rename `bEnable` to `bEnabled`.
+2. **NEXT — `BP_EnemyBase` AI core.** Add the §4 variables, then build in this
+   order so each step is testable on its own:
+   1. `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
+      `AdoptPlatform` (home ownership).
+   2. `LedgeAhead`, `PatrolStep` (edge-safe patrol).
+   3. `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`,
+      `UpdateAggro` (rectangle + de-aggro).
+   4. `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue` (landing,
+      stranded, stairs).
+   5. Wire `BeginPlay` → `FindHomePlatform`, `Landed` → `ResolveKnockback`,
+      `Tick` → the state loop, and set `bWasKnockedBack` in `AnyDamage`
+      before `LaunchCharacter`.
 3. **`BP_EnemyProjectile` → `BP_ToxicPuddle` → `BP_ShooterEnemyBase`** — the
    pending work from `Enemies.md` §7.1; projectile/puddle kill is independent of
    the AI rework.
@@ -706,7 +803,9 @@ turtle and snail shell.
 - **Stranded rescue can look like a teleport.** Hide it with a puff/VFX later,
   or place zones so the nearest lower zone is close.
 - **The player has no health.** Contact/projectile/puddle all call `Kill`.
-- **Contact overlap needs the fix in §9.** The current 43-PASS verifier checks
-  graph structure, not collision responses.
+- **Contact overlap is fixed (24 Oct 2026).** `BP_EnemyBase` has a compiled
+  `ContactBox` (`QueryOnly`, `Pawn = Overlap`, everything else `Ignore`) and the
+  component-overlap chain. `Scripts\_verify_enemy_base.py` reports **44 PASS /
+  0 FAIL**; keep that chain intact while adding the AI nodes.
 - **All numbers are starting points.** PIE-tune after the first placement.
 
