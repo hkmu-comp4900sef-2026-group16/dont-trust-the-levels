@@ -75,8 +75,9 @@ If two documents disagree, **stop and post the conflict** in the status log.
 
 **Current blockers / cleanup**
 
-- Rename `bEnable` → `bEnabled` in `BP_EnemyPlatform`; the generator temporarily
-  accepts both names.
+- **DONE 24 Oct** — `bEnable` → `bEnabled` in `BP_EnemyPlatform`; live check:
+  `bEnabled=true`, `Zone` extent `(50,50,20)`, `NoCollision`, hidden,
+  `PatrolInset=80`. The generator alias is kept for compatibility.
 - Do not add `MaxWalkSpeed` as a variable; it is a `CharacterMovement` property.
 - Remove the duplicate typo variable `KnowbackForce` if it is still present;
   keep `KnockbackForce`.
@@ -148,7 +149,7 @@ If two documents disagree, **stop and post the conflict** in the status log.
 | Asset | Owner | Depends on | Notes |
 |---|---|---|---|
 | `BP_EnemyBase` | A | — | AI core, M1 |
-| `BP_EnemyPlatform` | A | — | rename `bEnable` → `bEnabled` |
+| `BP_EnemyPlatform` | A | — | DONE — `bEnabled=true`, Zone verified |
 | `BP_Snail` | A | M1 | walker; no detection |
 | `BP_RockBase` | A | M1 | split logic |
 | `BP_Rock1/2/3` | A | M1, `BP_RockBase` | child defaults + split |
@@ -269,7 +270,8 @@ aggro/patrol until M1 is green.
 
 **Work**
 
-1. Rename `bEnable` → `bEnabled` in `BP_EnemyPlatform`, compile and save.
+1. **DONE 24 Oct** — rename `bEnable` → `bEnabled` in `BP_EnemyPlatform`,
+   compile and save. Live check: `bEnabled=true`, `Zone` `NoCollision`/hidden.
 2. Add the new `EnemyAI.md` §4 variables; `MoveSpeed` already exists, so do not
    add it again. `HomePlatform` typed as `BP_EnemyPlatform`; remove
    `KnowbackForce`; do not add `MaxWalkSpeed`.
@@ -386,7 +388,9 @@ invent a third source.
 
 **Tasks**
 
-- [ ] Rename `bEnable` → `bEnabled` in `BP_EnemyPlatform`; compile/save.
+- [x] **DONE 24 Oct** — rename `bEnable` → `bEnabled` in `BP_EnemyPlatform`;
+      compile/save. Live check: `bEnabled=true`, `Zone` extent `(50,50,20)`,
+      `NoCollision`, hidden.
 - [ ] Add the new §4 variables, including typed `HomePlatform`; `MoveSpeed`
       already exists; remove `KnowbackForce`; do not add `MaxWalkSpeed`.
 - [ ] Build `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
@@ -857,10 +861,12 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | Date | Owner | Asset | State | Verifier | PIE test | Commit / note |
 |---|---|---|---|---|---|---|
 | 24 Oct 2026 | A | plan created | DONE | — | — | `Docs/EnemyWorkPlan.md` |
+| 24 Oct 2026 | A | `BP_EnemyPlatform` | PASS | `_verify_enemies.py` 201 PASS / 0 FAIL / 0 WARN | — | `bEnabled=true`, Zone NoCollision/hidden; commit pending |
 |  |  |  |  |  |  |  |
 
-**Current gate:** `M1` is not green. Base AI functions are not built yet; do not
-start walkers.
+**Current gate:** `M1` is not green. `BP_EnemyPlatform` is PASS, but
+`BP_EnemyBase` has only `HomePlatform` (typed `BP_EnemyPlatform`) from the new
+§4 set and **0/13** AI functions. Do not start walkers.
 
 ---
 

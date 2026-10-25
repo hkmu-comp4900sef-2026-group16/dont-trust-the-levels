@@ -82,10 +82,10 @@ Create a new `Actor` blueprint in `Enemies/Blueprints` named
 | `PlatformId` | Name/Integer — optional debugging label |
 
 > **Current asset check (24 Oct 2026):** `BP_EnemyPlatform` has `Zone`,
-> `PatrolInset = 80` and `PlatformId`, but its boolean is currently named
-> **`bEnable`**, not `bEnabled`. Rename it to `bEnabled` before building
-> `FindHomePlatform` so the graph matches this document. The generator accepts
-> both spellings in the meantime.
+> `PatrolInset = 80`, `PlatformId` and `bEnabled = true`; the old `bEnable`
+> name is gone. A live spawn check confirms `Zone` is a `BoxComponent` with
+> `extent (50,50,20)`, `NoCollision` and hidden in game. `FindHomePlatform`
+> can read `bEnabled` directly.
 
 The box covers the **walkable top surface** of one intended enemy platform. Its
 `Box Extent.Z` can be small (e.g. `20`); the Z check uses a tolerance, not the
@@ -745,7 +745,9 @@ parallel because they do not read the walker AI. See
    `On Component Begin Overlap` chain is verified: **44 PASS / 0 FAIL**.
    Re-run `py -3 Scripts\_verify_enemy_base.py` if the base is edited.
 1. **DONE — `BP_EnemyPlatform` marker + auto-placement.** Seven auto zones
-   exist in `L_Level_01`. Remaining cleanup: rename `bEnable` to `bEnabled`.
+   exist in `L_Level_01`. `bEnable` was renamed to `bEnabled` on 24 Oct 2026;
+   live check: `bEnabled=true`, `Zone` is a `BoxComponent`
+   (`extent 50,50,20`, `NoCollision`, hidden), `PatrolInset=80`.
 2. **NEXT — `BP_EnemyBase` AI core.** Add the §4 variables, then build in this
    order so each step is testable on its own:
    1. `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
