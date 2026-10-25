@@ -196,6 +196,8 @@ file, never a folder; use the paths below verbatim with `git lfs lock`.
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Ghost.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Bat.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_FloatingSkull.uasset`
+- `Content/DontTrustTheLevels/Levels/L_Level_Testing.umap` — B's scratch PIE
+  test map (registered per §4; never a shipped-level edit)
 - May append only to the status log in `Docs/EnemyWorkPlan.md`
 
 **Owner C**
@@ -858,6 +860,28 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 |---|---|---|---|---|---|---|
 | 24 Oct 2026 | A | plan created | DONE | — | — | `Docs/EnemyWorkPlan.md` |
 | 25 Oct 2026 | B | M0 done | DONE | — | — | read-in complete (WorkPlan §3-6, EnemyAI §1-2/§4/§8/§10-11, Enemies §3-4/§6/§7.3, LfsLocking, EnemyPlacement §4.1/4.4/4.7/4.8); merged origin/branch/Dennis into branch/Jones; first asset BP_SpikeTurtle |
+| 25 Oct 2026 | B | BP_SpikeTurtle | BLOCKED (contact kill only) | n/a | test 10 partial: spike cycle/timers/idle PASS (PrintString evidence); contact kill FAIL — base defect, see report below | fix request sent to A |
+
+**Defect report (B → A, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
+Binary inspection of the committed `BP_EnemyBase.uasset` (458 KB, commit
+`8505b35`) shows only three SCS components (`CollisionCylinder`, `Sprite0`,
+`CharMoveComp`). **No `ContactBox` component exists**, and the contact chain
+("Is Overlapped Actor a Player?" → "Is Player Killable" → Kill/ApplyDamage) is
+bound to `ReceiveActorBeginOverlap`. Both `BP_EnemyBase` and `BP_Player` use the
+`Pawn` preset with `Pawn = Block`, so per `EnemyAI.md` §9 the overlap event never
+fires and no enemy can kill the player on contact. PIE evidence (Owner B,
+`L_Level_Testing`): `BP_SpikeTurtle` spike cycle/timers work; fresh side-touch
+during the spikes-out window does not kill the player; stomping the turtle
+kills the turtle via the player's `Event Hit`/Kill path (turtle `bInvulnerable`
+was reset by `InitEnemy`; B re-asserts it in the child BeginPlay). The docs'
+"ContactBox done 24 Oct / 44 PASS" claim does not match the committed asset,
+and `Scripts/_verify_enemy_base.py`, `_make_enemies.py`, `_verify_enemies.py`
+are not in any branch's history. Requested from A: add `ContactBox`
+(`BoxComponent`, QueryOnly, Generate Overlap Events, `Pawn=Overlap`, all other
+channels Ignore, extents ~`(50,50,90)`), rebind the existing contact chain to
+`On Component Begin Overlap (ContactBox)`, re-run the base verifier, commit
+`BP_EnemyBase.uasset` + the verifier scripts. B's four assets need no changes
+once the base fix lands; B will re-run test 10 and flip the status line.
 |  |  |  |  |  |  |  |
 
 **Current gate:** `M1` is not green. Base AI functions are not built yet; do not
