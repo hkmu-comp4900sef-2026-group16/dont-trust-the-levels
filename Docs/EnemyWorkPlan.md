@@ -28,7 +28,7 @@ updating this table and taking the Git LFS lock.
 | Slot | Name / GitHub | Workstream | Assets | Can start |
 |---|---|---|---|---|
 | **A** | base owner | base AI + walkers | `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`, `BP_RockBase`, `BP_Rock1/2/3`, `L_Level_01` | now |
-| **B** | groupmate 1 | stationary + flyers | `BP_SpikeTurtle`, `BP_Ghost`, `BP_Bat`, `BP_FloatingSkull` | now |
+| **B** | Jones / @Jones7100 | stationary + flyers | `BP_SpikeTurtle`, `BP_Ghost`, `BP_Bat`, `BP_FloatingSkull` | now |
 | **C** | groupmate 2 | support + ranged/walkers | `BP_EnemyProjectile`, `BP_EnemyProjectile_Wood`, `BP_ToxicPuddle`, `BP_ShooterEnemyBase`, `BP_WoodLog`, `BP_ToxicSlime`, `BP_Rhino` | now |
 
 A is the only person allowed to edit `BP_EnemyBase` until the M1 gate is posted.
