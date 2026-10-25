@@ -857,6 +857,7 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | Date | Owner | Asset | State | Verifier | PIE test | Commit / note |
 |---|---|---|---|---|---|---|
 | 24 Oct 2026 | A | plan created | DONE | — | — | `Docs/EnemyWorkPlan.md` |
+| 25 Oct 2026 | B | M0 done | DONE | — | — | read-in complete (WorkPlan §3-6, EnemyAI §1-2/§4/§8/§10-11, Enemies §3-4/§6/§7.3, LfsLocking, EnemyPlacement §4.1/4.4/4.7/4.8); merged origin/branch/Dennis into branch/Jones; first asset BP_SpikeTurtle |
 |  |  |  |  |  |  |  |
 
 **Current gate:** `M1` is not green. Base AI functions are not built yet; do not
