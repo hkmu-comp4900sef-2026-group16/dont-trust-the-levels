@@ -1150,8 +1150,10 @@ damage is enabled only after the trigger, so a hanging bat is safe to touch.
     its `On Component Begin Overlap` is bound to the contact chain. The verifier
     reports **44 PASS / 0 FAIL**. See `EnemyAI.md` §9.
 0b. **DONE — `BP_EnemyPlatform`** — box marker (no collision, hidden in game);
-    seven auto zones exist in `L_Level_01`. Remaining cleanup: rename `bEnable`
-    to `bEnabled`. See `EnemyPlacement.md` for per-enemy minimum widths.
+    seven auto zones exist in `L_Level_01`. The boolean is `bEnabled=true`; the
+    old `bEnable` name is gone (live check 24 Oct 2026: `Zone` extent
+    `(50,50,20)`, `NoCollision`, hidden, `PatrolInset=80`). See
+    `EnemyPlacement.md` for per-enemy minimum widths.
 1. **`BP_EnemyBase` — shared health block DONE; AI core NEXT.** Class Settings
    already implements `BPI_Killable`; `InitEnemy`, `AnyDamage`, `Kill`, contact
    overlap, `Die`, `PlayStateFlipbook`, `SetFacing`, `ClearIFrames`,
