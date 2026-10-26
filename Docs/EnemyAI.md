@@ -325,6 +325,25 @@ turn cooldown so two edge probes in one frame cannot flip it twice.
 The ledge probe also sees no floor beyond the edge. The enemy never walks down
 unless `bWasKnockedBack` is true.
 
+### 5.1 Facing and sprite orientation
+
+Enemy art is drawn facing **left** at sprite yaw 0. Keep `Facing` as the
+movement sign (`+1` = `+X`), but map it to the sprite the other way round:
+
+| `Direction` | `Facing` | Sprite yaw | Visual |
+|---|---|---|---|
+| `>= 0` | `1` | `180` | right |
+| `< 0` | `-1` | `0` | left |
+
+`InitEnemy` must call `SetFacing(1.0)`, not just set the `Facing` integer.
+Otherwise a freshly spawned walker moves `+X` with the Sprite still at yaw 0
+and appears to walk backwards until its first patrol turn.
+
+Ghost is the only child that calls `SetFacing` itself. It currently passes
+`-(Player.X - Self.X)` to compensate for the old mapping; with the table above,
+remove that `-1` and pass raw `Player.X - Self.X`. Ghost's movement uses
+`Normal(Player - Self)`, so this changes only its visual facing.
+
 ---
 
 ## 6. Detection, chase and de-aggro

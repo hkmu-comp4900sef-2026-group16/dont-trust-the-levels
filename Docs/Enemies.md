@@ -224,7 +224,7 @@ sets capsule/movement per child; these variables are **not** set by Python.
 |---|---|---|---|
 | `InitEnemy` | — | — | set health/flags/facing, play idle |
 | `PlayStateFlipbook` | `NewFlipbook` (Paper Flipbook), `bLoop` (Boolean) | — | set + loop + play only when changed |
-| `SetFacing` | `Direction` (Float) | — | `Facing = sign(Direction)`; yaw 0/180 on `Sprite0` |
+| `SetFacing` | `Direction` (Float) | — | `Facing = sign(Direction)`; yaw 180 for +1 (right), yaw 0 for -1 (left) on `Sprite0` |
 | `RefreshStateFlipbook` | — | — | base plays `IdleFlipbook`; children override |
 | `ClearIFrames` | — | — | `bIFrameActive = false` |
 | `RecoverFromHit` | — | — | white sprite color + `RefreshStateFlipbook` |
@@ -394,16 +394,25 @@ PlayStateFlipbook(NewFlipbook, bLoop)
 
 ```text
 Branch: Direction >= 0
-  True  → Set Facing = 1   → Sprite Set Relative Rotation  (X 0, Y 0, Z 0)
-  False → Set Facing = -1  → Sprite Set Relative Rotation  (X 0, Y 0, Z 180)
+  True  → Set Facing = 1   → Sprite Set Relative Rotation  (Yaw 180)
+  False → Set Facing = -1  → Sprite Set Relative Rotation  (Yaw 0)
 ```
 
-The pin boxes are **X (Roll)**, **Y (Pitch)**, **Z (Yaw)**, so the flip goes
-in the **Z** box. The saved `DefaultValue` is ordered Pitch, Yaw, Roll, so a
-correct false branch serialises as `0, 180, 0`; typing `0, 0, 180` into a
-compact triple puts the 180 on Roll instead. Drag the `Sprite` component into
-the graph and pick **Set Relative Rotation** — plain "Set Actor Relative
-Rotation" targets the actor, not the flipbook.
+Enemy art is drawn facing **left** at yaw 0, unlike `BP_Player`. `Facing`
+remains the movement sign (+1 = +X), so the **visual** mapping is inverted:
+yaw 180 faces right and yaw 0 faces left. `InitEnemy` must call
+`SetFacing(1.0)`, not merely set the `Facing` integer, or the sprite stays at
+its default yaw 0 (left) until the first patrol turn.
+
+The flip goes in the **Yaw** box. The saved `NewRotation` is ordered Pitch,
+Yaw, Roll, so a correct true branch serialises as `0, 180, 0`; the false
+branch is `0, 0, 0`. Typing `0, 0, 180` puts the 180 on Roll instead. Drag the
+`Sprite` component into the graph and pick **Set Relative Rotation** — plain
+"Set Actor Relative Rotation" targets the actor, not the flipbook.
+
+Ghost's art is also left-facing. Its chase previously multiplied
+`(Player.X - Self.X)` by `-1` to compensate for the old yaw 0 = right mapping;
+with this corrected mapping, feed Ghost the raw `Player.X - Self.X`.
 
 `ClearIFrames` → `Set bIFrameActive = false`.
 
