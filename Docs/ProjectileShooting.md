@@ -580,7 +580,7 @@ the bullet knows it has left the muzzle and is at a wall:
 
 | Step | Node | Pins |
 |---|---|---|
-| 1 | **Get Velocity** *(property get on ProjectileMovement)* | Return Value → **Vector** of 2 |
+| 1 | **Get Velocity** *(property get on ProjectileMovement — read the component's `Velocity`, **not** `Get Owner → Get Velocity` on the actor)* | Return Value → **Vector** of 2 |
 | 2 | **Break Vector** | X, Y, Z of current velocity |
 | 3 | **Break Vector** *(of the `Wall Normal` input)* | X and Z of the input parameter |
 | 4 | **>** (float) | A ← **Absolute** (Wall Normal X) · B ← **Absolute** (Wall Normal Z) → **Condition** of Branch |
@@ -596,6 +596,19 @@ the bullet knows it has left the muzzle and is at a wall:
 | 14 | **Make Rotator** | Pitch ← node 11 · Yaw ← node 13 · Roll = `0` |
 | 15 | **`SetActorRotation`** (self — the node title really is one word in 4.27: `K2_SetActorRotation` ships `meta=(DisplayName="SetActorRotation")`; typing "Set Actor Rotation" in the palette still finds it) | `execute` ← `Set Velocity` · **New Rotation** ← node 14 · `bTeleportPhysics` left `false` · **`then` unconnected** |
 | 16 | **`Ignore Actor When Moving`** (no DisplayName meta, so the camel-case split gives the spaced title you see) | **Target** ← **`Get Updated Primitive`** off **`Get ProjectileMovement`** · **Actor** ← **`Get Shooter`** · **bShouldIgnore** ← **`NOT Boolean`** of **`Get Can Hit Shooter`** (Target ← **`Get Effect`**) · **append after node 15** — `SetActorRotation`'s `then` pin is free, so nothing already built gets rewired |
+
+> **First-tick trap — never read the actor's velocity.** `Get Owner → Get
+> Velocity` calls `AActor::GetVelocity()`, which returns the root
+> component's `ComponentVelocity`. BeginPlay writes `ProjectileMovement`'s
+> `Velocity` directly, and `ComponentVelocity` is only synchronised at the
+> **end** of the movement component's first tick. A point-blank downward
+> shot hits the floor *inside that first tick*, so `Bounce` reflects
+> `(0,0,0)`, `Set Velocity` writes zero, and `HandleImpact` calls
+> `StopSimulating()`: the bullet freezes on the floor. Drag **Get Velocity**
+> off `ProjectileMovement` (the `Velocity` property get) and feed the
+> velocity `Break Vector`'s `InVec` with it — that is the 26 Oct
+> "bouncing bullet sticks on the ground" fix. The verifier FAILs the actor
+> shape with `Bounce reads Actor GetVelocity`.
 
 Step 16 is the **owner policy**, and this is the only safe place for it.
 BeginPlay's ignore (5.3 step 6) is hard-coded `true` because the Box extends
@@ -1061,6 +1074,7 @@ returns to "bullets never hurt their owner"; no architecture change.
 | Ricochet bounces forever | `Set Bounces` not wired before `Bounce`, or child default wrong → re-run `py -3 Scripts/_make_shooting.py` |
 | Press 4 → LMB still fires (a bullet spawns) | The key is wired to the **variable** setter called `Set Effect Class` instead of the **function**: `Gun Effect` is never replaced, so the fire gate reads the old instance's `Can Fire = true`. Fix per 6.4 — one call node, `Pressed` → `execute`; the verifier names the offending chain (`Effect_Jammed -> K2Node_VariableSet_3`) |
 | Ricochet bullet stops dead at the wall and never disappears | `Projectile Movement → Should Bounce` is off: `HandleImpact()` calls `StopSimulating()` (velocity 0, updated component detached) right after the hit delegate, so `Bounce`'s `Set Velocity` is wiped. Tick **Should Bounce**, set **Bounciness 1.0** / **Friction 0.0** (5.1); the verifier FAILs with `Should Bounce is OFF` |
+| Ricochet bullet freezes on the floor when fired point-blank | `Bounce` reads `Get Owner → Get Velocity` (the actor), but `AActor::GetVelocity()` returns the root component's `ComponentVelocity`, which is still `(0,0,0)` during the projectile's first tick. A close downward shot hits the floor in that tick → `Bounce` reflects zero and the bullet stops. Replace those two nodes with a **`Velocity` property get on `ProjectileMovement`** feeding the velocity `Break Vector` (5.4 step 1). The verifier FAILs with `Bounce reads Actor GetVelocity` |
 | Effects won't switch | `Set Effect Class` — the SpawnActor must read the variable **after** step 1 sets it; and BeginPlay must call `Set Effect Class` (6.2) or `Gun Effect` stays None and the gate blocks |
 | None of 2/3/4 changes anything; bullets fly straight like Basic and `4` still fires | The four `InputAction` **key events** were deleted together with the setters (a box-select delete) — `Pressed` fires no more, so `Effect Class` never leaves `BP_Effect_Basic`. Recreate each event (6.4: right-click → `Effect_Heavy` under *Action Events*), then `Pressed` → the `Set Effect Class` **call**. The verifier FAILs with `Effect_Heavy (event node deleted - it is only left in the transaction buffer)` |
 | Switching leaves two effects | The `Is Valid` True path must `Destroy Actor` the old one before the SpawnActor (False path goes straight to SpawnActor) |
