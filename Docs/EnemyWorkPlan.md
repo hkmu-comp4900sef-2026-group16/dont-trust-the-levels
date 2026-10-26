@@ -66,10 +66,22 @@ If two documents disagree, **stop and post the conflict** in the status log.
 - `BP_EnemyPlatform` exists and seven auto zones exist in `L_Level_01`.
 - `BPI_Killable` is implemented on `BP_EnemyBase`; traps are player-only.
 
+**Partially built**
+
+- `BP_EnemyBase` platform ownership + patrol: `PointInPlatformZone`,
+  `PointInPlatformXZ`, `FindHomePlatform`, `AdoptPlatform`, `LedgeAhead`,
+  `PatrolStep` are built (**6/13** AI functions). The aggro and rescue
+  functions are still missing.
+- All 14 aggro/rescue §4 variables now exist with the documented defaults.
+  `py -3 Scripts\_check_enemy_ai_vars.py` reports **22 PASS / 2 FAIL**, and both
+  failures are names only: rename `AggroHalfheight` -> `AggroHalfHeight` and
+  `bRequiredAggroLineOfSight` -> `bRequireAggroLineOfSight` in My Blueprint
+  before building the aggro graphs.
+
 **Not built**
 
-- The shared AI core in `BP_EnemyBase` (`HomePlatform`, patrol, aggro,
-  knockback/rescue).
+- `BP_EnemyBase` aggro/chase and knockback/rescue, plus the `Event Tick` and
+  `Landed` wiring.
 - The projectile/puddle/shooter support graphs.
 - Every child-specific AI mechanic.
 
@@ -393,11 +405,17 @@ invent a third source.
       `NoCollision`, hidden.
 - [ ] Add the new §4 variables, including typed `HomePlatform`; `MoveSpeed`
       already exists; remove `KnowbackForce`; do not add `MaxWalkSpeed`.
-- [ ] Build `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
+      **Almost:** all 14 aggro/rescue variables exist with correct defaults;
+      `Scripts\_check_enemy_ai_vars.py` = 22 PASS / 2 FAIL. Rename
+      `AggroHalfheight` -> `AggroHalfHeight` and `bRequiredAggroLineOfSight` ->
+      `bRequireAggroLineOfSight` to reach 24/24.
+- [x] Build `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
       `AdoptPlatform`.
-- [ ] Build `LedgeAhead`, `PatrolStep`.
+- [x] Build `LedgeAhead`, `PatrolStep`.
 - [ ] Build `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`,
-      `UpdateAggro`.
+      `UpdateAggro`. **NEXT.** Rename the two variables above, then start with
+      `IsPlayerOnHomePlatform`; the design page is
+      `Scripts\_is_player_on_home_platform_graph.html`.
 - [ ] Build `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`.
 - [ ] Wire `BeginPlay`, `Landed`, `Event Tick`, and the `AnyDamage`
       `bWasKnockedBack` flag.
@@ -862,11 +880,16 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 |---|---|---|---|---|---|---|
 | 24 Oct 2026 | A | plan created | DONE | — | — | `Docs/EnemyWorkPlan.md` |
 | 24 Oct 2026 | A | `BP_EnemyPlatform` | PASS | `_verify_enemies.py` 201 PASS / 0 FAIL / 0 WARN | — | `bEnabled=true`, Zone NoCollision/hidden; commit pending |
-|  |  |  |  |  |  |  |
+| 26 Oct 2026 | A | `BP_EnemyBase` | IN PROGRESS | contact `4 PASS`; kill guard `1 PASS`; base `44 PASS` | drop/contact kills once, one reload | 6/13 AI functions; next aggro set |
 
-**Current gate:** `M1` is not green. `BP_EnemyPlatform` is PASS, but
-`BP_EnemyBase` has only `HomePlatform` (typed `BP_EnemyPlatform`) from the new
-§4 set and **0/13** AI functions. Do not start walkers.
+**Current gate:** `M1` is not green. `BP_EnemyPlatform` is PASS, and
+`BP_EnemyBase` has the platform/patrol variables plus **6/13** AI functions
+(`PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
+`AdoptPlatform`, `LedgeAhead`, `PatrolStep`). The aggro set
+(`IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro`),
+the rescue set (`ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`), the
+matching variables, and the Tick/Landed wiring are still missing. Do not start
+walkers.
 
 ---
 

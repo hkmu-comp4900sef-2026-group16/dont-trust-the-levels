@@ -159,12 +159,12 @@ and §4.5 have the exact graph edits; `Scripts/_verify_traps.py` enforces them.
 The separation is the player-equality gate in the trap graph, which is also why
 an active spike can be walked through without a special enemy state.
 
-> **Contact damage is a separate problem.** Both `BP_EnemyBase` and `BP_Player`
-> use the `Pawn` preset with `Pawn = Block`. Unreal only fires overlap events
-> when one side is `Overlap`, so the current actor-level `ActorBeginOverlap`
-> contact chain never runs against the player. Add a `ContactBox` overlap
-> component (recommended: keeps the capsule solid) or set the capsule's
-> `Pawn` response to `Overlap`. Full options: `EnemyAI.md` §9.
+> **Contact damage (fixed 25 Oct 2026).** `BP_EnemyBase` has a `ContactBox`
+> (`Pawn=Overlap`, all else `Ignore`) bound to the contact chain, and
+> `CollisionCylinder` is now `Pawn = Overlap`, so the player cannot stand on the
+> enemy and the box catches the fall. Verified **44 PASS / 0 FAIL** for the
+> contact chain and **4 PASS / 0 FAIL** for the four enemy classes. See
+> `EnemyAI.md` §9.
 
 ---
 ## 3. `BP_EnemyBase` — variables, functions, components
@@ -320,10 +320,11 @@ This is the whole reason a 3-health turtle is not a one-shot.
 
 ### 4.4 Contact damage (`Event ActorBeginOverlap` / component overlap)
 
-> **21 Oct 2026:** this event is bound to the inherited capsule, but the capsule
-> is `Pawn = Block` on both sides, so it does **not** fire against the player.
-> Bind the same chain to a `ContactBox` overlap component instead (or change the
-> capsule's `Pawn` response to `Overlap`). See `EnemyAI.md` §9.
+> **21 Oct 2026, fixed 25 Oct 2026:** the contact chain is bound to the
+> `ContactBox` overlap component. The inherited capsule is `Pawn = Overlap` now,
+> so the player falls through the enemy instead of standing on it; the box
+> catches contact. `WorldStatic`/`WorldDynamic` stay `Block` for terrain and
+> bullets. See `EnemyAI.md` §9.
 
 ```text
 Event ActorBeginOverlap (OtherActor)
@@ -1145,10 +1146,12 @@ damage is enabled only after the trigger, so a hanging bat is safe to touch.
    with `Target = OtherActor`). `BP_EnemyBase` implements `BPI_Killable`. Run
    `py -3 Scripts\_verify_traps.py` to confirm 14 PASS before enemy behaviour
    work.
-0a. **DONE — contact fix (24 Oct 2026).** `ContactBox` is on
-    `BP_EnemyBase` (`Pawn=Overlap`, all else `Ignore`, generate overlaps), and
-    its `On Component Begin Overlap` is bound to the contact chain. The verifier
-    reports **44 PASS / 0 FAIL**. See `EnemyAI.md` §9.
+0a. **DONE — contact fix (24 Oct 2026; capsule follow-up 25 Oct).**
+    `ContactBox` is on `BP_EnemyBase` (`Pawn=Overlap`, all else `Ignore`,
+    generate overlaps), its `On Component Begin Overlap` is bound to the
+    contact chain, and `CollisionCylinder` is now `Pawn=Overlap` on all four
+    classes so the player cannot stand on the enemy. The verifiers report
+    **44 PASS / 0 FAIL** and **4 PASS / 0 FAIL**. See `EnemyAI.md` §9.
 0b. **DONE — `BP_EnemyPlatform`** — box marker (no collision, hidden in game);
     seven auto zones exist in `L_Level_01`. The boolean is `bEnabled=true`; the
     old `bEnable` name is gone (live check 24 Oct 2026: `Zone` extent
@@ -1286,11 +1289,13 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 0 PENDING**.
   `EnemyAI.md` §8.9.
 - **`BP_EnemyProjectile` and `BP_ToxicPuddle` have no collision/movement**
   until the hand-added components in §5.2/§5.4.
-- **`ContactBox` contact fix is done (24 Oct).** The box is on
-  `BP_EnemyBase` (`Pawn=Overlap`, all other channels `Ignore`, generate
-  overlaps) and its `On Component Begin Overlap` is bound to the contact chain;
-  the verifier holds 44 PASS / 0 FAIL. Do not use the blocking capsule for
-  contact events. See `EnemyAI.md` §9.
+- **`ContactBox` contact fix is done (24 Oct; capsule follow-up 25 Oct).** The
+  box is on `BP_EnemyBase` (`Pawn=Overlap`, all other channels `Ignore`,
+  generate overlaps) and its `On Component Begin Overlap` is bound to the
+  contact chain. `CollisionCylinder` is now `Pawn=Overlap` on all four classes,
+  so the player falls through the enemy and cannot stand on it; `WorldStatic` /
+  `WorldDynamic` remain `Block`. The verifiers hold 44 PASS / 0 FAIL and
+  4 PASS / 0 FAIL. See `EnemyAI.md` §9.
 - **Player has no health.** Contact and projectiles call `Kill`; add health to
   `BP_Player` later if you want multi-hit damage. `ContactDamage` is `1.0`
   everywhere; the old `2.0` turtle/shell values are removed.

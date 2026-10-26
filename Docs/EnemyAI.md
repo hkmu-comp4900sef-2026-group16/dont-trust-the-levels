@@ -164,6 +164,10 @@ with `600`). A jumping player above the same platform still traces down to it;
 a player standing on the platform above traces to a different Z; a player over
 a gap gets no hit. This is the reliable reachability gate.
 
+`PlayerLocation` in this pseudocode is a **function-local** filled once from
+`Get Actor Location(PlayerRef)`. Do not look for a `PlayerLocation` member
+variable or a `GetPlayerLocation` function in `BP_EnemyBase`; neither exists.
+
 If `HomePlatform` is `None` (no zones authored), replace
 `PointInPlatformXZ(PlayerFeet, HomePlatform)` with
 `Abs(Player.X - Self.X) <= AggroHalfWidth` and compare the trace Z to
@@ -231,6 +235,14 @@ functions set `MaxWalkSpeed = MoveSpeed` or `ChaseSpeed`.
 trace hit/start/end values are **function-locals**. Compute them inside
 `FindHomePlatform`, `LedgeAhead` or `TryRescue`; do not add them as Blueprint
 variables.
+
+`IsPlayerOnHomePlatform` uses four locals for the same reason: `PlayerRef`
+(Character), `PlayerLocation` (Vector), `HalfHeight` (Float), `TargetZ`
+(Float). Add them in the function's **Local Variables** panel, not in
+My Blueprint → Variables. There is **no `PlayerLocation` member variable and no
+`GetPlayerLocation` function** in `BP_EnemyBase`; the `Get PlayerLocation`
+getter only appears after the local is added, and the actual location read is
+`Get Actor Location` with `PlayerRef` as Target.
 
 `HomePlatform` should be typed as a **`BP_EnemyPlatform` object reference**, not
 a generic `Actor` reference. That lets you read `Zone`, `PatrolInset` and
@@ -705,6 +717,34 @@ Branch: CurrentHealth <= 0
 contact chain is bound to its component-overlap event. The base verifier reports
 **44 PASS / 0 FAIL**. The finding below is kept as the rationale.
 
+**Fixed 25 Oct 2026 — capsule is now non-solid.** All four enemy classes compile
+with `CollisionCylinder → Pawn = Overlap`; `WorldStatic`/`WorldDynamic` remain
+`Block`. `py -3 Scripts\_inspect_enemy_contact.py` now reports
+**4 PASS / 0 FAIL**. The player falls through the enemy and the existing
+`ContactBox` catches contact a few units lower, so the enemy no longer acts as a
+platform. The numbers below are the measurement that led to the fix.
+
+**2026-10-25 runtime finding.** The live `ContactBox` is `74.96 uu` tall and
+centred on the capsule. The live child capsules are taller: `BP_Rock1` has
+`CapsuleHalfHeight = 106.25`, `BP_Snail` `75.0`, and `BP_RockBase` `81.25`. The
+top of the capsule was therefore outside the trigger. A player landing on the
+then-solid capsule stood on the enemy, slid down the rounded top, and only
+triggered `Kill` from the side. The capsule was also `Pawn = Block`, so it
+blocked the fall. The fix was:
+
+1. `CollisionCylinder` → `Pawn = Overlap` (keep `WorldStatic`/`WorldDynamic =
+   Block`). This is the required fix. The player falls through the enemy and the
+   existing ContactBox catches the contact instead of the enemy acting as a
+   platform. A top gap remains on `BP_Rock1` (31.29 uu), but it is harmless now:
+   the player falls into the box rather than standing on the capsule.
+2. Only if you deliberately keep the capsule solid: give **each child** a
+   ContactBox that covers that child's full capsule height. Do **not** simply
+   scale the shared base box to `Z=120`; that extends 45 uu below a Snail and can
+   kill a player walking under a thin platform.
+
+Run `py -3 Scripts\_inspect_enemy_contact.py` to verify all four enemy classes:
+it must print `SUMMARY 4 PASS / 0 FAIL`.
+
 **Finding (21 Oct 2026):** `BP_EnemyBase`'s `Event ActorBeginOverlap` is bound to
 the inherited capsule, but both `BP_EnemyBase` and `BP_Player` use the `Pawn`
 collision preset with `Pawn = Block`. Unreal only generates overlap events when
@@ -733,7 +773,11 @@ turtle and snail shell.
 
 ## 10. Build order
 
-**Current position (24 Oct 2026): steps 0 and 1 are done; step 2 is next.**
+**Current position (26 Oct 2026): steps 0 and 1 are done; step 2 is in progress
+at 6/13 functions.** The platform/patrol functions are built and all 14
+aggro/rescue variables are now in with the documented defaults. Two variable
+names still need correcting (see step 3); after that the aggro set is the next
+task.
 Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
 `WoodLog` aggro) until the shared `PatrolStep` + `LedgeAhead` loop works on a
 `BP_Rock1` or `BP_Snail`. Stationary/flyer children (`SpikeTurtle`, `Ghost`,
@@ -748,18 +792,25 @@ parallel because they do not read the walker AI. See
    exist in `L_Level_01`. `bEnable` was renamed to `bEnabled` on 24 Oct 2026;
    live check: `bEnabled=true`, `Zone` is a `BoxComponent`
    (`extent 50,50,20`, `NoCollision`, hidden), `PatrolInset=80`.
-2. **NEXT — `BP_EnemyBase` AI core.** Add the §4 variables, then build in this
-   order so each step is testable on its own:
-   1. `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
-      `AdoptPlatform` (home ownership).
-   2. `LedgeAhead`, `PatrolStep` (edge-safe patrol).
-   3. `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`,
-      `UpdateAggro` (rectangle + de-aggro).
-   4. `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue` (landing,
+2. **IN PROGRESS — `BP_EnemyBase` AI core (6/13 functions).** The first six
+   platform/patrol functions are built; all 14 aggro/rescue variables are in.
+   Continue in this order so each step is testable on its own:
+   1. **DONE** — `PointInPlatformZone`, `PointInPlatformXZ`,
+      `FindHomePlatform`, `AdoptPlatform` (home ownership).
+   2. **DONE** — `LedgeAhead`, `PatrolStep` (edge-safe patrol).
+   3. **NEXT** — variables are in. Rename `AggroHalfheight` ->
+      `AggroHalfHeight` and `bRequiredAggroLineOfSight` ->
+      `bRequireAggroLineOfSight`, re-run `Scripts\_check_enemy_ai_vars.py`
+      (**24 PASS / 0 FAIL** expected), then build `IsPlayerOnHomePlatform`
+      (`Scripts\_is_player_on_home_platform_graph.html` is the design page),
+      `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro` (rectangle + de-aggro).
+   4. **NEXT AFTER 3** — the rescue variables already exist; build
+      `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue` (landing,
       stranded, stairs).
    5. Wire `BeginPlay` → `FindHomePlatform`, `Landed` → `ResolveKnockback`,
       `Tick` → the state loop, and set `bWasKnockedBack` in `AnyDamage`
-      before `LaunchCharacter`.
+      before `LaunchCharacter`. `InitEnemy` already calls `FindHomePlatform`;
+      do not add a second BeginPlay call.
 3. **`BP_EnemyProjectile` → `BP_ToxicPuddle` → `BP_ShooterEnemyBase`** — the
    pending work from `Enemies.md` §7.1; projectile/puddle kill is independent of
    the AI rework.

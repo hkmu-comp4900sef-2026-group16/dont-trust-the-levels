@@ -134,6 +134,19 @@ Event Kill
 |---|---|---|---|---|
 | 1 | `bRespawning` | Boolean | `false` | internal — re-entry guard |
 
+> **Fixed 25 Oct 2026 — re-entry guard is live.** The guard sits inside the
+> `Kill Logic` composite: `Tunnel In → Branch (bIsDead) → True: return /
+> False: Set bIsDead = true → SetFlipbook Hit → Delay(0.58) →
+> Get Current Level Name → OpenLevel`. The flag is set **before** the delay and
+> there is exactly one `OpenLevel`. Enemy contact uses
+> `ContactDamageCooldown = 0.50`, so a second `Kill` arriving 0.08 s before the
+> reload is now ignored. `py -3 Scripts\_check_player_kill_guard.py` reports
+> `SUMMARY 1 PASS / 0 FAIL`.
+>
+> The live graph still has no `Print String`; add `"YOU DIED - respawning"`
+> before the delay so a reload failure is visible in PIE. It uses the existing
+> `bIsDead` flag rather than a separate `bRespawning`; either is equivalent.
+
 ### Node-by-node
 
 1. **Event Kill** — the interface event node.
