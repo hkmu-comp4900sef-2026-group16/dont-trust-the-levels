@@ -865,7 +865,7 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 24 Oct 2026 | A | plan created | DONE | — | — | `Docs/EnemyWorkPlan.md` |
 | 24 Oct 2026 | A | `BP_EnemyPlatform` | PASS | `_verify_enemies.py` 201 PASS / 0 FAIL / 0 WARN | — | `bEnabled=true`, Zone NoCollision/hidden; commit pending |
 | 25 Oct 2026 | B | M0 done | DONE | — | — | read-in complete (WorkPlan §3-6, EnemyAI §1-2/§4/§8/§10-11, Enemies §3-4/§6/§7.3, LfsLocking, EnemyPlacement §4.1/4.4/4.7/4.8); merged origin/branch/Dennis into branch/Jones; first asset BP_SpikeTurtle |
-| 25 Oct 2026 | B | BP_SpikeTurtle | BLOCKED (contact kill only) | n/a | test 10 partial: spike cycle/timers/idle PASS (PrintString evidence); contact kill FAIL — base defect, see report below | fix request sent to A |
+| 25 Oct 2026 | B | BP_SpikeTurtle | DONE | n/a | test 10: spike cycle/timers/idle PASS (PrintString evidence); contact kill PASS after Dennis's 744f845 ContactBox fix (fresh side-touch kills in spikes-out window) | ea78feb + merge 0b232e9; B's diagnostic child box deleted; remaining gap (kill-on-already-overlap during phase change) reported to A as base-contract proposal |
 
 **Defect report (B → A, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
 Binary inspection of the committed `BP_EnemyBase.uasset` (458 KB, commit
