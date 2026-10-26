@@ -779,8 +779,9 @@ was saved **18 Oct 02:09** and rewired **19 Oct** (the four key events were
 recreated and each `Pressed` goes to the `Set Effect Class` **call**);
 `_verify_shooting.py` reads **105 PASS / 0 FAIL / 2 WARN / 0 PENDING** (the 5.6
 `Destroyed` hook is present as the `Effect Clean Up` collapsed graph; before the
-27 Oct verifier fix the composite was not expanded, which produced a false
-103 PASS / 1 FAIL). The graph dump shows both variables, an 11-node
+27 Oct verifier fix the composite was not expanded and the `SetEffectClass`
+graph-name comparison was not normalized, which produced a false 103 PASS /
+2 FAIL). The graph dump shows both variables, an 11-node
 `Set Effect Class` function, the BeginPlay hook (collapsed as a box named
 `Update Effect Class` at 976,−480) and the whole Fire chain. **The step-1 bug
 is fixed**, verified in the dump: step 1 is now `K2Node_VariableSet_2`
