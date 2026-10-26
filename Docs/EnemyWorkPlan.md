@@ -866,6 +866,7 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 24 Oct 2026 | A | `BP_EnemyPlatform` | PASS | `_verify_enemies.py` 201 PASS / 0 FAIL / 0 WARN | — | `bEnabled=true`, Zone NoCollision/hidden; commit pending |
 | 25 Oct 2026 | B | M0 done | DONE | — | — | read-in complete (WorkPlan §3-6, EnemyAI §1-2/§4/§8/§10-11, Enemies §3-4/§6/§7.3, LfsLocking, EnemyPlacement §4.1/4.4/4.7/4.8); merged origin/branch/Dennis into branch/Jones; first asset BP_SpikeTurtle |
 | 25 Oct 2026 | B | BP_SpikeTurtle | DONE | n/a | test 10: spike cycle/timers/idle PASS (PrintString evidence); contact kill PASS after Dennis's 744f845 ContactBox fix (fresh side-touch kills in spikes-out window) | ea78feb + merge 0b232e9; B's diagnostic child box deleted; remaining gap (kill-on-already-overlap during phase change) reported to A as base-contract proposal |
+| 26 Oct 2026 | B | BP_Ghost | DONE | n/a | tests 12-13 PASS: hidden start (no collision/contact/chase), 550-sphere trigger, through-wall chase (WorldStatic=Ignore), visible/hidden loop forever, 2 hits kill, contact kill while visible, no de-aggro | Ghost art faces left natively: SetFacing input negated in chase; TEMP-M1 locals (bAggro/AggroRadius/ChaseSpeed) declared in child because base M1 has not added them yet - migrate to inherited when A posts M1 GREEN; first-appear GoIdle refresh added (RefreshStateFlipbook 0.5 s after StartAggro) |
 
 **Defect report (B → A, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
 Binary inspection of the committed `BP_EnemyBase.uasset` (458 KB, commit
