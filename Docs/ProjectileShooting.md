@@ -57,18 +57,19 @@ the ground truth for the scripted half *and* presence-checks the manual half
 component *details* and variables + graph markers, BP_Player variables + graph
 markers, and — since the 18 Oct PIE pass — the four `Effect_*` key chains and
 the movement's bounce settings). The 19 Oct 00:03 run read **97 PASS · 0 FAIL ·
-2 WARN · 0 PENDING**; the PIE fixes below take it to **104 PASS · 0 FAIL · 2
+2 WARN · 0 PENDING**; the PIE fixes below took it to **104 PASS · 0 FAIL · 2
 WARN · 0 PENDING**. The **19 Oct 00:41 run** (after the Projectile Movement fix
 and a first attempt at the key fix) read **101 PASS · 1 FAIL · 2 WARN**:
 `Should Bounce` / `Bounciness` / `Friction` PASS, but the four `Effect_*`
 **event nodes were deleted along with the setters**, so no key fired at all (see
 bug 3 below). After the key events were rebuilt the run read **102 PASS · 1
 FAIL · 2 WARN** — the four key chains PASS again, the FAIL being the kill gate
-(bug 4). **The current run reads 103 PASS · 1 FAIL · 2 WARN**: the `Interface`
-pin is now set to `BPI_Killable` (that FAIL is gone), and the one remaining FAIL
-is bug 5 — the effect actor each shot leaves behind. Wiring 5.6's `Destroyed`
-hook is the **104 PASS** line; both fixes are drawn in
-`Scripts/fix_pie_bugs.html` (5.5 step 3 / 5.6).
+(bug 4). **The 27 Oct run reads 105 PASS · 0 FAIL · 2 WARN · 0 PENDING**: the
+`Interface` pin is set to `BPI_Killable`, 5.6's `Destroyed` hook is present as
+the `Effect Clean Up` collapsed graph, and the verifier now expands collapsed
+graphs and normalizes the `SetEffectClass` graph name. The extra PASS is the
+5.6 chain (`ReceiveDestroyed` → `Effect Clean Up` → `Is Valid(Effect)` →
+`Destroy Actor(Effect)`); PIE confirms the per-shot effect count stays flat.
 The last four PASSes are the counted graph markers of the per-effect wiring:
 the BeginPlay
 gravity setter, the second `Ignore Actor When Moving` in `Bounce`, `NOT` on
@@ -114,18 +115,20 @@ self-inflicted regression from the first fix attempt):**
    `DefaultObject=…BPI_Killable.BPI_Killable_C`), so the verifier's
    `Does Implement Interface has no Interface set ...` FAIL is gone.
 
-5. **One effect actor is left behind per shot** (19 Oct PIE: "even when the
+5. **One effect actor was left behind per shot** (19 Oct PIE: "even when the
    bullets are gone there is an effect actor left"). `BeginPlay` spawns a fresh
-   `BP_Effect_*` actor for every bullet (5.3 steps 2–3) and **nothing destroys
+   `BP_Effect_*` actor for every bullet (5.3 steps 2–3) and **nothing destroyed
    it** — the hit graph kills the bullet, and `BP_EffectBase` is component-less,
-   so the leftovers are invisible in the viewport but pile up in the World
+   so the leftovers were invisible in the viewport but piled up in the World
    Outliner, each still holding a hard `MyProjectile` reference to the dead
    projectile. Fix: **Part 5.6** — `Event Destroyed` → `Branch` (`Is Valid`,
    Input ← `Get Effect`) → True → `Destroy Actor` (Target ← `Get Effect`). The
-   verifier names it: `nothing destroys the per-shot effect ...`.
+   current graph implements this as the `Effect Clean Up` collapsed graph; the
+   27 Oct verifier run reaches it through the composite and PASSes, and PIE shows
+   no actor increase after shooting.
 
-The build half is therefore **closed except 5.6's `Destroyed` hook** — then
-the Part 8 PIE checklist, not more nodes.
+The build half is therefore **closed** — the Part 8 PIE checklist, not more
+nodes.
 **Part 6 is finished** once the four key events exist again and each `Pressed`
 chain ends on the `Set Effect Class` **call** — the verifier follows each chain
 and FAILs a missing or variable-only one (`PASS  the four debug keys call Set
@@ -416,14 +419,16 @@ result.
 
 ## Part 5 — BP_Projectile: the bullet (human, ~25 minutes)
 
-**Status: ✅ built (19 Oct 2026) except 5.6** — 5.1 the component Details, 5.2
-the three variables, 5.3 the BeginPlay chain, 5.4 the `Bounce` function and 5.5
-the hit are all in the export (the kill gate's `Interface` pin is now set to
-`BPI_Killable`), and `_verify_shooting.py` reports **103 PASS · 1 FAIL · 2 WARN**
-— the FAIL is 5.6: `BeginPlay` spawns an effect per bullet and nothing destroys
-it (bug 5); wiring that hook is the **104 PASS** line (97 before the 18 Oct
-fixes, the PIE pass found Should Bounce off, which is why ricochet bullets froze
-at the wall) with all four per-effect markers among them. The three additions this port
+**Status: ✅ built (19 Oct 2026; 5.6 verified 27 Oct)** — 5.1 the component
+Details, 5.2 the three variables, 5.3 the BeginPlay chain, 5.4 the `Bounce`
+function, 5.5 the hit and 5.6 the `Destroyed` cleanup are all in the export
+(the kill gate's `Interface` pin is set to `BPI_Killable`), and
+`_verify_shooting.py` reports **105 PASS · 0 FAIL · 2 WARN**. The 5.6 hook is
+the `Effect Clean Up` collapsed graph on `Event Destroyed`; the verifier expands
+it and PASSes `ReceiveDestroyed` → `Is Valid(Effect)` → `Destroy Actor(Effect)`
+(97 PASS before the 18 Oct fixes, the PIE pass found Should Bounce off, which is
+why ricochet bullets froze at the wall) with all four per-effect markers among
+them. The three additions this port
 needed are in: **step 7** of 5.3 (`Set Projectile Gravity Scale`, read from the
 effect), **step 16** of 5.4 (lift the shooter ignore in `Bounce`) and **step 2b**
 of 5.5 (the `Can Hit Shooter` gate) — the boards number them 17 / 21, 27 / 35
@@ -717,17 +722,21 @@ which either bounces the bullet or destroys it.
 
 ### 5.6 Event graph — the bullet takes its effect with it
 
-**Status: ❌ open (19 Oct PIE: "every time I shoot, even when the bullets are
-gone, there is an effect actor left").** Every shot runs 5.3 steps 2–3, which
-**spawn a fresh `BP_Effect_*` instance into the world**, and nothing ever
-destroys it: the hit graph kills the *bullet*, `BP_EffectBase` has no
-components (so the leftovers are invisible — you see them in the World Outliner,
-not in the viewport), and each one keeps a hard `MyProjectile` reference to the
-destroyed projectile, so that actor cannot be collected either. Fifty shots leak
-fifty actors and fifty dead projectiles. This is the effect-side twin of the
-`Gun Effect` swap in 6.2: whoever spawns an instance owns its lifetime.
+**Status: ✅ implemented (27 Oct readback: `ReceiveDestroyed` → `Effect Clean
+Up` collapsed graph → `Is Valid(Effect)` → `Destroy Actor(Effect)`; PIE actor
+count stays flat after shooting).** The 19 Oct PIE report ("every time I shoot,
+even when the bullets are gone, there is an effect actor left") was real before
+the hook: every shot ran 5.3 steps 2–3, which **spawn a fresh `BP_Effect_*`
+instance into the world**, and nothing destroyed it — the hit graph killed the
+*bullet*, `BP_EffectBase` has no components (so the leftovers were invisible —
+you saw them in the World Outliner, not in the viewport), and each one kept a
+hard `MyProjectile` reference to the destroyed projectile, so that actor could
+not be collected either. Fifty shots leaked fifty actors and fifty dead
+projectiles. This is the effect-side twin of the `Gun Effect` swap in 6.2:
+whoever spawns an instance owns its lifetime.
 
-Add one hook to `BP_Projectile`'s **EventGraph**:
+The built hook (recreate it this way if rebuilding) is a collapsed graph on
+`BP_Projectile`'s **EventGraph**:
 
 | Step | Node | Pins |
 |---|---|---|
@@ -753,8 +762,13 @@ None* every time a bullet dies, and the effect can legitimately be gone already
 
 The verifier reads the **exec chain**, not the node's presence: `Destroy Actor`
 must be reachable from `ReceiveDestroyed` **and** its Target pin must come from
-the `Effect` variable. Until it is wired it FAILs with `nothing destroys the
-per-shot effect …` (doc 5.6).
+the `Effect` variable. It follows `K2Node_Composite` nodes through their
+`BoundGraph` and starts at the collapsed graph's `K2Node_Tunnel` entry, so the
+current `ReceiveDestroyed` → `Effect Clean Up` chain PASSes. (Before the 27 Oct
+fix it stopped at the composite and falsely reported
+`nothing destroys the per-shot effect …`; `_key_wiring` had the same kind of
+false failure because the exported function graph is named `SetEffectClass`, not
+`Set Effect Class`.)
 
 ---
 
@@ -763,9 +777,10 @@ per-shot effect …` (doc 5.6).
 **Status (re-checked 19 Oct, PIE pass 18 Oct): 6.1–6.4 are built.** `BP_Player`
 was saved **18 Oct 02:09** and rewired **19 Oct** (the four key events were
 recreated and each `Pressed` goes to the `Set Effect Class` **call**);
-`_verify_shooting.py` reads **104 PASS / 0 PENDING** once 5.6's `Destroyed`
-hook is in (**103 PASS / 1 FAIL** before it — that FAIL is Part 5's leaked
-effect actor, not Part 6). The graph dump shows both variables, an 11-node
+`_verify_shooting.py` reads **105 PASS / 0 FAIL / 2 WARN / 0 PENDING** (the 5.6
+`Destroyed` hook is present as the `Effect Clean Up` collapsed graph; before the
+27 Oct verifier fix the composite was not expanded, which produced a false
+103 PASS / 1 FAIL). The graph dump shows both variables, an 11-node
 `Set Effect Class` function, the BeginPlay hook (collapsed as a box named
 `Update Effect Class` at 976,−480) and the whole Fire chain. **The step-1 bug
 is fixed**, verified in the dump: step 1 is now `K2Node_VariableSet_2`
@@ -1026,9 +1041,9 @@ catches a silent no-op.
 PIE checklist (editor **restarted** first so the five mappings are live).
 
 One mechanical pass before the checklist, in this order: `py -3
-Scripts/_verify_shooting.py` (it re-exports the 8 T3D files — expect **104
-PASS · 0 FAIL · 2 WARN · 0 PENDING**; while 5.6's `Destroyed` hook is still
-missing it is 103 PASS + 1 FAIL, and before the 18 Oct fixes 97 PASS + 3 FAIL +
+Scripts/_verify_shooting.py` (it re-exports the 8 T3D files — expect **105
+PASS · 0 FAIL · 2 WARN · 0 PENDING**; the verifier expands the 5.6 `Effect
+Clean Up` composite, and before the 18 Oct fixes the run was 97 PASS + 3 FAIL +
 4 WARN — every FAIL line names its own fix, and the
 edits are drawn in `Scripts/fix_pie_bugs.html`), then `py -3
 Scripts/_check_pin_links.py` (expect **no output**, exit
@@ -1078,7 +1093,7 @@ returns to "bullets never hurt their owner"; no architecture change.
 | Effects won't switch | `Set Effect Class` — the SpawnActor must read the variable **after** step 1 sets it; and BeginPlay must call `Set Effect Class` (6.2) or `Gun Effect` stays None and the gate blocks |
 | None of 2/3/4 changes anything; bullets fly straight like Basic and `4` still fires | The four `InputAction` **key events** were deleted together with the setters (a box-select delete) — `Pressed` fires no more, so `Effect Class` never leaves `BP_Effect_Basic`. Recreate each event (6.4: right-click → `Effect_Heavy` under *Action Events*), then `Pressed` → the `Set Effect Class` **call**. The verifier FAILs with `Effect_Heavy (event node deleted - it is only left in the transaction buffer)` |
 | Switching leaves two effects | The `Is Valid` True path must `Destroy Actor` the old one before the SpawnActor (False path goes straight to SpawnActor) |
-| An **effect actor** is left in the World Outliner after every shot | Nothing destroys the per-shot instance: `BP_Projectile`'s BeginPlay spawns one `BP_Effect_*` (5.3 steps 2–3) and the hit graph only destroys the bullet. Add the 5.6 `Destroyed` hook → the count stays at one (the player's `Gun Effect`); until then every shot also pins a dead projectile through the effect's `MyProjectile` ref |
+| An **effect actor** is left in the World Outliner after every shot | 5.6's `Effect Clean Up` hook is missing or broken: `BP_Projectile`'s BeginPlay spawns one `BP_Effect_*` (5.3 steps 2–3) and the hit graph only destroys the bullet. Restore the `Event Destroyed` → `Effect Clean Up` collapsed graph → `Is Valid(Effect)` → `Destroy Actor(Effect)` chain; the verifier expands the composite and FAILs `nothing destroys the per-shot effect …` when it is absent |
 | Sprite looks flipped relative to travel | Spawn rotation comes from the gun — check the gun's facing flip chain first (GunAiming.md Part 5); only then suspect `Bounce`'s yaw Select |
 
 ---
