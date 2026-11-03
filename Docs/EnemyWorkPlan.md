@@ -1,6 +1,6 @@
-# Enemy Work Plan — three parallel workstreams
+# Enemy Work Plan — four-slot parallel execution
 
-**Status (24 Oct 2026):** execution plan for the remaining enemy work. This
+**Status (27 Oct 2026):** execution plan for the remaining enemy work. This
 file assigns the work, defines the dependency gates and lists the acceptance
 tests. It does **not** replace the technical design:
 
@@ -10,7 +10,7 @@ tests. It does **not** replace the technical design:
 | 2 | **`Docs/Enemies.md`** | variables, graph recipes, per-enemy mechanics, test matrix |
 | 3 | **`Docs/EnemyPlacement.md`** | level placement rules and per-enemy layouts |
 
-**Audience:** Owner A, Owner B, Owner C and their AI assistants. Read this file
+**Audience:** Owner A1, Owner A2, Owner B, Owner C and their AI assistants. Read this file
 first, then the exact sections named in your work card. Do not infer rules from
 old summaries.
 
@@ -27,14 +27,18 @@ updating this table and taking the Git LFS lock.
 
 | Slot | Name / GitHub | Workstream | Assets | Can start |
 |---|---|---|---|---|
-| **A** | base owner | base AI + walkers | `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`, `BP_RockBase`, `BP_Rock1/2/3`, `L_Level_01` | now |
+| **A1** | base owner | shared base AI + first walker | `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`, contract docs | now |
+| **A2** | rocks/level owner | rock split + level integration | `BP_RockBase`, `BP_Rock1/2/3`, `L_Level_01` | rock/map prep now; rock graphs/PIE after M1 |
 | **B** | Jones / @Jones7100 | stationary + flyers | `BP_SpikeTurtle`, `BP_Ghost`, `BP_Bat`, `BP_FloatingSkull` | now |
 | **C** | groupmate 2 | support + ranged/walkers | `BP_EnemyProjectile`, `BP_EnemyProjectile_Wood`, `BP_ToxicPuddle`, `BP_ShooterEnemyBase`, `BP_WoodLog`, `BP_ToxicSlime`, `BP_Rhino` | now |
 
-A is the only person allowed to edit `BP_EnemyBase` until the M1 gate is posted.
-B and C may build their independent assets in parallel, but **walker children
-must wait for M1**. If a base change is needed, send a request to A; do not add
-the variable or function to the child.
+A1 is the only person allowed to edit `BP_EnemyBase`, `BP_EnemyPlatform` and
+`BP_Snail`. A2 is the only person allowed to edit the Rock assets and
+`L_Level_01`. A1 may prepare Snail variables/defaults/art; A2 may prepare Rock
+variables/defaults/art and stage static map/platform instances immediately, but
+**walker graphs and walker PIE wait for M1 GREEN**. If a base change is needed,
+A2 sends a request to A1; do not add the variable or function to the child. B
+and C may build their independent assets in parallel.
 
 ---
 
@@ -135,22 +139,26 @@ If two documents disagree, **stop and post the conflict** in the status log.
 6. **Compile + save after every graph or function.** A red compile error in a
    child usually means a missing parent member; do not hide it by duplicating
    the member in the child.
-7. **Walkers wait for M1.** Until A posts the base gate (variables, functions,
-   `PatrolStep`/`LedgeAhead`, compile clean, 44 PASS, tests 1–9), do not start
+7. **Walkers wait for M1.** Until A1 posts the base gate (variables, functions,
+   `PatrolStep`/`LedgeAhead`, compile clean, 44 PASS, tests 1–9), do not wire
    `Snail`, `Rocks`, `Slime`, `Rhino` or the final `WoodLog` aggro wiring.
-   Stationary/flyers (B) and the projectile/puddle/shooter support (C) may start
-   immediately because they do not read the walker AI.
+   A1 may prepare Snail unique variables/defaults; A2 may prepare Rock unique
+   variables/defaults, art and static map/platform instances. No walker graph or
+   walker PIE before M1. Stationary/flyers (B) and the projectile/puddle/shooter
+   support (C) may start immediately because they do not read the walker AI.
 8. **Shared bases are single-owner.**
-   - A only: `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_RockBase`.
+   - A1 only: `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`.
+   - A2 only: `BP_RockBase`, `BP_Rock1/2/3`.
    - C only: `BP_ShooterEnemyBase`, `BP_EnemyProjectile*`, `BP_ToxicPuddle`.
    - B never edits a shared base.
-9. **Level map is single-owner.** Only A edits `L_Level_01`, and only in M4.
-   B/C provide placement coordinates and test results; they do not open the map
-   for saving.
+9. **Level map is single-owner.** Only A2 edits `L_Level_01`: M1 smoke-test
+   staging and M4. A1/B/C provide placement coordinates and test results; they
+   never save the map. A2 stages and removes the temporary M1 test actor at A1's
+   request.
 10. **No new base classes, no Behavior Tree, no NavMesh, no C++.** No Pea Plant
     work. No Python graph authoring.
-11. **Docs are contract files.** A owns edits to `EnemyAI.md`, `Enemies.md` and
-    `EnemyPlacement.md`. B/C may append to the status log in this file and may
+11. **Docs are contract files.** A1 owns edits to `EnemyAI.md`, `Enemies.md` and
+    `EnemyPlacement.md`. A2/B/C may append to the status log in this file and may
     propose a correction; they must not rewrite a contract to match their graph.
 12. **Definition of done is per asset**, not "the graph looks finished": see §9.
 
@@ -160,11 +168,11 @@ If two documents disagree, **stop and post the conflict** in the status log.
 
 | Asset | Owner | Depends on | Notes |
 |---|---|---|---|
-| `BP_EnemyBase` | A | — | AI core, M1 |
-| `BP_EnemyPlatform` | A | — | DONE — `bEnabled=true`, Zone verified |
-| `BP_Snail` | A | M1 | walker; no detection |
-| `BP_RockBase` | A | M1 | split logic |
-| `BP_Rock1/2/3` | A | M1, `BP_RockBase` | child defaults + split |
+| `BP_EnemyBase` | A1 | — | AI core, M1 |
+| `BP_EnemyPlatform` | A1 | — | DONE — `bEnabled=true`, Zone verified |
+| `BP_Snail` | A1 | M1 | walker; no detection |
+| `BP_RockBase` | A2 | M1 | split logic |
+| `BP_Rock1/2/3` | A2 | M1, `BP_RockBase` | child defaults + split |
 | `BP_SpikeTurtle` | B | base health only | stationary |
 | `BP_Ghost` | B | base health only | flyer, own Tick |
 | `BP_Bat` | B | base health only | flyer, own Tick |
@@ -178,7 +186,7 @@ If two documents disagree, **stop and post the conflict** in the status log.
 | `BP_Rhino` | C | M1 | walker charger |
 | `BP_PeaPlant` | nobody | — | unused; do not place or extend |
 | `BP_EnemyProjectile_Pea` | nobody | — | unused shell |
-| `L_Level_01` | A | all behavior gates | M4 only |
+| `L_Level_01` | A2 | all behavior gates + A1 M1 smoke test | M1 staging + M4 only |
 
 If a new asset is needed, add it to this table before creating it. Do not create
 a second “base” or a manager actor to avoid a dependency. Exact lock paths are
@@ -190,18 +198,23 @@ All enemy Blueprints live in
 `Content/DontTrustTheLevels/Enemies/Blueprints/`. Lock the exact `.uasset`
 file, never a folder; use the paths below verbatim with `git lfs lock`.
 
-**Owner A**
+**Owner A1 — shared base + Snail**
 
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_EnemyBase.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_EnemyPlatform.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Snail.uasset`
+- Docs: `Docs/EnemyAI.md`, `Docs/Enemies.md`, `Docs/EnemyPlacement.md`,
+  `Docs/EnemyWorkPlan.md` (contract edits)
+
+**Owner A2 — rocks + level**
+
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_RockBase.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Rock1.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Rock2.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Rock3.uasset`
-- `Content/DontTrustTheLevels/Levels/L_Level_01.umap` — **M4 only**
-- Docs: `Docs/EnemyAI.md`, `Docs/Enemies.md`, `Docs/EnemyPlacement.md`,
-  `Docs/EnemyWorkPlan.md` (contract edits)
+- `Content/DontTrustTheLevels/Levels/L_Level_01.umap` — **M1 test staging and M4 only**
+- May append only to the status log in `Docs/EnemyWorkPlan.md`; request contract
+  changes from A1
 
 **Owner B**
 
@@ -233,7 +246,38 @@ file, never a folder; use the paths below verbatim with `git lfs lock`.
 - `Saved/`, `Intermediate/`, `DerivedDataCache/`, or probe dumps.
 
 If the file is not listed for you, you do not own it. If a needed asset is
-missing, add it to §4 first and tell A before creating it.
+missing, add it to §4 first and tell A1 before creating it.
+
+### 4.2 A1/A2 parallel boundary
+
+This split is conflict-free only while both owners stay on their side of the
+boundary:
+
+| A1 may edit/save | A2 may edit/save |
+|---|---|
+| `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail` | `BP_RockBase`, `BP_Rock1/2/3`, `L_Level_01` |
+| contract docs in §4.1 | status-log lines only; request contract changes from A1 |
+
+- A1 never saves `L_Level_01` or a Rock child. A1 may PIE-test the map after
+  A2 saves a test setup, but must not save the map.
+- A2 never opens `BP_EnemyBase`, `BP_EnemyPlatform` or `BP_Snail` for saving. If
+  the base, platform or Snail class needs a change, A2 posts a request to A1.
+- A2 stages the map instance of the temporary M1 smoke-test actor (`BP_Rock1` on
+  P_02 or `BP_Snail` on P_00), commits/pushes the map and releases the lock so A1
+  can pull it. A2 never edits the Snail asset. A1 runs PIE without saving; A2
+  removes the actor after M1 and pushes the cleanup. A1 never saves the map.
+- A1 may prepare Snail variables/defaults/art; A2 may prepare Rock
+  variables/defaults/art and static map/platform placement. Walker graphs and
+  walker PIE wait for `M1 GREEN`.
+- `BP_EnemyPlatform` is frozen for A2 placement after M1. If A1 must change the
+  class, A2 re-saves the affected map instances and re-runs the walker smoke test.
+
+No file in the left column overlaps a file in the right column. A Git LFS lock
+conflict means one of these rules was broken, not that the split is wrong.
+
+A1's post-M1 work is Snail; A2's is Rocks plus the map. A2 has the larger M4
+block, so A1 should hand over exact placement coordinates and PIE results, but
+A1 must not save the map.
 
 ---
 
@@ -242,27 +286,33 @@ missing, add it to §4 first and tell A before creating it.
 ```text
 M0  all owners read the docs (no edits)
      |
-     +-- A: M1  BP_EnemyBase AI core gate ----------------------+
-     |          (blocks every walker)                            |
-     |                                                           |
+     +-- A1: M1  BP_EnemyBase AI core gate ---------------------+
+     |           (blocks every walker)                          |
+     |                                                          |
+     +-- A2: prep Rock vars/defaults + static map placement     |
+     |          (no walker graph or walker PIE before M1)       |
+     |                                                          |
      +-- B: M2  Turtle -> Ghost -> Bat -> Skull                 |
-     |          (no base-AI dependency)                          |
-     |                                                           |
+     |          (no base-AI dependency)                         |
+     |                                                          |
      +-- C: M2b Projectile -> Puddle -> Shooter -> WoodLog      |
-                (support; WoodLog final aggro waits for M1)      |
-                                                                 |
-     M1 gate ----------------------------------------------------+
+                (support; WoodLog final aggro waits for M1)     |
+                                                                |
+     M1 gate ---------------------------------------------------+
      |
-     +-- A: M3a Snail -> Rocks
+     +-- A1: M3a Snail
+     +-- A2: M3b Rocks
      +-- C: M3c Rhino -> Toxic Slime
      |
-     M4  integration, placement, full PIE matrix (A owns the map)
+     M4  integration, placement, full PIE matrix
+         (A2 owns the map; A1 owns base verifier + contract docs)
 ```
 
-M1 is the only hard gate. B's four assets and C's projectile/puddle/shooter
-work do not read the walker AI and may run while A builds the base. C may build
-the Wood Log defaults and firing graph early, but must not wire or PIE-test its
-aggro/patrol until M1 is green.
+M1 is the only hard gate. A1 may prep Snail and A2 may do Rock/map preparation
+while A1 builds the base, but walker graphs and walker PIE wait for M1 GREEN.
+B's four assets and C's projectile/puddle/shooter work do not read the walker AI
+and may run immediately. C may build the Wood Log defaults and firing graph
+early, but must not wire or PIE-test its aggro/patrol until M1 is green.
 
 ---
 
@@ -278,7 +328,7 @@ aggro/patrol until M1 is green.
 - Post one line in the status log: `M0 done`, your slot, and the first asset.
 - If you find a doc conflict, post it before touching an asset.
 
-### M1 — `BP_EnemyBase` AI core gate (A; blocks walkers)
+### M1 — `BP_EnemyBase` AI core gate (A1; blocks walkers)
 
 **Read:** `EnemyAI.md` §3–7 and §10; `Enemies.md` §3–4.
 
@@ -310,12 +360,13 @@ aggro/patrol until M1 is green.
 - Parent and every compiled child have no red errors.
 - `py -3 Scripts\_verify_enemy_base.py` holds **44 PASS / 0 FAIL**.
 - PIE tests 1–9 from `EnemyAI.md` §11 pass on a temporary `BP_Rock1` placed on
-  P_02 (z ≈ `506.25`) or `BP_Snail` on P_00 (z ≈ `875`). Do not save level
-  tuning yet.
+  P_02 (z ≈ `506.25`) or `BP_Snail` on P_00 (z ≈ `875`). A2 stages, commits and
+  pushes the test setup, then A1 pulls and runs PIE. A1 never saves the map; A2
+  removes the test actor after M1. Do not save level tuning yet.
 - Specifically verify: patrol edge turns, same-platform-only aggro, de-aggro,
   knock-off platform adoption, stair stranding/rescue.
 - Commit + push, then post `M1 GREEN` with the verifier output. Only then may
-  A start Snail/Rocks and C start Slime/Rhino/final Wood Log aggro.
+  A1 start Snail, A2 start Rocks and C start Slime/Rhino/final Wood Log aggro.
 
 Existing auto-zone surfaces in `L_Level_01` (world X / Z / width):
 P_00 `x=-400, z=800, w=800` · P_01 `x=950, z=600, w=500` ·
@@ -356,7 +407,9 @@ only the player; shooter base compiles with no red errors.
 
 ### M3 — Walkers (after M1)
 
-**A:** `BP_Snail` → `BP_RockBase`/`BP_Rock1/2/3`.
+**A1:** `BP_Snail`.
+
+**A2:** `BP_RockBase`/`BP_Rock1/2/3`.
 
 **C:** `BP_Rhino` → `BP_ToxicSlime` → finish `BP_WoodLog` aggro/patrol.
 
@@ -374,17 +427,18 @@ only the player; shooter base compiles with no red errors.
 `Enemies.md` §7.3; split pieces adopt their landing platform; shell stays on
 platform; Rhino dies on the 4th wall hit.
 
-### M4 — Integration, placement and tuning (all; A owns the map)
+### M4 — Integration, placement and tuning (all; A2 owns map, A1 owns verifier/docs)
 
-- A places the test enemies and any additional `BP_EnemyPlatform` zones in
-  `L_Level_01`; B/C report coordinates and do not save the map.
-- Run the full `EnemyAI.md` §11 matrix (1–16) plus the extended checks in
-  `Enemies.md` §7.3.
+- A2 places the test enemies and any additional `BP_EnemyPlatform` zones in
+  `L_Level_01`; A1/B/C report coordinates and do not save the map.
+- A2 coordinates the full `EnemyAI.md` §11 matrix (1–16) plus the extended
+  checks in `Enemies.md` §7.3; each owner runs its own asset's PIE checks.
 - Tune `AggroHalfWidth/Height`, `ChaseSpeed`, `DeAggroTime`, `RescueRadius`,
   `MinPatrolWidth` and per-enemy speeds in Class Defaults, not in duplicated
-  child variables.
-- Re-run `_verify_enemy_base.py`; hold **44 PASS / 0 FAIL**.
-- Commit docs + assets; clean probe files; release all locks.
+  child variables. A1 owns base/platform/Snail defaults; A2 owns Rock defaults.
+- A1 re-runs `_verify_enemy_base.py`; hold **44 PASS / 0 FAIL**.
+- A1 commits contract docs + Snail; A2 commits map + Rocks; all owners clean
+  probe files and release their locks.
 
 ---
 
@@ -394,11 +448,14 @@ Each card is the assignment. The card tells you **what to build and how to
 prove it**; the linked sections contain the exact pin-level recipes. Do not
 invent a third source.
 
-### A1 — `BP_EnemyBase` AI core (Owner A)
+### A1 — `BP_EnemyBase` AI core (Owner A1)
 
 **Read:** `EnemyAI.md` §3–7, §10; `Enemies.md` §3–4.
 
 **Depends:** none. **Blocks:** every walker.
+
+**Scope:** edit only `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail` and the
+contract docs. Never save `L_Level_01`; A2 stages/removes the M1 test actor.
 
 **Tasks**
 
@@ -652,10 +709,13 @@ horizontally, de-aggros after `2 s`, resumes patrol, no vertical aim.
 
 ---
 
-### A2 — `BP_Snail` (Owner A)
+### A1b — `BP_Snail` (Owner A1)
 
 **Read:** `EnemyAI.md` §8.3; `Enemies.md` §6.3; `EnemyPlacement.md` §4.3.
 **Depends:** M1. No detection.
+
+**Parallel prep:** unique variables, Class Defaults and art may be prepared now;
+the graph tasks below wait for `M1 GREEN`.
 
 **Tasks**
 
@@ -685,10 +745,13 @@ platform edge; shell ignores bullets; contact `1`; destroys itself after `8 s`.
 
 ---
 
-### A3 — `BP_RockBase` + `BP_Rock1/2/3` (Owner A)
+### A2 — `BP_RockBase` + `BP_Rock1/2/3` (Owner A2)
 
 **Read:** `EnemyAI.md` §8.2; `Enemies.md` §6.2; `EnemyPlacement.md` §4.2.
 **Depends:** M1.
+
+**Parallel prep:** `BP_RockBase`/Rock unique variables and Class Defaults may be
+prepared now; split/chase graphs wait for A1's `M1 GREEN`.
 
 **Tasks**
 
@@ -775,7 +838,7 @@ player dies on contact, no detection, and the slime never walks off a ledge.
 ## 8. AI assistant handoff prompt
 
 Give your AI assistant the whole repository, then paste the block for your slot.
-Replace `<SLOT>` with `A`, `B` or `C` and `<ASSET>` with the first asset.
+Replace `<SLOT>` with `A1`, `A2`, `B` or `C` and `<ASSET>` with the first asset.
 
 ```text
 You are the AI assistant for Owner <SLOT> on the Unreal Engine 4.27.2 project
@@ -792,9 +855,11 @@ Read, in this order:
 Current asset: <ASSET>.
 Your ownership is exactly the file list for your slot in
 Docs/EnemyWorkPlan.md section 4.1. Only edit those exact .uasset paths, plus
-the status-log lines the plan allows. Do not edit BP_EnemyBase,
-BP_ShooterEnemyBase, BP_RockBase, any shared base, any other owner's asset, or
-a level map unless the plan explicitly lists it for your slot.
+the status-log lines the plan allows. Do not edit a shared base or another
+owner's asset, or a level map unless the plan explicitly lists it for your slot.
+BP_EnemyBase, BP_EnemyPlatform and BP_Snail are A1-only; BP_RockBase and the Rock
+children are A2-only; BP_ShooterEnemyBase, BP_EnemyProjectile* and BP_ToxicPuddle
+are C-only.
 
 Hard rules:
 - Lock the asset with Git LFS / UE Source Control before editing. Never co-edit.
@@ -811,7 +876,9 @@ Hard rules:
 - Compile and save after every function or graph. Never leave a red error.
 - Run `py -3 Scripts\_verify_enemy_base.py` after any base-adjacent change;
   the accepted result is 44 PASS / 0 FAIL.
-- Walkers may not start before Owner A posts M1 GREEN.
+- A1/A2 may prepare unique child variables/defaults, art and static
+  map/platform placement, but may not wire walker graphs or run walker PIE
+  before A1 posts M1 GREEN.
 - If a parent member is missing, stop and report it. Do not duplicate it in the
   child. If two docs disagree, EnemyAI.md wins; report the conflict.
 
@@ -845,10 +912,13 @@ Do not claim a test passed unless you ran it in PIE. Do not invent variable
 names, function names or defaults that are not in the linked sections.
 ```
 
-Owner A should also add: `M1 is the gate; post M1 GREEN with verifier output
-before starting walkers.` Owner B should add: `Your four assets do not depend on
-M1; Turtle -> Ghost -> Bat -> Skull.` Owner C should add: `Support first;
-Wood Log patrol/aggro waits for M1; Rhino before Slime.`
+Owner A1 should also add: `M1 is the gate; post M1 GREEN with verifier output
+before wiring Snail. Prepare Snail defaults now, but do not run walker PIE until
+M1 GREEN.` Owner A2 should add: `Prepare Rock defaults and map placement now;
+do not wire Rock graphs or run Rock PIE until A1 posts M1 GREEN.` Owner B should
+add: `Your four assets do not depend on M1; Turtle -> Ghost -> Bat -> Skull.`
+Owner C should add: `Support first; Wood Log patrol/aggro waits for M1; Rhino
+before Slime.`
 
 ---
 
@@ -866,8 +936,8 @@ An asset is **DONE** only when all are true:
 - [ ] No regression in an already-done enemy (contact, health, death, split).
 - [ ] The asset is committed and pushed, and the LFS lock is released.
 - [ ] The status log has the asset line and any doc deviation.
-- [ ] Any changed contract was updated in `EnemyAI.md` / `Enemies.md` by A in the
-      same commit.
+- [ ] Any changed contract was updated in `EnemyAI.md` / `Enemies.md` by A1 in
+      the same commit.
 
 A graph that compiles but has no PIE evidence is **not done**.
 
@@ -886,10 +956,11 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 25 Oct 2026 | B | BP_SpikeTurtle | DONE | n/a | test 10: spike cycle/timers/idle PASS (PrintString evidence); contact kill PASS after Dennis's 744f845 ContactBox fix (fresh side-touch kills in spikes-out window) | ea78feb + merge 0b232e9; B's diagnostic child box deleted; remaining gap (kill-on-already-overlap during phase change) reported to A as base-contract proposal |
 | 26 Oct 2026 | A | `BP_EnemyBase` | IN PROGRESS | contact `4 PASS`; kill guard `1 PASS`; base `44 PASS` | drop/contact kills once, one reload | 6/13 AI functions; next aggro set |
 | 26 Oct 2026 | B | BP_Ghost | DONE | n/a | tests 12-13 PASS: hidden start (no collision/contact/chase), 550-sphere trigger, through-wall chase (WorldStatic=Ignore), visible/hidden loop forever, 2 hits kill, contact kill while visible, no de-aggro | Ghost art faces left natively: SetFacing input negated in chase; TEMP-M1 locals (bAggro/AggroRadius/ChaseSpeed) declared in child because base M1 has not added them yet - migrate to inherited when A posts M1 GREEN; first-appear GoIdle refresh added (RefreshStateFlipbook 0.5 s after StartAggro) |
-| 27 Oct 2026 | B | BP_Bat | DONE | n/a | test 14 PASS: hang (CeilingIn -> Hanging loop, no drift), 600-sphere trigger, contact ON during 0.5 s wind-up, direct chase colliding with walls/floors (no WorldStatic=Ignore), 2 hits kill, no de-aggro | DEVIATION: TriggerRadius=600 (card says 300) - deliberate playtest tuning, needs A's blessing + doc sync; Ghost/Turtle editor resaves ride along (Ghost = byte-noise from f8e6cef adoption; Turtle = capsule Pawn=Block + ToggleIdle removed, both pending A ruling) |
+| 27 Oct 2026 | A1/A2 | Owner A split | DONE | — | — | A1: `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`, contract docs; A2: Rocks, `L_Level_01`; §4.2 boundary; walker graphs/PIE wait for M1 |
+| 27 Oct 2026 | B | BP_Bat | DONE | n/a | test 14 PASS: hang (CeilingIn -> Hanging loop, no drift), 600-sphere trigger, contact ON during 0.5 s wind-up, direct chase colliding with walls/floors (no WorldStatic=Ignore), 2 hits kill, no de-aggro | DEVIATION: TriggerRadius=600 (card says 300) - deliberate playtest tuning, needs A1's blessing + doc sync; Ghost/Turtle editor resaves ride along (Ghost = byte-noise from f8e6cef adoption; Turtle = capsule Pawn=Block + ToggleIdle removed, both pending A1 ruling) |
 |  |  |  |  |  |  |  |
 
-**Defect report (B → A, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
+**Defect report (B → A1, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
 Binary inspection of the committed `BP_EnemyBase.uasset` (458 KB, commit
 `8505b35`) shows only three SCS components (`CollisionCylinder`, `Sprite0`,
 `CharMoveComp`). **No `ContactBox` component exists**, and the contact chain
@@ -903,7 +974,7 @@ kills the turtle via the player's `Event Hit`/Kill path (turtle `bInvulnerable`
 was reset by `InitEnemy`; B re-asserts it in the child BeginPlay). The docs'
 "ContactBox done 24 Oct / 44 PASS" claim does not match the committed asset,
 and `Scripts/_verify_enemy_base.py`, `_make_enemies.py`, `_verify_enemies.py`
-are not in any branch's history. Requested from A: add `ContactBox`
+are not in any branch's history. Requested from A1: add `ContactBox`
 (`BoxComponent`, QueryOnly, Generate Overlap Events, `Pawn=Overlap`, all other
 channels Ignore, extents ~`(50,50,90)`), rebind the existing contact chain to
 `On Component Begin Overlap (ContactBox)`, re-run the base verifier, commit
@@ -916,8 +987,9 @@ once the base fix lands; B will re-run test 10 and flip the status line.
 `AdoptPlatform`, `LedgeAhead`, `PatrolStep`). The aggro set
 (`IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro`),
 the rescue set (`ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`), the
-matching variables, and the Tick/Landed wiring are still missing. Do not start
-walkers.
+matching variables, and the Tick/Landed wiring are still missing. Do not wire
+walker graphs or run walker PIE until M1 GREEN; non-behavioral Snail/Rock/map
+preparation is allowed.
 
 ---
 
@@ -935,7 +1007,7 @@ walkers.
    `feat(enemy): add projectile and toxic puddle`
    `docs(enemy): sync AI work plan and duplicate variable rules`
 6. `git push` — this releases the LFS lock; verify with `git lfs locks`.
-7. Append the status line and tell A if a contract changed.
+7. Append the status line and tell A1 if a contract changed.
 
 Never commit `Saved/`, `Intermediate/`, `DerivedDataCache/`, `__pycache__/`,
 probe dumps, or a `.umap` you do not own.
@@ -972,7 +1044,8 @@ These are deliberate, and the technical docs must agree with them:
   inherits `MoveSpeed`.
 - `BP_PeaPlant` and `BP_EnemyProjectile_Pea` remain unused shells.
 - The first PIE gate is a temporary `BP_Rock1` on P_02 or `BP_Snail` on P_00,
-  not the current Snail placement at `(-451, 9, 225)`.
+  not the current Snail placement at `(-451, 9, 225)`. A2 stages/removes it;
+  A1 runs the PIE check without saving the map.
 
-If implementation proves a decision wrong, A updates this list and the matching
-contract in the same commit. B/C do not fork the design silently.
+If implementation proves a decision wrong, A1 updates this list and the matching
+contract in the same commit. A2/B/C do not fork the design silently.
