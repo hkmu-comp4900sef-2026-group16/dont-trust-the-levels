@@ -1,16 +1,21 @@
 # Enemy AI — platforms, patrol, detection, aggro and stairs
 
-**Status (24 Oct 2026): design locked; shared base only.** `BP_EnemyBase` has
-its shared health/damage/death graph and the `ContactBox` contact fix
-(**44 PASS**), and `BP_EnemyPlatform` auto-placement works (7 auto zones in
-`L_Level_01`). The AI core is **not built yet**: none of the new §4 AI variables
-(`ChaseSpeed`, `bAggro`, `HomePlatform`, …) or the §3/§5/§6 helper functions
-exist. The existing `MoveSpeed`/`bCanMove` remain. The next work item is §10
-step 2, not a child enemy. This document supersedes the movement/detection
-passages in `Docs/Enemies.md` where they disagree. The level-placement rules
-distilled from this document are in **`Docs/EnemyPlacement.md`** for level
-designers. The three-person execution split, gates and asset locks are in
-**`Docs/EnemyWorkPlan.md`**.
+**Status (5 Nov 2026): shared base AI complete; walker PIE pending.**
+`BP_EnemyBase` has its shared health/damage/death graph, the `ContactBox`
+contact fix, and the full AI core (**45 PASS / 0 FAIL**). All **13/13**
+functions and **25/25** §4 variables exist with the documented defaults
+(`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit change is landed:
+`UpdateAggro` is **54 nodes**, with the box term and the post-hit term feeding a
+`BooleanOR` before the aggro branch; `_verify_enemy_base.py` now fails if any of
+the three old links returns. `BP_Snail` overrides `ChaseSpeed=80`,
+`AggroHalfWidth=0`, `AggroHalfHeight=0` and `bAggroOnHit=true` (saved 5 Nov);
+its remaining health/movement/flipbook defaults are still open. `BP_EnemyPlatform`
+auto-placement works (7 auto zones in `L_Level_01`). The next work item is PIE
+tests 1–9 and the `M1 GREEN` line, not another child enemy. This document
+supersedes the movement/detection passages in `Docs/Enemies.md` where they
+disagree. The level-placement rules distilled from this document are in
+**`Docs/EnemyPlacement.md`** for level designers. The three-person execution
+split, gates and asset locks are in **`Docs/EnemyWorkPlan.md`**.
 
 **Engine:** Unreal Engine **4.27.2**, Blueprint-only, Paper2D. No C++, no
 Behavior Tree, no EQS, no NavMesh. Movement is `Add Movement Input` with a
@@ -59,7 +64,8 @@ Four booleans, evaluated in this order:
 | 4 | Patrol | default | walk between platform bounds |
 
 `bWasKnockedBack` is a short-lived flag set by `AnyDamage` and cleared by
-`Landed`; it is not a fifth state, but it suppresses movement until landing.
+`ResolveKnockback` (called from `Event On Landed` or the Tick fallback); it is
+not a fifth state, but it suppresses movement until landing is resolved.
 
 Do **not** use one integer state enum. The base already has booleans, and child
 blueprints need to override only one behaviour at a time (Snail shell, Rhino
@@ -107,7 +113,7 @@ per-enemy minimum widths are tabulated in `Docs/EnemyPlacement.md`.
 
 ### 3.2 How an enemy finds its home
 
-`FindHomePlatform` (called by `BeginPlay` and `Landed`):
+`FindHomePlatform` (called by `BeginPlay` and `Event On Landed`):
 
 ```text
 SelfFeet = Self.Location - (0,0,CapsuleHalfHeight)
@@ -124,7 +130,7 @@ Branch: Candidate valid
            Set bStranded = false
   False -> Set HomePlatform = None
            # no zone is not an error: edge-probe patrol still works.
-           # Trace down to set GroundZ; if there is no floor, wait for Landed.
+           # Trace down to set GroundZ; if there is no floor, wait for Event On Landed.
            # Only a landing on a too-narrow surface makes the enemy stranded.
 ```
 
@@ -204,7 +210,7 @@ Add these in **My Blueprint → Variables**. Existing variables are in
 | `ChaseSpeed` | Float | `150.0` | walker aggro speed; `0` = never chase |
 | `bAggro` | Boolean | `false` | runtime |
 | `bStranded` | Boolean | `false` | landed off a valid platform |
-| `bWasKnockedBack` | Boolean | `false` | suppresses AI until `Landed` |
+| `bWasKnockedBack` | Boolean | `false` | suppresses AI until `ResolveKnockback` clears it |
 | `AggroHalfWidth` | Float | `600.0` | rectangle half-width; walkers |
 | `AggroHalfHeight` | Float | `500.0` | rectangle half-height; covers jump/double-jump |
 | `AggroRadius` | Float | `0.0` | sphere radius; flyers (`0` = disabled) |
@@ -212,6 +218,7 @@ Add these in **My Blueprint → Variables**. Existing variables are in
 | `UnreachableTime` | Float | `0.0` | runtime accumulator |
 | `MaxChaseStepZ` | Float | `500.0` | vertical tolerance while the ground trace confirms the platform |
 | `bRequireAggroLineOfSight` | Boolean | `false` | optional wall trace |
+| `bAggroOnHit` | Boolean | `false` | walker only; chase for `DeAggroTime` after a hit, even outside the box |
 | `LedgeProbeAhead` | Float | `30.0` | forward probe distance |
 | `LedgeProbeDepth` | Float | `80.0` | downward probe length |
 | `MaxPatrolStepZ` | Float | `15.0` | flat-platform tolerance |
@@ -231,10 +238,10 @@ functions set `MaxWalkSpeed = MoveSpeed` or `ChaseSpeed`.
 
 ### 4.1 What is not a member variable
 
-`EffectiveInset`, `Candidate`, `SelfFeet`, `PlayerFeet`, `BoxExtent` and the
-trace hit/start/end values are **function-locals**. Compute them inside
-`FindHomePlatform`, `LedgeAhead` or `TryRescue`; do not add them as Blueprint
-variables.
+`EffectiveInset`, `BestDistance`, `Candidate`, `SelfFeet`, `PlayerFeet`,
+`BoxExtent` and the trace hit/start/end values are **function-locals**. Compute
+them inside `FindHomePlatform`, `LedgeAhead` or `TryRescue`; do not add them as
+Blueprint variables.
 
 `IsPlayerOnHomePlatform` uses four locals for the same reason: `PlayerRef`
 (Character), `PlayerLocation` (Vector), `HalfHeight` (Float), `TargetZ`
@@ -262,7 +269,7 @@ meaningful:
 | Milestone | Variables needed |
 |---|---|
 | Platform ownership + patrol | `HomePlatform`, `PatrolMinX`, `PatrolMaxX`, `GroundZ`, `bStranded`, `bAggro`, `LedgeProbeAhead`, `LedgeProbeDepth`, `MaxPatrolStepZ` |
-| Aggro + chase | `ChaseSpeed`, `AggroHalfWidth`, `AggroHalfHeight`, `DeAggroTime`, `UnreachableTime`, `MaxChaseStepZ`, `PlayerGroundProbeDepth`, `bRequireAggroLineOfSight` |
+| Aggro + chase | `ChaseSpeed`, `AggroHalfWidth`, `AggroHalfHeight`, `DeAggroTime`, `UnreachableTime`, `MaxChaseStepZ`, `PlayerGroundProbeDepth`, `bRequireAggroLineOfSight`, `bAggroOnHit` |
 | Knockback + rescue | `bWasKnockedBack`, `RescueRadius`, `MinPatrolWidth`, `MaxPatrolWidth`, `MaxDrop` |
 | Flyers only | `AggroRadius` |
 
@@ -375,12 +382,44 @@ platform even if the boxes overlap.
 
 ### 6.2 Reachability
 
-A walker may only chase when all are true:
+A walker chases when **either** term is true.
+
+**Box term** — the normal detection, all of:
 
 - player is inside the aggro rectangle;
 - `IsPlayerOnHomePlatform()` is true;
 - `Abs(Player.Z - Self.Z) <= MaxChaseStepZ`;
 - optional: a horizontal line trace to the player is clear.
+
+**Hit term** — `bAggroOnHit`, all of:
+
+- `bAggroOnHit` is true (default `false`);
+- `Get Game Time in Seconds - LastDamageTime <= DeAggroTime`.
+
+**Gun-aggro set (5 Nov 2026):** `Rock1/2/3`, `Snail`, `WoodLog` and `Bat`. The
+walkers use `bAggroOnHit=true`; the base hit term is deliberately cross-platform
+and lets `ChaseStep` walk to the ledge (closest safe X) without leaving the
+platform. `Bat` must implement the hit branch itself because it replaces the base
+walker Tick; `bAggroOnHit` is never read there. Rhino, Ghost, Spike Turtle and
+the Skull cannot be gun-aggroed; Toxic Slime cannot be aggroed at all.
+
+```text
+Reachable = (InBox AND OnHome AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+            OR (bAggroOnHit AND Now - LastDamageTime <= DeAggroTime)
+```
+
+The hit term deliberately skips `IsPlayerOnHomePlatform()` and the Z check: the
+point is that a walker shot from a platform above walks to the ledge under the
+player and waits there instead of forgetting the hit. It reuses `DeAggroTime`
+rather than adding a second duration, so one number tunes both clocks; the
+consequence is that aggro after a hit lasts up to `2 * DeAggroTime` (about 4 s
+at the `2.0` default) — `DeAggroTime` of the window itself, then `DeAggroTime`
+again of accumulating `UnreachableTime`. Clear `bAggroOnHit` on a child to get
+the pre-change behaviour back with no graph edit.
+
+`LastDamageTime` is stamped by `Event AnyDamage` (`Enemies.md` §4.2) and is
+already `-1000.0` at spawn, so a fresh enemy is never pre-aggroed. A hit that
+lands during i-frames returns before the stamp and does not refresh the window.
 
 If the player is on another platform, jumping across a gap, or falling into a
 pit, the enemy **stands at the ledge** and does not follow.
@@ -394,8 +433,10 @@ Event Tick:
   Branch: ChaseSpeed <= 0 -> PatrolStep(); return   # Snail/Slime: no detection
   Player = Get Player Character(0)
   InBox = IsPlayerInAggroBox(Player)
-  Reachable = InBox AND IsPlayerOnHomePlatform(Player)
-                  AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ
+  Reachable = (InBox AND IsPlayerOnHomePlatform(Player)
+                   AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+              OR (bAggroOnHit AND
+                  Get Game Time in Seconds - LastDamageTime <= DeAggroTime)
   Branch: Reachable
     True  -> Set bAggro = true
              Set UnreachableTime = 0
@@ -427,7 +468,8 @@ turns. It does not jump, path around a wall, or step down.
 or unreachable, `bAggro=false` and the enemy resumes patrol from its current
 position. If the player returns to a reachable spot inside the rectangle, the
 enemy re-aggros immediately. `UnreachableTime` resets whenever the player is
-reachable again.
+reachable again — including while the hit term is what keeps the enemy
+reachable, which is why the timer restarts after the window closes.
 
 **Flying aggro has no de-aggro path.** Ghost and Bat never run the de-aggro
 branch.
@@ -441,8 +483,8 @@ branch.
 | Rhino | rectangle | `1200` | `500` | `2.0 s` | yes (charge) |
 | Wood Log | rectangle | `1400` | `500` | `2.0 s` | no — stops to shoot |
 | Ghost | sphere | `550` | — | **never** | yes, through walls |
-| Bat | sphere | `300` | — | **never** | yes, collides |
-| Snail | none | — | — | — | no |
+| Bat | sphere `1000` + hit branch (staged) | — | — | **never** | yes, collides |
+| Snail | hit only | — | — | `2.0 s` | yes, after a hit (`80`) |
 | Toxic Slime | none | — | — | — | no |
 | Spike Turtle | none | — | — | — | no |
 | Floating Skull | none | — | — | — | no |
@@ -468,20 +510,31 @@ Set UnreachableTime = 0
 LaunchCharacter(...)
 ```
 
+`Set bAggro = false` clears the current chase but not the hit window:
+`LastDamageTime` was stamped a few nodes earlier, so once `bWasKnockedBack`
+clears the walker re-aggros for the remaining `DeAggroTime` (§6.2). That is
+intended — a knocked-back walker comes back for the player instead of
+forgetting the hit.
+
 Do not clear `bWasKnockedBack` with a single fixed timer. A character can be in
 the air for a variable time, and a purely horizontal hit may **not leave the
-floor at all** — in that case `Event Landed` never fires and the enemy would
+floor at all** — in that case `Event On Landed` never fires and the enemy would
 stay frozen. Resolve it in two places:
 
-- `Event Landed` -> `ResolveKnockback`;
+- `Event On Landed` -> `ResolveKnockback`;
 - `Event Tick`: if `bWasKnockedBack` and `CharacterMovement.IsFalling()` is
   false, call `ResolveKnockback` immediately (the hit stayed on the floor).
+
+In the UE graph the landing node is **`Event On Landed`** (the `OnLanded`
+BlueprintImplementableEvent inherited from `ACharacter`), not `Event Landed`.
+It exposes the `Hit` result and has **no Return Node**: an event graph ends at an
+unconnected exec pin. Return Nodes belong only in function graphs.
 
 `ResolveKnockback` is the body in §7.2 (clear flag, find/adopt platform).
 
 ### 7.2 Landing
 
-`ResolveKnockback` (called by `Event Landed` **and** by the Tick fallback in
+`ResolveKnockback` (called by `Event On Landed` **and** by the Tick fallback in
 §7.1):
 
 ```text
@@ -525,14 +578,15 @@ Get All Actors of Class (BP_EnemyPlatform)
 ForEach:
   Branch: Platform.bEnabled
   Branch: 2D distance(Self, Platform) <= RescueRadius
-  Branch: Platform.Z < Self.Z + 50            # below or level, not above
+  Branch: Delta.Z < 50           # Delta = Platform.Location - Self.Location
+                                 # same as Platform.Z < Self.Z + 50
   Keep nearest valid Candidate
 Branch: Candidate valid
   True  -> SetActorLocation(Candidate.Location + (0,0,120),
                             bSweep=false, bTeleport=true)
            Set Movement Mode (Falling)
            # gravity drops it onto a guaranteed broad platform
-           # Event Landed runs FindHomePlatform again and adopts it
+           # Event On Landed runs FindHomePlatform again and adopts it
   False -> stay stranded (idle); no suicide drop
 ```
 
@@ -540,6 +594,10 @@ The teleport/drop is deliberate: the destination is an authored zone, so it
 cannot be a hole or a 100 uu step. A short `Set Actor Hidden In Game` or a dust
 puff can hide the reposition later. Do not trace blindly downward and walk off;
 that is how enemies kill themselves.
+
+`Delta` is the vector difference between the platform location and Self location.
+Break it once; `Delta.Z < 50` is the same height test as
+`Platform.Z < Self.Z + 50` and reuses the X/Z values used for the distance.
 
 **This is deliberately one-way: rescue never teleports upward.** A normal hit
 uses horizontal knockback (`LaunchCharacter(X, 0, 0, bZOverride=false)`), so a
@@ -593,7 +651,7 @@ authoring contract.
 | `BP_ToxicSlime` | patrol | none | `1` | `3` | puddle timer unchanged |
 | `BP_Rhino` | patrol + charge | rectangle `1200×500`, de-aggro `2 s` | `1` | **4 wall health**; bullets no-op | each wall hit `-1` and turn |
 | `BP_FloatingSkull` | bounce | none | `1` only when ON | `2` | `BounceSpeed ≈ 300`; ON/OFF toggle stays |
-| `BP_Bat` | hang, then fly | sphere `300`, no de-aggro | `1` only after trigger | `2` | collides with wall/floor |
+| `BP_Bat` | hang, then fly | sphere `1000`, no de-aggro | `1` only after trigger | `2` | collides with wall/floor |
 | `BP_WoodLog` | patrol; stops to shoot | rectangle `1400×500`, de-aggro `2 s` | `1` | `3` | horizontal shots only |
 | `BP_PeaPlant` | unused | — | — | — | keep out of build order |
 
@@ -610,16 +668,22 @@ authoring contract.
 ### 8.2 Rocks
 
 - Add the rectangle aggro/de-aggro loop from §6.
+- Set `bAggroOnHit=true` on all three tiers (A2's CDOs): the rectangle is
+  `700` wide, so a hit from outside it would otherwise be forgotten instantly.
+  **DONE 5 Nov 2026:** live and verified on all three CDOs.
 - `MoveSpeed`/`ChaseSpeed` per tier; keep the existing `100 / 140 / 180`
   identities and use `120 / 160 / 200` for chase as a starting point. Tune
   separately after PIE.
-- Split pieces are spawned with `LaunchCharacter`; each piece runs `Landed` and
+- Split pieces are spawned with `LaunchCharacter`; each piece runs `Event On Landed` and
   adopts the platform it lands on (or becomes stranded/rescued). Do not assume
   the parent's `HomePlatform` is still valid.
 
 ### 8.3 Snail
 
-- Set `ChaseSpeed=0`; no detection and no chase.
+- `ChaseSpeed=80` with **both aggro halves `0`** and `bAggroOnHit=true`: the
+  zero box means it never detects on its own, the hit window
+  (`EnemyAI.md` §6.2) means a bullet wakes it for `DeAggroTime`. `ChaseSpeed=0`
+  would swallow the hit too — the gate returns to `PatrolStep` before the box.
 - Keep the normal patrol and the shell death override.
 - Both the body and the shell use the base `PatrolStep` + `LedgeAhead`; do not
   add a second shell Tick. The shell must sweep the platform, not fall off it.
@@ -698,10 +762,36 @@ Branch: CurrentHealth <= 0
 
 ### 8.8 Bat
 
-- Set `bCanMove=false`; use the inherited `ChaseSpeed=300`. The Bat's own Tick
+- Set `bCanMove=false`; use the inherited `ChaseSpeed=1000`. The Bat's own Tick
   is the only movement authority.
-- Trigger sphere is smaller than Ghost: `300` (was `350` and effectively
-  larger because of the old distance check).
+- Trigger sphere is `1000` (was `800`; `600` was the first playtest value). The
+  wider sphere covers the approach from the playable floor; it still only
+  starts the chase when the player is inside it.
+- `KnockbackForce=0` for the Bat. `LaunchCharacter` then receives a zero vector
+  and leaves the flying character in `MOVE_Flying`, so a hit cannot slide it
+  along the ceiling or push it out of the trigger.
+- A non-lethal hit is meant to force aggro: the `RefreshStateFlipbook` branch
+  checks `bWasKnockedBack`, clears the flag, sets
+  `bTriggered`/`bChasing`/`bDealContactDamage`, **sets
+  `CharacterMovement.MaxFlySpeed = ChaseSpeed`**, then calls the parent. The
+  full staged patch additionally clears the pending `HangIdle` timer.
+  `bAggroOnHit` is walker-only and is
+  never read here. All three issues are verified fixed in PIE: the live asset
+  has the 13-node hit branch plus the `MaxFlySpeed` write, and the EventGraph
+  `HangIdle` custom event is gated on `bTriggered`. The full 17-node
+  replacement remains staged in `Scripts/_bp_bat_refresh_modified_v2.txt` for a
+  clean re-paste. Without the speed write, a hit before `StartChase` leaves the
+  Bat at the flying default `400` instead of `1000`.
+- `CharacterMovement.MaxAcceleration=8192` so that after a hit or the
+  `StartChase` transition it reaches `MaxFlySpeed` immediately instead of
+  drifting slowly.
+- The `BeginPlay` `HangIdle` timer is `0.6 s`, but `StartChase` is started after
+  `0.5 s`. The live fix gates the EventGraph `HangIdle` custom event on
+  `bTriggered` (optionally `bTriggered OR bIsDead`): once the Bat is triggered,
+  return instead of playing `HangingFlipbook`. That covers both the normal
+  trigger and the hit path without relying on timer order. Alternative: shorten
+  the `HangIdle` delay to `0.3 s` and call `K2_ClearTimer("HangIdle")` on the hit
+  chain.
 - After the `CeilingOut` animation, `bChasing=true` and it chases directly in
   the X/Z plane. Unlike Ghost, it **collides with walls and floors**: do not set
   `WorldStatic = Ignore`. If it hits a wall, it stops/slides; there is no
@@ -718,6 +808,10 @@ Branch: CurrentHealth <= 0
   `1400×500`, same platform, `DeAggroTime=2.0`.
 - It **stops and shoots** while aggro; it does not chase around the platform.
   `TryFire` is gated by `bAggro`, not by "player exists anywhere".
+- Set `bAggroOnHit=true` (A2's CDO) so a hit from outside the `1400×500`
+  rectangle still turns it. It needs `ChaseSpeed > 0` (the gate above), and the
+  `ChaseStep` override keeps it planted, so the flag buys aim, not movement.
+  **DONE 5 Nov 2026:** live and verified on `BP_WoodLog`.
 - It only fires horizontally: projectile direction `(Facing,0,0)`, muzzle Z
   fixed by `MuzzleOffset.Z`. Do not aim at the player's Z.
 - If the player leaves the rectangle or becomes unreachable for `DeAggroTime`,
@@ -734,7 +828,7 @@ Branch: CurrentHealth <= 0
 **Fixed 24 Oct 2026:** option A is implemented — `ContactBox` is compiled with
 `QueryOnly`, `Pawn = Overlap`, all other channels `Ignore`, and the existing
 contact chain is bound to its component-overlap event. The base verifier reports
-**44 PASS / 0 FAIL**. The finding below is kept as the rationale.
+**45 PASS / 0 FAIL**. The finding below is kept as the rationale.
 
 **Fixed 25 Oct 2026 — capsule is now non-solid.** All four enemy classes compile
 with `CollisionCylinder → Pawn = Overlap`; `WorldStatic`/`WorldDynamic` remain
@@ -792,44 +886,40 @@ turtle and snail shell.
 
 ## 10. Build order
 
-**Current position (26 Oct 2026): steps 0 and 1 are done; step 2 is in progress
-at 6/13 functions.** The platform/patrol functions are built and all 14
-aggro/rescue variables are now in with the documented defaults. Two variable
-names still need correcting (see step 3); after that the aggro set is the next
-task.
+**Current position (5 Nov 2026): steps 0–2 are code-complete; step 2's remaining
+gate is PIE.** The base has all 13/13 AI functions and 25/25 §4 variables with
+the documented defaults (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
+change is in `UpdateAggro` (54 nodes; the three corrected links are asserted by
+`_verify_enemy_base.py`, which is now **45 PASS / 0 FAIL**). The Snail's aggro
+CDO is set (`ChaseSpeed=80`, zero box, `bAggroOnHit=true`); its health/movement/
+flipbook defaults remain. The next task is PIE tests 1–9 and the `M1 GREEN` line.
 Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
-`WoodLog` aggro) until the shared `PatrolStep` + `LedgeAhead` loop works on a
-`BP_Rock1` or `BP_Snail`. Stationary/flyer children (`SpikeTurtle`, `Ghost`,
-`Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be built in
-parallel because they do not read the walker AI. See
+`WoodLog` aggro) until that line exists. Stationary/flyer children (`SpikeTurtle`,
+`Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be
+built in parallel because they do not read the walker AI. See
 `Docs/EnemyWorkPlan.md` for the owner split and M1 gate.
 
 0. **DONE — contact fix.** `ContactBox` is compiled and the
-   `On Component Begin Overlap` chain is verified: **44 PASS / 0 FAIL**.
+   `On Component Begin Overlap` chain is verified: **45 PASS / 0 FAIL**.
    Re-run `py -3 Scripts\_verify_enemy_base.py` if the base is edited.
 1. **DONE — `BP_EnemyPlatform` marker + auto-placement.** Seven auto zones
    exist in `L_Level_01`. `bEnable` was renamed to `bEnabled` on 24 Oct 2026;
    live check: `bEnabled=true`, `Zone` is a `BoxComponent`
    (`extent 50,50,20`, `NoCollision`, hidden), `PatrolInset=80`.
-2. **IN PROGRESS — `BP_EnemyBase` AI core (6/13 functions).** The first six
-   platform/patrol functions are built; all 14 aggro/rescue variables are in.
-   Continue in this order so each step is testable on its own:
+2. **DONE — `BP_EnemyBase` AI core (13/13 functions).** All platform/patrol,
+   aggro/chase and rescue functions are built; all 25 §4 variables are in with
+   the documented defaults. The aggro-on-hit `BooleanOR` is wired and verified.
    1. **DONE** — `PointInPlatformZone`, `PointInPlatformXZ`,
       `FindHomePlatform`, `AdoptPlatform` (home ownership).
    2. **DONE** — `LedgeAhead`, `PatrolStep` (edge-safe patrol).
-   3. **NEXT** — variables are in. Rename `AggroHalfheight` ->
-      `AggroHalfHeight` and `bRequiredAggroLineOfSight` ->
-      `bRequireAggroLineOfSight`, re-run `Scripts\_check_enemy_ai_vars.py`
-      (**24 PASS / 0 FAIL** expected), then build `IsPlayerOnHomePlatform`
-      (`Scripts\_is_player_on_home_platform_graph.html` is the design page),
-      `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro` (rectangle + de-aggro).
-   4. **NEXT AFTER 3** — the rescue variables already exist; build
-      `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue` (landing,
-      stranded, stairs).
-   5. Wire `BeginPlay` → `FindHomePlatform`, `Landed` → `ResolveKnockback`,
-      `Tick` → the state loop, and set `bWasKnockedBack` in `AnyDamage`
-      before `LaunchCharacter`. `InitEnemy` already calls `FindHomePlatform`;
-      do not add a second BeginPlay call.
+   3. **DONE** — `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`,
+      `UpdateAggro` (rectangle + de-aggro + post-hit window).
+   4. **DONE** — `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`
+      (landing, stranded, stairs).
+   5. **DONE** — `BeginPlay` → `FindHomePlatform`, `Event On Landed` →
+      `ResolveKnockback`, `Tick` → the state loop, and `bWasKnockedBack` is set
+      in `AnyDamage` before `LaunchCharacter`.
+   **NEXT** — run PIE tests 1–9 and post `M1 GREEN`.
 3. **`BP_EnemyProjectile` → `BP_ToxicPuddle` → `BP_ShooterEnemyBase`** — the
    pending work from `Enemies.md` §7.1; projectile/puddle kill is independent of
    the AI rework.
@@ -877,7 +967,7 @@ parallel because they do not read the walker AI. See
 - **The player has no health.** Contact/projectile/puddle all call `Kill`.
 - **Contact overlap is fixed (24 Oct 2026).** `BP_EnemyBase` has a compiled
   `ContactBox` (`QueryOnly`, `Pawn = Overlap`, everything else `Ignore`) and the
-  component-overlap chain. `Scripts\_verify_enemy_base.py` reports **44 PASS /
+  component-overlap chain. `Scripts\_verify_enemy_base.py` reports **45 PASS /
   0 FAIL**; keep that chain intact while adding the AI nodes.
 - **All numbers are starting points.** PIE-tune after the first placement.
 

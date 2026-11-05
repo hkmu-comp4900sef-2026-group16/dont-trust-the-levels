@@ -8,8 +8,8 @@ the target layout. Do not place enemies on the assumption that the old
 unlimited-range or follow-off-ledge behavior still exists.
 
 **Team execution:** the owner split and the M4 placement gate are in
-**`Docs/EnemyWorkPlan.md`**. Only Owner A saves `L_Level_01`; B/C provide
-coordinates and test results.
+**`Docs/EnemyWorkPlan.md`**. Only Owner A2 saves `L_Level_01`; A1 and C provide
+coordinates and test results and must not save the map.
 
 ---
 
@@ -277,7 +277,7 @@ player’s.
 | `BP_ToxicSlime` | patrol + puddle trail | ground, `MoveSpeed=70` | none | `1`; health `3` | Flat floor/corridor, not a ledge |
 | `BP_Rhino` | wall-health charger | ground, `MoveSpeed=120`; charge `600` | rectangle `1200×500`, de-aggro `2 s` | `1`; **4 wall hits**; bullets no-op | Long corridor with solid walls at both ends |
 | `BP_FloatingSkull` | bouncing toggle hazard | flying, `350`; `BounceSpeed≈300` | none | `1` only when ON; health `2` | Enclosed bounce corridor, not open sky |
-| `BP_Bat` | ceiling ambusher | hangs, then flying `400` | sphere `300`, no de-aggro | `1` after trigger; health `2` | Under a ceiling with clear flight space |
+| `BP_Bat` | ceiling ambusher | hangs, then flying `400`→`1000` | sphere `1000`, no de-aggro | `1` after trigger; health `2` | Under a ceiling with clear flight space |
 | `BP_WoodLog` | moving ranged shooter | ground, `MoveSpeed=90`; stops to shoot | rectangle `1400×500`, de-aggro `2 s`; fire `2.5 s` | `1`; health `3` | Long horizontal lane with clear line of fire |
 | `BP_PeaPlant` | legacy/unused | none | none | — | **Do not place** |
 
@@ -380,8 +380,10 @@ bases/spawned effects, not level actors.
 
 ### 4.8 Bat — `BP_Bat`
 
-- It hangs until the player enters a `300` sphere, then plays `CeilingOut` and
-  chases directly.
+- It hangs until the player enters a `1000` sphere, then plays `CeilingOut` and
+  chases directly. `KnockbackForce=0` means a hit does not launch it along the
+  ceiling or push it out of that sphere. Aggro is distance-based: a shot from
+  outside `1000` does not wake it.
 - Place it **under or near a ceiling**, with a clear flight path and enough
   space for the trigger sphere to be reachable. It collides with walls and
   floors; it does not phase.
@@ -466,7 +468,7 @@ bases/spawned effects, not level actors.
 - Rhino: long run-up, walls at both ends, zone width `450+`.
 - Wood Log: clear horizontal firing lane, zone width `450+`.
 - Skull: enclosed bounce corridor; do not leave open ends into the void.
-- Bat: ceiling above the corridor; trigger sphere `300`.
+- Bat: ceiling above the corridor; trigger sphere `1000`.
 - Slime: flat floor; puddles fill the route.
 - Ghost: allowed, but it can phase through the corridor walls into adjacent
   rooms. Check the surrounding geometry.

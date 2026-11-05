@@ -1,8 +1,10 @@
-# Enemy Work Plan — four-slot parallel execution
+# Enemy Work Plan — three-slot parallel execution
 
-**Status (27 Oct 2026):** execution plan for the remaining enemy work. This
-file assigns the work, defines the dependency gates and lists the acceptance
-tests. It does **not** replace the technical design:
+**Status (4 Nov 2026):** execution plan for the remaining enemy work. Owner **B
+has been retired**; their four assets and their milestone (`M2`) now belong to
+**A2**. The live slots are **A1, A2, C**. This file assigns the work, defines
+the dependency gates and lists the acceptance tests. It does **not** replace the
+technical design:
 
 | Authority | File | What it decides |
 |---|---|---|
@@ -10,9 +12,11 @@ tests. It does **not** replace the technical design:
 | 2 | **`Docs/Enemies.md`** | variables, graph recipes, per-enemy mechanics, test matrix |
 | 3 | **`Docs/EnemyPlacement.md`** | level placement rules and per-enemy layouts |
 
-**Audience:** Owner A1, Owner A2, Owner B, Owner C and their AI assistants. Read this file
+**Audience:** Owner A1, Owner A2, Owner C and their AI assistants. Read this file
 first, then the exact sections named in your work card. Do not infer rules from
-old summaries.
+old summaries. **Owner B no longer exists:** anything in this file that used to
+say `B` now says `A2`, including the four stationary/flyer assets and
+`L_Level_Testing`.
 
 **Scope:** the nine active enemy mechanics plus the projectile/puddle/shooter
 support assets. `BP_PeaPlant` and `BP_EnemyProjectile_Pea` are **out of scope**
@@ -28,17 +32,24 @@ updating this table and taking the Git LFS lock.
 | Slot | Name / GitHub | Workstream | Assets | Can start |
 |---|---|---|---|---|
 | **A1** | base owner | shared base AI + first walker | `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`, contract docs | now |
-| **A2** | rocks/level owner | rock split + level integration | `BP_RockBase`, `BP_Rock1/2/3`, `L_Level_01` | rock/map prep now; rock graphs/PIE after M1 |
-| **B** | Jones / @Jones7100 | stationary + flyers | `BP_SpikeTurtle`, `BP_Ghost`, `BP_Bat`, `BP_FloatingSkull` | now |
+| **A2** | rocks + stationary/flyers + level | rock split, the four no-walker assets, level integration | `BP_RockBase`, `BP_Rock1/2/3`, `BP_SpikeTurtle`, `BP_Ghost`, `BP_Bat`, `BP_FloatingSkull`, `L_Level_01`, `L_Level_Testing` | now |
 | **C** | groupmate 2 | support + ranged/walkers | `BP_EnemyProjectile`, `BP_EnemyProjectile_Wood`, `BP_ToxicPuddle`, `BP_ShooterEnemyBase`, `BP_WoodLog`, `BP_ToxicSlime`, `BP_Rhino` | now |
 
+**Owner B is retired (4 Nov 2026).** Everything B owned moved to A2:
+`BP_SpikeTurtle`, `BP_Ghost` and `BP_Bat` are **DONE** and become A2 regression
+assets (do not rebuild them); `BP_FloatingSkull` is the one remaining build;
+`L_Level_Testing` is now A2's scratch PIE map. A2 therefore carries the largest
+load, and §4.2 / §6 fix a hard order for A2: Skull first, then Rocks, then the
+maps.
+
 A1 is the only person allowed to edit `BP_EnemyBase`, `BP_EnemyPlatform` and
-`BP_Snail`. A2 is the only person allowed to edit the Rock assets and
-`L_Level_01`. A1 may prepare Snail variables/defaults/art; A2 may prepare Rock
-variables/defaults/art and stage static map/platform instances immediately, but
-**walker graphs and walker PIE wait for M1 GREEN**. If a base change is needed,
-A2 sends a request to A1; do not add the variable or function to the child. B
-and C may build their independent assets in parallel.
+`BP_Snail`. A2 is the only person allowed to edit the Rock assets, the four
+stationary/flyer assets and both level maps. A1 may prepare Snail
+variables/defaults/art; A2 may prepare Rock and Skull variables/defaults/art and
+stage static map/platform instances immediately, but **walker graphs and walker
+PIE wait for M1 GREEN**. If a base change is needed, A2 sends a request to A1;
+do not add the variable or function to the child. C builds the
+projectile/puddle/shooter support and the ranged walkers in parallel.
 
 ---
 
@@ -66,28 +77,47 @@ If two documents disagree, **stop and post the conflict** in the status log.
 - All 20 Blueprint shells exist under
   `Content/DontTrustTheLevels/Enemies/Blueprints/`.
 - `BP_EnemyBase` has the shared health/damage/death/contact graph.
-  `py -3 Scripts\_verify_enemy_base.py` reports **44 PASS / 0 FAIL**.
+  `py -3 Scripts\_verify_enemy_base.py` reports **45 PASS / 0 FAIL**.
 - `BP_EnemyPlatform` exists and seven auto zones exist in `L_Level_01`.
 - `BPI_Killable` is implemented on `BP_EnemyBase`; traps are player-only.
 
-**Partially built**
+**Built in `BP_EnemyBase` (re-verified from the export + live CDO, 4 Nov 2026)**
 
-- `BP_EnemyBase` platform ownership + patrol: `PointInPlatformZone`,
-  `PointInPlatformXZ`, `FindHomePlatform`, `AdoptPlatform`, `LedgeAhead`,
-  `PatrolStep` are built (**6/13** AI functions). The aggro and rescue
-  functions are still missing.
-- All 14 aggro/rescue §4 variables now exist with the documented defaults.
-  `py -3 Scripts\_check_enemy_ai_vars.py` reports **22 PASS / 2 FAIL**, and both
-  failures are names only: rename `AggroHalfheight` -> `AggroHalfHeight` and
-  `bRequiredAggroLineOfSight` -> `bRequireAggroLineOfSight` in My Blueprint
-  before building the aggro graphs.
+- All **13/13** AI functions exist: `PointInPlatformZone`, `PointInPlatformXZ`,
+  `FindHomePlatform`, `AdoptPlatform`, `LedgeAhead`, `PatrolStep`,
+  `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro`,
+  `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`. The asset has **21
+  function graphs** in total (`InitEnemy`, `Die`, `RefreshStateFlipbook`,
+  `SetFacing`, `ClearIFrames`, `RecoverFromHit`, `PlayStateFlipbook`, …).
+- All 25 §4 variables exist with the documented defaults:
+  `py -3 Scripts\_check_enemy_ai_vars.py` reports **25 PASS / 0 FAIL** live
+  (the 25th, `bAggroOnHit`, landed with the aggro-on-hit change; the two rename
+  failures of 27 Oct are gone).
+- `Event Tick` is wired, and `ContactBox` exists with the contact chain bound to
+  it — the 25 Oct defect report below is resolved.
+
+**Proven in PIE (the three A2 assets inherited from B)**
+
+- `BP_SpikeTurtle` — test 10 PASS · `BP_Ghost` — tests 12–13 PASS ·
+  `BP_Bat` — test 14 PASS (`TriggerRadius=1000`, `ChaseSpeed=1000`,
+  `KnockbackForce=0`).
 
 **Not built**
 
-- `BP_EnemyBase` aggro/chase and knockback/rescue, plus the `Event Tick` and
-  `Landed` wiring.
+- The **M1 walker PIE gate (tests 1–9) is still not logged** — there is no
+  `M1 GREEN` line in §10. The base code is present, but walker graphs and walker
+  PIE remain blocked until A1 posts that line.
+- Every child-specific mechanic. Live CDO check on 4 Nov 2026:
+  `BP_Rock1/2/3`, `BP_WoodLog`, `BP_Rhino`, `BP_ToxicSlime` and
+  `BP_FloatingSkull` all still hold the **base defaults** (`ChaseSpeed=150`,
+  `MoveSpeed=100`, `MaxHealth=3`, `AggroHalfWidth=600`, `AggroHalfHeight=500`,
+  `ContactDamage=1`) and declare **zero** own variables, so none of them has
+  started. `BP_Snail` now overrides the aggro values (`ChaseSpeed=80`, both
+  aggro halves `0`, `bAggroOnHit=true`; saved 5 Nov), but its health, movement
+  and snail flipbooks are still on the base defaults (`MaxHealth=3`,
+  `MoveSpeed=100`, `IdleFlipbook`/`HitFlipbook`/`DeathFlipbook` unset) — the
+  remaining A1b Class Defaults work is still open.
 - The projectile/puddle/shooter support graphs.
-- Every child-specific AI mechanic.
 
 **Current blockers / cleanup**
 
@@ -118,7 +148,7 @@ If two documents disagree, **stop and post the conflict** in the status log.
    - Stationary/flyers (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) set
      `bCanMove=false`; their own `Event Tick` / `LaunchCharacter` is the only
      movement. `ChaseSpeed=0` for Turtle/Ghost/Skull; Bat keeps the inherited
-     `ChaseSpeed=300` for `MaxFlySpeed`. This is what stops the shared walker
+     `ChaseSpeed=1000` for `MaxFlySpeed`. This is what stops the shared walker
      loop from also running.
    - `bCanMove` is a shared-AI gate, not a CharacterMovement property. Setting
      it false does not stop `Add Movement Input` or `LaunchCharacter`.
@@ -140,26 +170,31 @@ If two documents disagree, **stop and post the conflict** in the status log.
    child usually means a missing parent member; do not hide it by duplicating
    the member in the child.
 7. **Walkers wait for M1.** Until A1 posts the base gate (variables, functions,
-   `PatrolStep`/`LedgeAhead`, compile clean, 44 PASS, tests 1–9), do not wire
+   `PatrolStep`/`LedgeAhead`, compile clean, 45 PASS, tests 1–9), do not wire
    `Snail`, `Rocks`, `Slime`, `Rhino` or the final `WoodLog` aggro wiring.
-   A1 may prepare Snail unique variables/defaults; A2 may prepare Rock unique
-   variables/defaults, art and static map/platform instances. No walker graph or
-   walker PIE before M1. Stationary/flyers (B) and the projectile/puddle/shooter
-   support (C) may start immediately because they do not read the walker AI.
+   A1 may prepare Snail unique variables/defaults; A2 may prepare Rock and Skull
+   unique variables/defaults, art and static map/platform instances. No walker
+   graph or walker PIE before M1. Stationary/flyers (A2) and the
+   projectile/puddle/shooter support (C) may start immediately because they do
+   not read the walker AI.
 8. **Shared bases are single-owner.**
    - A1 only: `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`.
-   - A2 only: `BP_RockBase`, `BP_Rock1/2/3`.
+   - A2 only: `BP_RockBase`, `BP_Rock1/2/3`, `BP_SpikeTurtle`, `BP_Ghost`,
+     `BP_Bat`, `BP_FloatingSkull`.
    - C only: `BP_ShooterEnemyBase`, `BP_EnemyProjectile*`, `BP_ToxicPuddle`.
-   - B never edits a shared base.
-9. **Level map is single-owner.** Only A2 edits `L_Level_01`: M1 smoke-test
-   staging and M4. A1/B/C provide placement coordinates and test results; they
-   never save the map. A2 stages and removes the temporary M1 test actor at A1's
-   request.
+   - A2 never edits a shared base: the four stationary/flyer assets extend the
+     base, they do not modify it. A base change is an A1 request.
+9. **Level maps are single-owner.** Only A2 edits `L_Level_01` (M1 smoke-test
+   staging and M4) and `L_Level_Testing` (A2's scratch PIE map for the
+   stationary/flyer assets). A1 and C provide placement coordinates and test
+   results; they never save a map. A2 stages and removes the temporary M1 test
+   actor at A1's request.
 10. **No new base classes, no Behavior Tree, no NavMesh, no C++.** No Pea Plant
     work. No Python graph authoring.
 11. **Docs are contract files.** A1 owns edits to `EnemyAI.md`, `Enemies.md` and
-    `EnemyPlacement.md`. A2/B/C may append to the status log in this file and may
-    propose a correction; they must not rewrite a contract to match their graph.
+    `EnemyPlacement.md`. A2 and C may append to the status log in this file and
+    may propose a correction; they must not rewrite a contract to match their
+    graph.
 12. **Definition of done is per asset**, not "the graph looks finished": see §9.
 
 ---
@@ -170,13 +205,13 @@ If two documents disagree, **stop and post the conflict** in the status log.
 |---|---|---|---|
 | `BP_EnemyBase` | A1 | — | AI core, M1 |
 | `BP_EnemyPlatform` | A1 | — | DONE — `bEnabled=true`, Zone verified |
-| `BP_Snail` | A1 | M1 | walker; no detection |
+| `BP_Snail` | A1 | M1 | walker; hit-only aggro (zero box, `bAggroOnHit`) |
 | `BP_RockBase` | A2 | M1 | split logic |
 | `BP_Rock1/2/3` | A2 | M1, `BP_RockBase` | child defaults + split |
-| `BP_SpikeTurtle` | B | base health only | stationary |
-| `BP_Ghost` | B | base health only | flyer, own Tick |
-| `BP_Bat` | B | base health only | flyer, own Tick |
-| `BP_FloatingSkull` | B | base health only | bounce, own `Event Hit` |
+| `BP_SpikeTurtle` | A2 | base health only | DONE (was B) — stationary, no detection |
+| `BP_Ghost` | A2 | base health only | DONE (was B) — flyer, own Tick |
+| `BP_Bat` | A2 | base health only | DONE (was B) — flyer, own Tick |
+| `BP_FloatingSkull` | A2 | base health only | was B — bounce, own `Event Hit`; the only remaining A2 special |
 | `BP_EnemyProjectile` | C | — | support |
 | `BP_EnemyProjectile_Wood` | C | projectile base | child defaults |
 | `BP_ToxicPuddle` | C | — | support |
@@ -187,6 +222,7 @@ If two documents disagree, **stop and post the conflict** in the status log.
 | `BP_PeaPlant` | nobody | — | unused; do not place or extend |
 | `BP_EnemyProjectile_Pea` | nobody | — | unused shell |
 | `L_Level_01` | A2 | all behavior gates + A1 M1 smoke test | M1 staging + M4 only |
+| `L_Level_Testing` | A2 | — | A2 scratch PIE map (was B's); never a shipped-level edit |
 
 If a new asset is needed, add it to this table before creating it. Do not create
 a second “base” or a manager actor to avoid a dependency. Exact lock paths are
@@ -206,25 +242,25 @@ file, never a folder; use the paths below verbatim with `git lfs lock`.
 - Docs: `Docs/EnemyAI.md`, `Docs/Enemies.md`, `Docs/EnemyPlacement.md`,
   `Docs/EnemyWorkPlan.md` (contract edits)
 
-**Owner A2 — rocks + level**
+**Owner A2 — rocks + stationary/flyers + level** (absorbed all of Owner B on
+4 Nov 2026)
 
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_RockBase.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Rock1.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Rock2.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Rock3.uasset`
+- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_FloatingSkull.uasset`
+- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_SpikeTurtle.uasset` —
+  **DONE; regression only**
+- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Ghost.uasset` —
+  **DONE; regression only**
+- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Bat.uasset` —
+  **DONE; regression only**
 - `Content/DontTrustTheLevels/Levels/L_Level_01.umap` — **M1 test staging and M4 only**
+- `Content/DontTrustTheLevels/Levels/L_Level_Testing.umap` — A2 scratch PIE map
+  (formerly B's; never a shipped-level edit)
 - May append only to the status log in `Docs/EnemyWorkPlan.md`; request contract
   changes from A1
-
-**Owner B**
-
-- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_SpikeTurtle.uasset`
-- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Ghost.uasset`
-- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_Bat.uasset`
-- `Content/DontTrustTheLevels/Enemies/Blueprints/BP_FloatingSkull.uasset`
-- `Content/DontTrustTheLevels/Levels/L_Level_Testing.umap` — B's scratch PIE
-  test map (registered per §4; never a shipped-level edit)
-- May append only to the status log in `Docs/EnemyWorkPlan.md`
 
 **Owner C**
 
@@ -255,8 +291,9 @@ boundary:
 
 | A1 may edit/save | A2 may edit/save |
 |---|---|
-| `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail` | `BP_RockBase`, `BP_Rock1/2/3`, `L_Level_01` |
-| contract docs in §4.1 | status-log lines only; request contract changes from A1 |
+| `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail` | `BP_RockBase`, `BP_Rock1/2/3`, `BP_FloatingSkull`, `BP_SpikeTurtle`, `BP_Ghost`, `BP_Bat` |
+| contract docs in §4.1 | `L_Level_01`, `L_Level_Testing` |
+| — | status-log lines only; request contract changes from A1 |
 
 - A1 never saves `L_Level_01` or a Rock child. A1 may PIE-test the map after
   A2 saves a test setup, but must not save the map.
@@ -266,7 +303,7 @@ boundary:
   P_02 or `BP_Snail` on P_00), commits/pushes the map and releases the lock so A1
   can pull it. A2 never edits the Snail asset. A1 runs PIE without saving; A2
   removes the actor after M1 and pushes the cleanup. A1 never saves the map.
-- A1 may prepare Snail variables/defaults/art; A2 may prepare Rock
+- A1 may prepare Snail variables/defaults/art; A2 may prepare Rock and Skull
   variables/defaults/art and static map/platform placement. Walker graphs and
   walker PIE wait for `M1 GREEN`.
 - `BP_EnemyPlatform` is frozen for A2 placement after M1. If A1 must change the
@@ -275,9 +312,11 @@ boundary:
 No file in the left column overlaps a file in the right column. A Git LFS lock
 conflict means one of these rules was broken, not that the split is wrong.
 
-A1's post-M1 work is Snail; A2's is Rocks plus the map. A2 has the larger M4
-block, so A1 should hand over exact placement coordinates and PIE results, but
-A1 must not save the map.
+A1's post-M1 work is Snail; A2's is Skull, then Rocks, then the two maps. A2 now
+carries both the M2 specials and the M4 map block, so the order in §6 is a hard
+sequence for A2, not a menu: finish `BP_FloatingSkull` before opening
+`L_Level_01`, and hand Rock placement to M4 after the Rocks compile. A1 hands
+over exact placement coordinates and PIE results but must not save a map.
 
 ---
 
@@ -289,30 +328,32 @@ M0  all owners read the docs (no edits)
      +-- A1: M1  BP_EnemyBase AI core gate ---------------------+
      |           (blocks every walker)                          |
      |                                                          |
+     +-- A2: M2  FloatingSkull                                  |
+     |          (Turtle/Ghost/Bat already DONE - regression only)|
+     |          (no base-AI dependency)                         |
+     |                                                          |
      +-- A2: prep Rock vars/defaults + static map placement     |
      |          (no walker graph or walker PIE before M1)       |
      |                                                          |
-     +-- B: M2  Turtle -> Ghost -> Bat -> Skull                 |
-     |          (no base-AI dependency)                         |
-     |                                                          |
      +-- C: M2b Projectile -> Puddle -> Shooter -> WoodLog      |
-                (support; WoodLog final aggro waits for M1)     |
-                                                                |
-     M1 gate ---------------------------------------------------+
+                (support; WoodLog final aggro waits for M1)      |
+                                                                 |
+     M1 gate ----------------------------------------------------+
      |
      +-- A1: M3a Snail
      +-- A2: M3b Rocks
      +-- C: M3c Rhino -> Toxic Slime
      |
      M4  integration, placement, full PIE matrix
-         (A2 owns the map; A1 owns base verifier + contract docs)
+         (A2 owns both maps; A1 owns base verifier + contract docs)
 ```
 
 M1 is the only hard gate. A1 may prep Snail and A2 may do Rock/map preparation
 while A1 builds the base, but walker graphs and walker PIE wait for M1 GREEN.
-B's four assets and C's projectile/puddle/shooter work do not read the walker AI
-and may run immediately. C may build the Wood Log defaults and firing graph
-early, but must not wire or PIE-test its aggro/patrol until M1 is green.
+A2's specials (only `BP_FloatingSkull` is left) and C's
+projectile/puddle/shooter work do not read the walker AI and may run
+immediately. C may build the Wood Log defaults and firing graph early, but must
+not wire or PIE-test its aggro/patrol until M1 is green.
 
 ---
 
@@ -336,29 +377,37 @@ early, but must not wire or PIE-test its aggro/patrol until M1 is green.
 
 1. **DONE 24 Oct** — rename `bEnable` → `bEnabled` in `BP_EnemyPlatform`,
    compile and save. Live check: `bEnabled=true`, `Zone` `NoCollision`/hidden.
-2. Add the new `EnemyAI.md` §4 variables; `MoveSpeed` already exists, so do not
-   add it again. `HomePlatform` typed as `BP_EnemyPlatform`; remove
-   `KnowbackForce`; do not add `MaxWalkSpeed`.
-3. Build functions in this order:
+2. **DONE 4 Nov 2026; re-verified 5 Nov** — the §4 variables exist;
+   `_check_enemy_ai_vars.py` = **25 PASS / 0 FAIL**. `MoveSpeed` was never
+   duplicated, `HomePlatform` is typed, `KnowbackForce` is gone and `MaxWalkSpeed`
+   was not added as a variable. If a step below still looks open, trust this line:
+   the asset was re-read.
+3. **DONE 4 Nov 2026** — all four function batches exist (13/13 AI functions,
+   21 function graphs in the asset):
    - `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
      `AdoptPlatform`.
    - `LedgeAhead`, `PatrolStep`.
    - `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro`.
    - `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`.
-4. Wire `BeginPlay` → `FindHomePlatform`; `Landed` → `ResolveKnockback`;
-   `Tick` → the state loop; `AnyDamage` sets `bWasKnockedBack` before
-   `LaunchCharacter`.
+4. **Verify in PIE** — `BeginPlay` → `FindHomePlatform`; `Landed` →
+   `ResolveKnockback`; `Tick` → the state loop (wired); `AnyDamage` sets
+   `bWasKnockedBack` before `LaunchCharacter`.
 5. The `Event Tick` gate must be:
    `bIsDead OR bStranded OR NOT bCanMove` → return, then
    `bWasKnockedBack` → return, then `ChaseSpeed <= 0` → `PatrolStep` and return.
    This is what makes stationary/flyers safe and Snail/Slime patrol-only.
 6. `UpdateAggro` must skip to `PatrolStep` when `ChaseSpeed <= 0`; do not let a
    no-detection walker set `bAggro`.
+7. **DONE 5 Nov 2026, A1** — the aggro-on-hit change (`bAggroOnHit`, the existing
+   `DeAggroTime` reused as the post-hit window, `Reachable` formula) from §7 `A1`
+   and §13 landed before the Rock/WoodLog/Snail CDO flips. `UpdateAggro` is 54
+   nodes with the three corrected links, and `_verify_enemy_base.py` now fails if
+   any of the three old links returns.
 
 **M1 acceptance gate**
 
 - Parent and every compiled child have no red errors.
-- `py -3 Scripts\_verify_enemy_base.py` holds **44 PASS / 0 FAIL**.
+- `py -3 Scripts\_verify_enemy_base.py` holds **45 PASS / 0 FAIL**.
 - PIE tests 1–9 from `EnemyAI.md` §11 pass on a temporary `BP_Rock1` placed on
   P_02 (z ≈ `506.25`) or `BP_Snail` on P_00 (z ≈ `875`). A2 stages, commits and
   pushes the test setup, then A1 pulls and runs PIE. A1 never saves the map; A2
@@ -375,20 +424,24 @@ P_04 `x=-1750, z=100, w=300` · P_05 `x=-1300, z=0, w=600` ·
 P_06 `x=550, z=0, w=2700`. Use these for the M1 smoke test; add more zones
 only in M4.
 
-### M2 — Independent specials (B; can start now)
+### M2 — Independent specials (A2; only the Skull is left)
 
-Order: `BP_SpikeTurtle` (warm-up) → `BP_Ghost` (highest risk) → `BP_Bat` →
-`BP_FloatingSkull`.
+Order: ~~`BP_SpikeTurtle` (warm-up) → `BP_Ghost` (highest risk) → `BP_Bat`~~
+(these three are **DONE**, see §10) → **`BP_FloatingSkull`** (remaining).
 
 - None of these use `PatrolStep`, `LedgeAhead`, `IsPlayerOnHomePlatform` or the
   walker aggro loop.
 - Set `bCanMove=false` on all four. `ChaseSpeed=0` for Turtle/Ghost/Skull;
-  Bat keeps `ChaseSpeed=300` for `MaxFlySpeed`. Turtle and Skull have no child
+  Bat keeps `ChaseSpeed=1000` for `MaxFlySpeed`. Turtle and Skull have no child
   movement Tick; Ghost and Bat use their own Tick.
 - Compile + save after each graph; PIE each asset before moving to the next.
+- New to A2: do **not** rebuild the three DONE assets. Touching them is a
+  regression risk with no upside; only open one if a PIE retest fails, and then
+  treat it as a defect, not a task.
 
-**M2 acceptance:** tests 10, 12, 13, 14; Skull's extended test from
-`Enemies.md` §7.3; no base-verifier regression.
+**M2 acceptance:** nothing needs re-proving on Turtle/Ghost/Bat — tests 10, 12,
+13 and 14 are already PASS and stay as regressions. The open item is Skull's
+extended test from `Enemies.md` §7.3, plus no base-verifier regression.
 
 ### M2b — Support graphs (C; can start now)
 
@@ -409,14 +462,17 @@ only the player; shooter base compiles with no red errors.
 
 **A1:** `BP_Snail`.
 
-**A2:** `BP_RockBase`/`BP_Rock1/2/3`.
+**A2:** `BP_RockBase`/`BP_Rock1/2/3` — only after `BP_FloatingSkull` is done in
+M2, because A2 is now single-threaded across both milestones.
 
 **C:** `BP_Rhino` → `BP_ToxicSlime` → finish `BP_WoodLog` aggro/patrol.
 
 - A walker must not add its own movement Tick. Use base `PatrolStep`,
   `ChaseStep` and `UpdateAggro`; override only the state-specific parts.
-- Snail and Slime set `ChaseSpeed=0` (no detection). Rocks, Rhino and Wood Log
-  set a positive `ChaseSpeed`.
+- Toxic Slime sets `ChaseSpeed=0` (no detection). Rocks, Rhino and Wood Log set
+  a positive `ChaseSpeed`. Snail is the §13 exception: `ChaseSpeed=80` with
+  `AggroHalfWidth=0` / `AggroHalfHeight=0` and `bAggroOnHit=true`, so it only
+  reacts to being shot.
 - Snail's shell uses the same base `PatrolStep` with `MoveSpeed=ShellSpeed`;
   do not add the old shell Tick.
 - Wood Log overrides `ChaseStep` to stand and shoot; it does not chase.
@@ -427,18 +483,23 @@ only the player; shooter base compiles with no red errors.
 `Enemies.md` §7.3; split pieces adopt their landing platform; shell stays on
 platform; Rhino dies on the 4th wall hit.
 
-### M4 — Integration, placement and tuning (all; A2 owns map, A1 owns verifier/docs)
+### M4 — Integration, placement and tuning (all; A2 owns both maps, A1 owns verifier/docs)
 
 - A2 places the test enemies and any additional `BP_EnemyPlatform` zones in
-  `L_Level_01`; A1/B/C report coordinates and do not save the map.
+  `L_Level_01`; A1 and C report coordinates and do not save the map.
 - A2 coordinates the full `EnemyAI.md` §11 matrix (1–16) plus the extended
-  checks in `Enemies.md` §7.3; each owner runs its own asset's PIE checks.
+  checks in `Enemies.md` §7.3; each owner runs its own asset's PIE checks. A2
+  also re-runs tests 10/12/13/14 as regressions on the three inherited assets.
 - Tune `AggroHalfWidth/Height`, `ChaseSpeed`, `DeAggroTime`, `RescueRadius`,
   `MinPatrolWidth` and per-enemy speeds in Class Defaults, not in duplicated
-  child variables. A1 owns base/platform/Snail defaults; A2 owns Rock defaults.
-- A1 re-runs `_verify_enemy_base.py`; hold **44 PASS / 0 FAIL**.
-- A1 commits contract docs + Snail; A2 commits map + Rocks; all owners clean
-  probe files and release their locks.
+  child variables. A1 owns base/platform/Snail defaults; A2 owns Rock + Skull
+  defaults.
+- A1 re-runs `_verify_enemy_base.py`; hold **45 PASS / 0 FAIL**. A1 also owns
+  the aggro-on-hit contract change (`bAggroOnHit`, with `DeAggroTime` reused as
+  the post-hit window); it is landed in the base, so the
+  Rock/WoodLog/Snail CDO flips can proceed.
+- A1 commits contract docs + Snail; A2 commits both maps + Rocks + Skull; all
+  owners clean probe files and release their locks.
 
 ---
 
@@ -447,6 +508,16 @@ platform; Rhino dies on the 4th wall hit.
 Each card is the assignment. The card tells you **what to build and how to
 prove it**; the linked sections contain the exact pin-level recipes. Do not
 invent a third source.
+
+Cards are numbered by asset group, not grouped by owner, so use this index:
+
+| Owner | Cards | State on 4 Nov 2026 |
+|---|---|---|
+| **A1** | `A1` (`BP_EnemyBase`), `A1b` (`BP_Snail`) | base code complete and verified (13/13 functions, 25/25 vars, 45 PASS); `UpdateAggro` aggro-on-hit landed; Snail aggro CDO set (80 / 0 / 0, `bAggroOnHit=true`); next = PIE 1–9 + remaining Snail Class Defaults; M1 PIE not logged |
+| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat); Skull + Rocks open |
+| **C** | `C1`–`C6` | nothing started |
+
+Owner B has no cards; `A2b`–`A2e` are the transferred ones.
 
 ### A1 — `BP_EnemyBase` AI core (Owner A1)
 
@@ -462,34 +533,48 @@ contract docs. Never save `L_Level_01`; A2 stages/removes the M1 test actor.
 - [x] **DONE 24 Oct** — rename `bEnable` → `bEnabled` in `BP_EnemyPlatform`;
       compile/save. Live check: `bEnabled=true`, `Zone` extent `(50,50,20)`,
       `NoCollision`, hidden.
-- [ ] Add the new §4 variables, including typed `HomePlatform`; `MoveSpeed`
+- [x] Add the new §4 variables, including typed `HomePlatform`; `MoveSpeed`
       already exists; remove `KnowbackForce`; do not add `MaxWalkSpeed`.
-      **Almost:** all 14 aggro/rescue variables exist with correct defaults;
-      `Scripts\_check_enemy_ai_vars.py` = 22 PASS / 2 FAIL. Rename
-      `AggroHalfheight` -> `AggroHalfHeight` and `bRequiredAggroLineOfSight` ->
-      `bRequireAggroLineOfSight` to reach 24/24.
+      **DONE 4 Nov 2026; re-verified 5 Nov** — all 25 §4 variables exist with the
+      documented defaults; `Scripts\_check_enemy_ai_vars.py` = **25 PASS / 0 FAIL**
+      (both October renames landed; `bAggroOnHit` is the 25th).
 - [x] Build `PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
       `AdoptPlatform`.
 - [x] Build `LedgeAhead`, `PatrolStep`.
-- [ ] Build `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`,
-      `UpdateAggro`. **NEXT.** Rename the two variables above, then start with
-      `IsPlayerOnHomePlatform`; the design page is
-      `Scripts\_is_player_on_home_platform_graph.html`.
-- [ ] Build `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`.
-- [ ] Wire `BeginPlay`, `Landed`, `Event Tick`, and the `AnyDamage`
-      `bWasKnockedBack` flag.
-- [ ] Add the Top gate: `bIsDead OR bStranded OR NOT bCanMove` → return;
-      `bWasKnockedBack` → return; `ChaseSpeed <= 0` → `PatrolStep` → return.
+- [x] Build `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`,
+      `UpdateAggro`. **DONE 4 Nov 2026** — all four function graphs exist
+      (21 function graphs in the asset, 13/13 AI functions).
+- [x] Build `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`.
+      **DONE 4 Nov 2026.**
+- [x] Wire `BeginPlay`, `Landed`, `Event Tick`, and the `AnyDamage`
+      `bWasKnockedBack` flag. **`Event Tick` is a wired event node.**
+- [x] **DONE 5 Nov 2026 — aggro on hit** (`EnemyAI.md` §6.2/§6.3). `bAggroOnHit`
+      (Boolean, `false`) exists and `UpdateAggro` is 54 nodes; the hit term reuses
+      `DeAggroTime` and skips the same-platform/Z gate. Live CDO flips landed on
+      `BP_Rock1/2/3`, `BP_WoodLog` and `BP_Snail`. `BP_Bat` needs its own
+      `RefreshStateFlipbook` hit branch because it never runs the walker loop.
+- [ ] **Gate:** verify the Top gate
+      (`bIsDead OR bStranded OR NOT bCanMove` → return; `bWasKnockedBack` →
+      return; `ChaseSpeed <= 0` → `PatrolStep` → return) in PIE with tests 1–9.
+      All three AI halves now exist, so this is a verification task, not a build
+      task. Run it and post `M1 GREEN`.
 
-**Done when:** `_verify_enemy_base.py` = 44 PASS / 0 FAIL; tests 1–9 pass;
+**Done when:** `_verify_enemy_base.py` = 45 PASS / 0 FAIL; tests 1–9 pass;
 compile clean; committed; `M1 GREEN` posted.
 
 ---
 
-### B1 — `BP_SpikeTurtle` (Owner B)
+### A2b — `BP_SpikeTurtle` (Owner A2 — **DONE**, transferred from B)
 
 **Read:** `EnemyAI.md` §8.1; `Enemies.md` §6.1; `EnemyPlacement.md` §4.1.
 **Depends:** base health/contact only. **No base AI.**
+
+**Status: DONE** — test 10 PASS (§10 status log, 25 Oct 2026), including the
+contact kill after the base `ContactBox` fix. Two open rulings were inherited
+from B's last resave and are **still pending A1**: the turtle capsule ended at
+`Pawn=Block`, and the `ToggleIdle` timer in the card below was removed from the
+graph. Neither breaks test 10, so do not "fix" them silently — A1 rules, then
+this card is synced to the asset. Do not re-derive the graph.
 
 **Tasks**
 
@@ -514,10 +599,18 @@ and `Kill` do nothing, contact only while spikes are out, `KillVolume` destroys.
 
 ---
 
-### B2 — `BP_Ghost` (Owner B)
+### A2c — `BP_Ghost` (Owner A2 — **DONE**, transferred from B)
 
 **Read:** `EnemyAI.md` §8.4; `Enemies.md` §6.4; `EnemyPlacement.md` §4.4.
 **Depends:** base health/contact only. **No base AI.**
+
+**Status: DONE** — tests 12–13 PASS (§10, 26 Oct 2026): 550-sphere trigger,
+through-wall chase, visible/hidden loop, 2 hits, no de-aggro. **Open item, A2:**
+Ghost was built before M1, so it declares TEMP-M1 locals `bAggro`,
+`AggroRadius` and `ChaseSpeed` in the child. The base now owns all three, so
+those are shadow variables — delete them, inherit, and retest 12–13. Also keep
+the native-left art fix: the Ghost sprite faces left, so the `SetFacing` input is
+negated inside the chase.
 
 **Tasks**
 
@@ -549,24 +642,38 @@ de-aggro branch.
 
 ---
 
-### B3 — `BP_Bat` (Owner B)
+### A2d — `BP_Bat` (Owner A2 — **DONE**, transferred from B)
 
 **Read:** `EnemyAI.md` §8.8; `Enemies.md` §6.8; `EnemyPlacement.md` §4.8.
 **Depends:** base health/contact only. **No base AI.**
+
+**Status: DONE (5 Nov 2026 — regression fixed).** Test 14 passed on 27 Oct.
+All three playtest bugs are verified fixed in PIE: the live
+`RefreshStateFlipbook` has the 13-node hit branch from
+`Scripts/_bp_bat_hit_aggro_only.txt` plus the
+`Set MaxFlySpeed = ChaseSpeed` write, and the EventGraph `HangIdle` custom event
+is gated on `bTriggered`. The staged 17-node
+`Scripts/_bp_bat_refresh_modified_v2.txt` remains available for a clean
+re-paste (it also contains the hit-path `K2_ClearTimer("HangIdle")`). Live CDO
+otherwise unchanged: `TriggerRadius=1000`, `ChaseSpeed=1000`,
+`KnockbackForce=0`, `MaxAcceleration=8192`.
 
 **Tasks**
 
 - [ ] Add only the unique variables: `bTriggered`, `bChasing`,
       `TriggerRadius`, `CeilingInFlipbook`, `CeilingOutFlipbook`,
       `FlyingFlipbook`, `HangingFlipbook`. **Do not** declare `ChaseSpeed`;
-      inherit it and set it to `300` in Class Defaults.
-- [ ] Class Defaults: `bCanMove=false`, `ChaseSpeed=300`, `TriggerRadius=300`,
+      inherit it and set it to `1000` in Class Defaults.
+- [ ] Class Defaults: `bCanMove=false`, `ChaseSpeed=1000`, `TriggerRadius=1000`,
       `MaxHealth=2`, `ContactDamage=1`, bat flipbooks.
 - [ ] `BeginPlay`: `InitEnemy`; `bDealContactDamage=false`; play
-      `CeilingInFlipbook`; start `HangIdle` (`0.6`).
-- [ ] `HangIdle` → loop `HangingFlipbook`.
+      `CeilingInFlipbook`; start `HangIdle` (`0.6`; the callback is gated on
+      `bTriggered`, or use `0.3` with the timer-clear alternative).
+- [ ] `HangIdle` → Branch `bTriggered` (preferred: false → loop
+      `HangingFlipbook`, true → return); or keep unconditional play with the
+      `0.3 s` timer plus `K2_ClearTimer("HangIdle")` on the hit chain.
 - [ ] Own `Event Tick`: trigger only when the player is valid and within the
-      `300` sphere; set `bTriggered=true`, contact on, play `CeilingOutFlipbook`,
+      `1000` sphere; set `bTriggered=true`, contact on, play `CeilingOutFlipbook`,
       start `StartChase` (`0.5`).
 - [ ] `StartChase` → `bChasing=true`; `MaxFlySpeed=ChaseSpeed`; loop
       `FlyingFlipbook`.
@@ -582,10 +689,16 @@ it collides with walls/floors and never de-aggros.
 
 ---
 
-### B4 — `BP_FloatingSkull` (Owner B)
+### A2e — `BP_FloatingSkull` (Owner A2 — **NOT STARTED**, transferred from B)
 
 **Read:** `EnemyAI.md` §8.7; `Enemies.md` §6.7; `EnemyPlacement.md` §4.7.
 **Depends:** base health/contact only. **No base AI.**
+
+**Status: NOT STARTED (4 Nov 2026).** Live CDO still holds every base default
+(`ChaseSpeed=150`, `MoveSpeed=100`, `MaxHealth=3`, `ContactDamage=1`, 600×500
+aggro box) and the asset declares **zero** own variables — it is an empty
+template with `UserConstructionScript` → `Parent:`. This is the only A2 special
+left, and it is the first A2 task in M2.
 
 **Tasks**
 
@@ -685,6 +798,8 @@ unaffected; no graph in the slime is needed for the lifetime.
 
 **Read:** `EnemyAI.md` §8.9; `Enemies.md` §5.3; `EnemyPlacement.md` §4.9.
 **Depends:** C3 + M1. **Allowed early:** defaults and `TryFire` graph.
+**Status (5 Nov 2026):** `bAggroOnHit=true` is live and verified; the rest of C4
+(health/speeds/flipbooks/`TryFire` verification) is still open.
 
 **Tasks**
 
@@ -717,13 +832,27 @@ horizontally, de-aggros after `2 s`, resumes patrol, no vertical aim.
 **Parallel prep:** unique variables, Class Defaults and art may be prepared now;
 the graph tasks below wait for `M1 GREEN`.
 
+**Status: NOT STARTED (4 Nov 2026).** Live CDO still holds the base defaults
+(`ChaseSpeed=150`, `MoveSpeed=100`, `MaxHealth=3`, `ContactDamage=1`), the asset
+declares zero own variables, and the instance sits at `(-451, 9, 225)` off every
+auto marker. **The aggro part is fixed (5 Nov):** the Snail now overrides
+`ChaseSpeed=80`, `AggroHalfWidth=0`, `AggroHalfHeight=0` and
+`bAggroOnHit=true` — hit-only aggro, patrol otherwise. The remaining health,
+movement and flipbook defaults are still base values and are tracked below. The
+CDO flip ships in the same commit as the base change.
+
 **Tasks**
 
 - [ ] Add only the unique variables: `bShellPhase`, `ShellSpeed`,
       `ShellContactDamage`, `ShellLifetime`, `ShellIdleFlipbook`,
       `ShellWallHitFlipbook`, `ShellTopHitFlipbook`, `WithoutShellFlipbook`.
-- [ ] Class Defaults: `ChaseSpeed=0`, `MaxHealth=2`, `MoveSpeed=50`,
-      `ContactDamage=1`, snail flipbooks.
+- [x] **DONE 5 Nov 2026 — Class Defaults (aggro only):** `ChaseSpeed=80`,
+      `AggroHalfWidth=0`, `AggroHalfHeight=0`, `bAggroOnHit=true` (§13, locked
+      4 Nov). Saved on `BP_Snail` and re-read from the live CDO/spawned instance.
+- [ ] Class Defaults (remaining A1b): `MaxHealth=2`, `MoveSpeed=50`,
+      `ContactDamage=1`, snail flipbooks. These still inherit the base values
+      (`MaxHealth=3`, `MoveSpeed=100`, no `Idle`/`Hit`/`Death` flipbook
+      overrides), so the Snail is not yet the full §6.3 asset.
 - [ ] Normal state: use base `PatrolStep` / `LedgeAhead`; no child Tick.
 - [ ] `Die` override: if already `bShellPhase`, return; otherwise set shell
       flags (`bShellPhase=true`, `bIsDead=false`, `bInvulnerable=true`,
@@ -745,10 +874,16 @@ platform edge; shell ignores bullets; contact `1`; destroys itself after `8 s`.
 
 ---
 
-### A2 — `BP_RockBase` + `BP_Rock1/2/3` (Owner A2)
+### A2a — `BP_RockBase` + `BP_Rock1/2/3` (Owner A2)
 
 **Read:** `EnemyAI.md` §8.2; `Enemies.md` §6.2; `EnemyPlacement.md` §4.2.
 **Depends:** M1.
+
+**Status: NOT STARTED (4 Nov 2026).** `BP_RockBase` and `BP_Rock1/2/3` still hold
+every base default (`ChaseSpeed=150`, `MoveSpeed=100`, `MaxHealth=3`,
+`ContactDamage=1`) and declare zero own variables. No split graph exists, so
+`BP_RockBase` in the export is an empty template. **Aggro-on-hit is done (5 Nov):**
+`bAggroOnHit=true` is live on all three CDOs; the rest of the card is still open.
 
 **Parallel prep:** `BP_RockBase`/Rock unique variables and Class Defaults may be
 prepared now; split/chase graphs wait for A1's `M1 GREEN`.
@@ -838,7 +973,8 @@ player dies on contact, no detection, and the slime never walks off a ledge.
 ## 8. AI assistant handoff prompt
 
 Give your AI assistant the whole repository, then paste the block for your slot.
-Replace `<SLOT>` with `A1`, `A2`, `B` or `C` and `<ASSET>` with the first asset.
+Replace `<SLOT>` with `A1`, `A2` or `C` and `<ASSET>` with the first asset.
+There is **no `B` slot any more**: B's assets are A2's.
 
 ```text
 You are the AI assistant for Owner <SLOT> on the Unreal Engine 4.27.2 project
@@ -857,9 +993,10 @@ Your ownership is exactly the file list for your slot in
 Docs/EnemyWorkPlan.md section 4.1. Only edit those exact .uasset paths, plus
 the status-log lines the plan allows. Do not edit a shared base or another
 owner's asset, or a level map unless the plan explicitly lists it for your slot.
-BP_EnemyBase, BP_EnemyPlatform and BP_Snail are A1-only; BP_RockBase and the Rock
-children are A2-only; BP_ShooterEnemyBase, BP_EnemyProjectile* and BP_ToxicPuddle
-are C-only.
+BP_EnemyBase, BP_EnemyPlatform and BP_Snail are A1-only; BP_RockBase, the Rock
+children, BP_SpikeTurtle, BP_Ghost, BP_Bat, BP_FloatingSkull and both level maps
+are A2-only; BP_ShooterEnemyBase, BP_EnemyProjectile* and BP_ToxicPuddle are
+C-only.
 
 Hard rules:
 - Lock the asset with Git LFS / UE Source Control before editing. Never co-edit.
@@ -867,7 +1004,7 @@ Hard rules:
   with Python. Build nodes, wires, variables and functions manually in the editor.
 - One movement authority per asset. Walkers use the base Event Tick; stationary/
   flyers set bCanMove=false and use their own Tick/Launch. ChaseSpeed=0 for
-  Turtle/Ghost/Skull; Bat keeps ChaseSpeed=300 for MaxFlySpeed.
+  Turtle/Ghost/Skull; Bat keeps ChaseSpeed=1000 for MaxFlySpeed.
 - Do not add a variable that already exists in a parent. Use inherited
   bAggro, AggroRadius, ChaseSpeed, MoveSpeed, KnockbackForce, Facing and the
   base health/contact/flipbook variables. Do not add MaxWalkSpeed.
@@ -875,7 +1012,7 @@ Hard rules:
 - Contact damage goes through ContactBox, not the capsule.
 - Compile and save after every function or graph. Never leave a red error.
 - Run `py -3 Scripts\_verify_enemy_base.py` after any base-adjacent change;
-  the accepted result is 44 PASS / 0 FAIL.
+  the accepted result is 45 PASS / 0 FAIL.
 - A1/A2 may prepare unique child variables/defaults, art and static
   map/platform placement, but may not wire walker graphs or run walker PIE
   before A1 posts M1 GREEN.
@@ -914,9 +1051,11 @@ names, function names or defaults that are not in the linked sections.
 
 Owner A1 should also add: `M1 is the gate; post M1 GREEN with verifier output
 before wiring Snail. Prepare Snail defaults now, but do not run walker PIE until
-M1 GREEN.` Owner A2 should add: `Prepare Rock defaults and map placement now;
-do not wire Rock graphs or run Rock PIE until A1 posts M1 GREEN.` Owner B should
-add: `Your four assets do not depend on M1; Turtle -> Ghost -> Bat -> Skull.`
+M1 GREEN.` Owner A2 should add: `Prepare Rock and Skull defaults and map
+placement now; do not wire Rock graphs or run Rock PIE until A1 posts M1 GREEN.
+You also own the three finished specials (SpikeTurtle, Ghost, Bat): regression
+only, never rebuild them. The first open item is deleting the Ghost's TEMP-M1
+bAggro/AggroRadius/ChaseSpeed locals so it inherits them from the base.`
 Owner C should add: `Support first; Wood Log patrol/aggro waits for M1; Rhino
 before Slime.`
 
@@ -931,7 +1070,7 @@ An asset is **DONE** only when all are true:
       default; inherited names are not duplicated.
 - [ ] Every function/event in the card is wired; no orphan or disabled node that
       the card requires.
-- [ ] `BP_EnemyBase` still reports **44 PASS / 0 FAIL**.
+- [ ] `BP_EnemyBase` still reports **45 PASS / 0 FAIL**.
 - [ ] The card's PIE acceptance test passes; record what you actually observed.
 - [ ] No regression in an already-done enemy (contact, health, death, split).
 - [ ] The asset is committed and pushed, and the LFS lock is released.
@@ -958,7 +1097,13 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 26 Oct 2026 | B | BP_Ghost | DONE | n/a | tests 12-13 PASS: hidden start (no collision/contact/chase), 550-sphere trigger, through-wall chase (WorldStatic=Ignore), visible/hidden loop forever, 2 hits kill, contact kill while visible, no de-aggro | Ghost art faces left natively: SetFacing input negated in chase; TEMP-M1 locals (bAggro/AggroRadius/ChaseSpeed) declared in child because base M1 has not added them yet - migrate to inherited when A posts M1 GREEN; first-appear GoIdle refresh added (RefreshStateFlipbook 0.5 s after StartAggro) |
 | 27 Oct 2026 | A1/A2 | Owner A split | DONE | — | — | A1: `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail`, contract docs; A2: Rocks, `L_Level_01`; §4.2 boundary; walker graphs/PIE wait for M1 |
 | 27 Oct 2026 | B | BP_Bat | DONE | n/a | test 14 PASS: hang (CeilingIn -> Hanging loop, no drift), 600-sphere trigger, contact ON during 0.5 s wind-up, direct chase colliding with walls/floors (no WorldStatic=Ignore), 2 hits kill, no de-aggro | DEVIATION: TriggerRadius=600 (card says 300) - deliberate playtest tuning, needs A1's blessing + doc sync; Ghost/Turtle editor resaves ride along (Ghost = byte-noise from f8e6cef adoption; Turtle = capsule Pawn=Block + ToggleIdle removed, both pending A1 ruling) |
-|  |  |  |  |  |  |  |
+| 4 Nov 2026 | A/B | BP_Bat hit retune | DONE | live CDO `KnockbackForce=0`, `TriggerRadius=800`; `RefreshStateFlipbook` 8 nodes | hit no longer slides the Bat along the ceiling or pushes it out of its trigger; it can now enter `CeilingOut` and chase | `BP_Bat.uasset`; docs synced to 800 |
+| 4 Nov 2026 | A/B | BP_Bat chase follow-up | DONE | live CDO `KnockbackForce=0`, `TriggerRadius=1000`, `MaxAcceleration=8192`; `ChaseSpeed=1000` | widened the distance trigger so the approach from the playable floor is covered, and made acceleration immediate after the zero-vector hit; damage still does not set `bTriggered`, so a shot from outside `1000` remains idle | `BP_Bat.uasset`; docs synced to 1000/8192 |
+| 4 Nov 2026 | A1 | Owner split re-issued | DONE | `_check_enemy_ai_vars.py` **24 PASS / 0 FAIL**; 21 function graphs; 13/13 AI functions | — | `Docs/EnemyWorkPlan.md`; **Owner B retired** — slots are A1/A2/C, B's assets (`BP_SpikeTurtle`, `BP_Ghost`, `BP_Bat`, `BP_FloatingSkull`), `L_Level_Testing` and milestone M2 moved to A2; §0/§3/§4/§4.1/§4.2/§5/§6/§7/§8 updated; A1's next task is the aggro-on-hit base change (`bAggroOnHit`; `HitAggroDuration` was dropped on 4 Nov in favour of reusing `DeAggroTime`) |
+| 4 Nov 2026 | A2 | M2 handover | DONE | export + live CDO: zero own variables on `BP_Rock1/2/3`, `BP_Snail`, `BP_WoodLog`, `BP_Rhino`, `BP_ToxicSlime`, `BP_FloatingSkull` | — | A2 inherits three DONE specials (tests 10/12/13/14); open = build `BP_FloatingSkull`, delete the Ghost's TEMP-M1 locals so it inherits `bAggro`/`AggroRadius`/`ChaseSpeed`, and get A1's ruling on the Turtle capsule `Pawn=Block` + removed `ToggleIdle` |
+| 5 Nov 2026 | A1 | `BP_EnemyBase` aggro-on-hit | DONE | `UpdateAggro` 54 nodes (46 + 8); fresh export + verifier: 45 PASS / 0 FAIL / 0 PENDING; `_check_enemy_ai_vars.py` 25 PASS / 0 FAIL; `BP_Snail` CDO `ChaseSpeed=80`, `AggroHalfWidth=0`, `AggroHalfHeight=0`, `bAggroOnHit=true` saved and re-read | — | design page `Scripts/_aggro_full_graph.html`; 1 variable (`bAggroOnHit`, `DeAggroTime` reused) + 8 nodes, no new function/local; `_verify_enemy_base.py` now asserts the 3 new links and the 3 old links; Snail health/movement/flipbooks remain open; PIE 1–9 still not logged |
+| 5 Nov 2026 | A1/A2 | Gun-aggro consistency | PARTIAL | live CDOs: `BP_Rock1/2/3` and `BP_WoodLog` now `bAggroOnHit=true`; `BP_Snail` already true. Saved and read back; dirty content empty | — | walkers use the base cross-platform hit term and `ChaseStep` walks to the ledge (closest safe X). `BP_Bat` is the one flying gun-aggroable enemy; its 13-node `RefreshStateFlipbook` hit branch is staged in `Scripts/_bp_bat_refresh_modified.txt` but the Function Entry → branch wire is still open, so a hit from outside `TriggerRadius=1000` still hangs. `Rhino`/`Ghost`/`SpikeTurtle`/`FloatingSkull` are not gun-aggroable; `ToxicSlime` cannot be aggroed at all | `BP_Rock1/2/3.uasset`, `BP_WoodLog.uasset`, `Enemies.md`, `EnemyAI.md` |
+| 5 Nov 2026 | A2 | `BP_Bat` three-bug follow-up | DONE | issues 1–3 verified in PIE; live `RefreshStateFlipbook` has the 13-node hit branch + `MaxFlySpeed=ChaseSpeed`; EventGraph `HangIdle` gated on `bTriggered` | — | live CDO `TriggerRadius=1000`, `ChaseSpeed=1000`, `MaxFlySpeed=400`, `MaxAcceleration=8192`; staged 17-node patch remains available for a clean re-paste | `Enemies.md` §6.8, `EnemyAI.md` §8.8 |
 
 **Defect report (B → A1, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
 Binary inspection of the committed `BP_EnemyBase.uasset` (458 KB, commit
@@ -981,15 +1126,18 @@ channels Ignore, extents ~`(50,50,90)`), rebind the existing contact chain to
 `BP_EnemyBase.uasset` + the verifier scripts. B's four assets need no changes
 once the base fix lands; B will re-run test 10 and flip the status line.
 
-**Current gate:** `M1` is not green. `BP_EnemyPlatform` is PASS, and
-`BP_EnemyBase` has the platform/patrol variables plus **6/13** AI functions
-(`PointInPlatformZone`, `PointInPlatformXZ`, `FindHomePlatform`,
-`AdoptPlatform`, `LedgeAhead`, `PatrolStep`). The aggro set
-(`IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro`),
-the rescue set (`ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`), the
-matching variables, and the Tick/Landed wiring are still missing. Do not wire
-walker graphs or run walker PIE until M1 GREEN; non-behavioral Snail/Rock/map
-preparation is allowed.
+**Resolved.** `ContactBox` exists on `BP_EnemyBase` and the turtle's contact kill
+passed in PIE after the 744f845 fix (see the 25 Oct `BP_SpikeTurtle` row). No
+further action; the report is kept for history.
+
+**Current gate:** `M1` is not green, but the code is no longer the blocker.
+`BP_EnemyPlatform` is PASS, and `BP_EnemyBase` now has **13/13** AI functions,
+**25/25** §4 variables (24 verified on 4 Nov; `bAggroOnHit` is in the asset and
+`EXPECTED` grew to 25 rows with it — re-run `_check_enemy_ai_vars.py`) and a
+wired `Event Tick`. What is
+missing is the PIE evidence for tests 1–9 and the `M1 GREEN` line itself. Do not
+wire walker graphs or run walker PIE until that line exists; non-behavioral
+Snail/Rock/Skull/map preparation is allowed.
 
 ---
 
@@ -1019,10 +1167,12 @@ probe dumps, or a `.umap` you do not own.
 The full target remains all nine mechanics. If the schedule slips, keep this
 order:
 
-1. **Must-have V1:** M1 base gate, `BP_Snail`, `BP_Rock1/2/3`, `BP_WoodLog`,
-   `BP_Ghost`, `BP_Bat`, `BP_Rhino`.
-2. **Cheap and worth keeping:** `BP_SpikeTurtle` (mostly timers, no movement).
-3. **Defer last:** `BP_FloatingSkull`, `BP_ToxicSlime`.
+1. **Must-have V1:** M1 base gate (A1), `BP_Snail` (A1), `BP_Rock1/2/3` (A2),
+   `BP_WoodLog` (C), `BP_Rhino` (C). `BP_Ghost` (A2) and `BP_Bat` (A2) are
+   already DONE, so they cost no remaining time.
+2. **Cheap and worth keeping:** `BP_SpikeTurtle` (A2 — already DONE; timers
+   only, no movement).
+3. **Defer last:** `BP_FloatingSkull` (A2), `BP_ToxicSlime` (C).
 
 Do not “save time” by skipping M1, duplicating movement into a child, or letting
 a walker ignore a ledge. Those shortcuts create the exact bugs the AI design
@@ -1036,7 +1186,9 @@ These are deliberate, and the technical docs must agree with them:
 
 - `bCanMove` is the shared walker-AI gate. Stationary/flyers set it false; their
   own movement still works.
-- `ChaseSpeed <= 0` means “no detection”: Snail and Slime patrol only.
+- `ChaseSpeed <= 0` means “no detection”: Toxic Slime patrols only. Snail is the
+  exception introduced by the hit-window decision below (`ChaseSpeed=80` with a
+  zero-size aggro box).
 - Snail's shell uses base `PatrolStep`; there is no second shell Tick.
 - Wood Log stops by setting `bCanShoot=false` and `bCanMove=false` in
   `TryFire`; `EndAttack` restores both. It overrides `ChaseStep` to stand.
@@ -1046,6 +1198,21 @@ These are deliberate, and the technical docs must agree with them:
 - The first PIE gate is a temporary `BP_Rock1` on P_02 or `BP_Snail` on P_00,
   not the current Snail placement at `(-451, 9, 225)`. A2 stages/removes it;
   A1 runs the PIE check without saving the map.
+- **Locked 4 Nov 2026 (A1-owned), contracts updated, PIE pending:** aggro on a
+  bullet hit. `bAggroOnHit` (bool, `false`) in the base; the post-hit window is
+  the existing `DeAggroTime` (`2.0`), deliberately shared with the box de-aggro
+  so there is one grace knob and not two. Enabled only on `BP_Rock1/2/3`,
+  `BP_WoodLog` and `BP_Snail`.
+  The Snail rule above is therefore replaced by `ChaseSpeed=80` with
+  `AggroHalfWidth=0` / `AggroHalfHeight=0` and `bAggroOnHit=true`;
+  `EnemyAI.md` §4/§6.2/§6.3/§8.2/§8.3/§8.9 and `Enemies.md`
+  §4.2/§5.3/§6.2/§6.3 now describe it. Ghost and Rhino stay detection-only and
+  bullet-immune. The 8 new nodes and the `BooleanOR` re-wire are in
+  `BP_EnemyBase` in the same commit; the acceptance is 54 nodes in a fresh
+  `UpdateAggro` export (46 + 8), **45 PASS / 0 FAIL** from
+  `_verify_enemy_base.py` (including the 3 new / 3 old link audit) and
+  **25 PASS / 0 FAIL** from `_check_enemy_ai_vars.py`. `BP_Snail` carries the
+  aggro CDO flip in that same commit.
 
 If implementation proves a decision wrong, A1 updates this list and the matching
-contract in the same commit. A2/B/C do not fork the design silently.
+contract in the same commit. A2 and C do not fork the design silently.
