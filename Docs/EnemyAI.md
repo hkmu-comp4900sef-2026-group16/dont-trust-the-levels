@@ -510,6 +510,17 @@ Set UnreachableTime = 0
 LaunchCharacter(...)
 ```
 
+`LaunchCharacter` is `ACharacter::LaunchCharacter`. With `bZOverride=false` it
+adds the victim's **current** Z velocity to the vector, so a `KnockbackForce`
+of `0` still produces a non-zero `PendingLaunchVelocity`.
+`UCharacterMovementComponent::HandlePendingLaunch()` then runs
+`SetMovementMode(MOVE_Falling)`. For a walker that is the intended arc; for a
+flyer it is a trap — `GetMaxSpeed()` returns `MaxWalkSpeed`, which the block
+above just set to `MoveSpeed`, and `GetFallingLateralAcceleration()` drops Z and
+scales by `AirControl` (`0.05`). Use `bZOverride = true`: a zero force then sends
+a zero vector, `HandlePendingLaunch()` returns early and `MOVE_Flying` /
+`MaxFlySpeed` survive. `Enemies.md` §4.2 and §6.8 have the Bat case.
+
 `Set bAggro = false` clears the current chase but not the hit window:
 `LastDamageTime` was stamped a few nodes earlier, so once `bWasKnockedBack`
 clears the walker re-aggros for the remaining `DeAggroTime` (§6.2). That is
@@ -767,9 +778,15 @@ Branch: CurrentHealth <= 0
 - Trigger sphere is `1000` (was `800`; `600` was the first playtest value). The
   wider sphere covers the approach from the playable floor; it still only
   starts the chase when the player is inside it.
-- `KnockbackForce=0` for the Bat. `LaunchCharacter` then receives a zero vector
-  and leaves the flying character in `MOVE_Flying`, so a hit cannot slide it
-  along the ceiling or push it out of the trigger.
+- `KnockbackForce=0` for the Bat, so a hit cannot slide it along the ceiling or
+  push it out of the trigger. **`KnockbackForce=0` alone is not enough** (found
+  7 Nov 2026): with the base's `bZOverride=false` the launch vector still carries
+  the Bat's own Z velocity, and `HandlePendingLaunch()` forces `MOVE_Falling`,
+  where `GetMaxSpeed()` returns `MaxWalkSpeed = MoveSpeed = 100` and only
+  `AirControl`-scaled X/Y input applies. Fix the base pin
+  (`LaunchCharacter.bZOverride = true`) or give the Bat a Tick guard that
+  re-asserts `SetMovementMode(Flying)` — see `Enemies.md` §4.2 and §6.8 and
+  `Scripts/_check_bat_hit_knockback.py`.
 - A non-lethal hit is meant to force aggro: the `RefreshStateFlipbook` branch
   checks `bWasKnockedBack`, clears the flag, sets
   `bTriggered`/`bChasing`/`bDealContactDamage`, **sets

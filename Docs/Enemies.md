@@ -306,10 +306,26 @@ Get Actor Location (DamageCauser) → Break Vector
 Get Actor Location (Self)         → Break Vector
 Sign(Self.X - Causer.X) → Multiply(KnockbackForce) → LaunchCharacter(X, 0, 0,
                                                         bXYOverride = true,
-                                                        bZOverride = false)
+                                                        bZOverride = true)
 ```
 
 If `DamageCauser` is not valid, use `-Facing * KnockbackForce`.
+
+> **`bZOverride` must be `true`** (corrected 7 Nov 2026). With `false`,
+> `LaunchCharacter` adds the victim's *current* Z velocity to the authored
+> `(Force, 0, 0)` vector, so `KnockbackForce = 0` still sends a **non-zero**
+> `PendingLaunchVelocity` whenever the victim is moving vertically.
+> `UCharacterMovementComponent::Launch` stores it, and the next
+> `PerformMovement` calls `HandlePendingLaunch()`, which runs
+> `SetMovementMode(MOVE_Falling)`. Grounded walkers have `Vz ≈ 0`, so their
+> knockback is unchanged; a flyer loses `MOVE_Flying`. `GetMaxSpeed()` then
+> returns `MaxWalkSpeed` — which this same handler writes as `MoveSpeed` — and
+> `GetFallingLateralAcceleration()` keeps only X/Y and scales by `AirControl`
+> (0.05). That is the "Bat crawls after a hit" bug. With `bZOverride = true` a
+> zero force produces a zero vector, `HandlePendingLaunch()` returns early and
+> the flyer keeps `MOVE_Flying` / `MaxFlySpeed`. The live pin is `true` since
+> 7 Nov 2026; if it is ever reverted, every flying child needs its own guard
+> (`Enemies.md` §6.8, Option B).
 
 > `ApplyPointDamage` from `BP_Projectile` raises **both** `AnyDamage` and
 > `PointDamage`. Bind only **AnyDamage** here; binding both would subtract twice.
@@ -1226,6 +1242,56 @@ the Bat reach that speed immediately instead of drifting slowly after a hit.
 
 The bat is a normal health enemy: `AnyDamage` / `Kill` from the base. Contact
 damage is enabled only after the trigger, so a hanging bat is safe to touch.
+
+**Status (7 Nov 2026 — "still slows / turns invisible after a hit"):** the saved
+`BP_Bat` itself is intact — a headless T3D export shows the 17-node
+`RefreshStateFlipbook` (`bWasKnockedBack` → clear + `bTriggered`/`bChasing`/
+`bDealContactDamage` → `MaxFlySpeed = ChaseSpeed` → parent), the EventGraph
+`HangIdle` gate on `bTriggered OR bIsDead`, and the live CDO still has
+`ChaseSpeed=1000`, `KnockbackForce=0`, `TriggerRadius=1000`. The playtest
+symptoms are explained by the **Level 1 instance**: it was placed at `Y=-100`,
+while the terrain (`TM_Background`, `collision_thickness=200`, BlockAll) and
+every other character are on `Y=0`. Its sprite therefore rendered behind the
+terrain plane (hidden under floor/wall tiles) and its capsule sat ~70 uu inside
+the collision slab, so collision resolution could stop it (looks slow) or push
+it behind a wall while it kept chasing. The instance is now at `Y=0`. Keep
+flyers on the terrain plane — see `EnemyPlacement.md` §2.
+
+**Status (7 Nov 2026 — second pass, "still slow after a hit", FIXED):** the `Y`
+fix only removed the *invisible* half. The remaining slowdown was the **shared
+knockback**. `BP_EnemyBase.Event AnyDamage` called
+`LaunchCharacter((±KnockbackForce, 0, 0), bXYOverride=true, bZOverride=false)`.
+Because `bZOverride=false` carries the Bat's own vertical velocity, the launch
+vector is **not** zero even though `KnockbackForce=0`; `Launch()` stores it and
+`HandlePendingLaunch()` calls `SetMovementMode(MOVE_Falling)`. In `Falling`,
+`GetMaxSpeed()` returns `MaxWalkSpeed`, which the same handler just wrote as
+`MoveSpeed` (`100`), and lateral input is scaled by `AirControl` (`0.05`) and
+loses Z. The Bat therefore crawls at ≤100 uu/s towards the player until it
+lands and then keeps walking at `MaxWalkSpeed=100`; `MaxFlySpeed=1000` never
+applies while it is not in `MOVE_Flying`. This also explains the intermittency:
+a hit with `Vz ≈ 0` (Bat exactly level with the player) leaves the mode alone.
+`BP_Bat` is the only enemy with `KnockbackForce=0` (every other CDO is `200`),
+so the base pin change is a Bat-only behaviour change in practice.
+
+Two fixes exist, either one is enough, and `Scripts/_check_bat_hit_knockback.py`
+reports PASS on either and FAIL when neither is in the asset:
+
+1. **Root cause (`BP_EnemyBase`, A1) — APPLIED 7 Nov 2026:** `LaunchCharacter →
+   Z Override` = `true`. Live export: `K2Node_CallFunction_28`,
+   `bZOverride='true'`; checker `RESULT: PASS (A: bZOverride=true)`;
+   `_verify_enemy_base.py` still `45 PASS / 0 FAIL`. A zero
+   `KnockbackForce` now sends a zero vector and `HandlePendingLaunch()`
+   returns early. Walkers keep their knockback (they are grounded, `Vz ≈ 0`).
+2. **Bat only (A2) — not needed now:** `BP_Bat` Event Graph,
+   `ReceiveTick → Set Movement Mode (Flying) → Bat Tick Logic`. The pre-wired
+   node is in `Scripts/_bp_bat_flying_guard_paste.txt` (paste it into the Event
+   Graph). The Bat re-asserts its shell mode every frame; `SetMovementMode`
+   early-outs when the mode is unchanged, so the cost is one enum compare. This
+   also covers a future non-zero knockback or any other `LaunchCharacter` on the
+   Bat.
+
+The `RefreshStateFlipbook` hit branch (`MaxFlySpeed = ChaseSpeed`) is necessary
+but not sufficient — it fixes the *cap*, not the movement mode.
 
 ---
 

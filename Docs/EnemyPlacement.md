@@ -256,6 +256,19 @@ The zone test uses `YSlop = 100`. Keep the enemy and the zone origin within
 lanes at different Y depths, give each its own zone and keep them more than
 200 uu apart so they cannot both match.
 
+> **Keep every enemy on the terrain plane (`Y = 0`).** In `L_Level_01` the
+> playfield is `TM_Background` at `Y = 0` with `collision_thickness = 200`
+> (BlockAll), and `TM_BackgroundLayer` is the decorative plane 100 uu behind it
+> (`Y = -100`, thickness `50`). An actor offset into the terrain slab is not just
+> mis-drawn: its Paper2D sprite sits **behind** the terrain render plane (any
+> floor/wall tile in front hides it), and its capsule is embedded ~70 uu deep in
+> the collision volume, so `MOVE_Flying` depenetration can stop it (looks slow)
+> or eject it along `Y` (it slips behind a wall and keeps chasing while
+> invisible). The Level 1 `BP_Bat` was at `Y = -100` and showed exactly those
+> symptoms; it now sits at `Y = 0` like the player and the other enemies. The
+> orthographic room camera (`ortho_width = 3000`) has no parallax that could
+> compensate for the offset.
+
 ---
 
 ## 3. Enemy-by-enemy details

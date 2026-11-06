@@ -553,6 +553,13 @@ contract docs. Never save `L_Level_01`; A2 stages/removes the M1 test actor.
       `DeAggroTime` and skips the same-platform/Z gate. Live CDO flips landed on
       `BP_Rock1/2/3`, `BP_WoodLog` and `BP_Snail`. `BP_Bat` needs its own
       `RefreshStateFlipbook` hit branch because it never runs the walker loop.
+- [x] **DONE 7 Nov 2026 — `LaunchCharacter` Z override.** The `AnyDamage` launch
+      now has `bZOverride = true`, so a zero `KnockbackForce` sends a zero vector
+      and `HandlePendingLaunch()` returns early. `BP_Bat` (the only
+      `KnockbackForce=0` child) keeps `MOVE_Flying` / `MaxFlySpeed` after a hit;
+      grounded walkers are unchanged (`Vz ≈ 0`). Evidence: §10 row of 7 Nov,
+      `Scripts/_check_bat_hit_knockback.py` → `PASS (A)`,
+      `_verify_enemy_base.py` 45 PASS / 0 FAIL.
 - [ ] **Gate:** verify the Top gate
       (`bIsDead OR bStranded OR NOT bCanMove` → return; `bWasKnockedBack` →
       return; `ChaseSpeed <= 0` → `PatrolStep` → return) in PIE with tests 1–9.
@@ -657,6 +664,33 @@ is gated on `bTriggered`. The staged 17-node
 re-paste (it also contains the hit-path `K2_ClearTimer("HangIdle")`). Live CDO
 otherwise unchanged: `TriggerRadius=1000`, `ChaseSpeed=1000`,
 `KnockbackForce=0`, `MaxAcceleration=8192`.
+
+**Follow-up (7 Nov 2026):** the remaining "slow / invisible after a hit"
+playtest report was not a graph bug — the saved asset was re-verified by a
+headless T3D export and CDO readback (hit branch, `HangIdle` gate and
+`MaxFlySpeed` write all intact). The **Level 1 instance** was placed at
+`Y=-100` while the terrain plane (`TM_Background`, `collision_thickness=200`,
+BlockAll) is at `Y=0`; its sprite rendered behind the terrain and its capsule
+was embedded in the collision slab. The instance now sits at `Y=0`. Keep
+flyers on the terrain plane (`EnemyPlacement.md` §2).
+
+**Root cause of the remaining slowdown (7 Nov 2026, second pass):** the `Y` fix
+removed the *invisible* sprite, but the Bat still crawled after a hit. The shared
+`AnyDamage` knockback called `LaunchCharacter(..., bZOverride=false)`, and that
+flag makes the launch vector inherit the Bat's own Z velocity, so
+`KnockbackForce=0` still triggers `HandlePendingLaunch() ->
+SetMovementMode(Falling)`. In `Falling` the cap is
+`MaxWalkSpeed = MoveSpeed = 100` (written by the same handler) and only
+`AirControl`-scaled X/Y input applies, so `MaxFlySpeed=1000` never matters.
+`bZOverride=false` is fine for grounded walkers; `BP_Bat` is the only CDO with
+`KnockbackForce=0` (every other enemy is `200`). Fix (either one):
+`BP_EnemyBase.LaunchCharacter → Z Override` ✓ (root cause, A1) or a `BP_Bat`
+Tick node `SetMovementMode(Flying)` before `Bat Tick Logic` (bat only, pre-wired
+in `Scripts/_bp_bat_flying_guard_paste.txt`). **Applied 7 Nov 2026 (A1):** the
+base pin is `true` and saved; `Scripts/_check_bat_hit_knockback.py` →
+`RESULT: PASS (A: bZOverride=true)`; `_verify_enemy_base.py`
+45 PASS / 0 FAIL. The Option-B guard is not in the asset and is not needed.
+PIE 7/8 (walker knockback + landing/adoption) and 14 (Bat) still to re-run.
 
 **Tasks**
 
@@ -1104,6 +1138,9 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 5 Nov 2026 | A1 | `BP_EnemyBase` aggro-on-hit | DONE | `UpdateAggro` 54 nodes (46 + 8); fresh export + verifier: 45 PASS / 0 FAIL / 0 PENDING; `_check_enemy_ai_vars.py` 25 PASS / 0 FAIL; `BP_Snail` CDO `ChaseSpeed=80`, `AggroHalfWidth=0`, `AggroHalfHeight=0`, `bAggroOnHit=true` saved and re-read | — | design page `Scripts/_aggro_full_graph.html`; 1 variable (`bAggroOnHit`, `DeAggroTime` reused) + 8 nodes, no new function/local; `_verify_enemy_base.py` now asserts the 3 new links and the 3 old links; Snail health/movement/flipbooks remain open; PIE 1–9 still not logged |
 | 5 Nov 2026 | A1/A2 | Gun-aggro consistency | PARTIAL | live CDOs: `BP_Rock1/2/3` and `BP_WoodLog` now `bAggroOnHit=true`; `BP_Snail` already true. Saved and read back; dirty content empty | — | walkers use the base cross-platform hit term and `ChaseStep` walks to the ledge (closest safe X). `BP_Bat` is the one flying gun-aggroable enemy; its 13-node `RefreshStateFlipbook` hit branch is staged in `Scripts/_bp_bat_refresh_modified.txt` but the Function Entry → branch wire is still open, so a hit from outside `TriggerRadius=1000` still hangs. `Rhino`/`Ghost`/`SpikeTurtle`/`FloatingSkull` are not gun-aggroable; `ToxicSlime` cannot be aggroed at all | `BP_Rock1/2/3.uasset`, `BP_WoodLog.uasset`, `Enemies.md`, `EnemyAI.md` |
 | 5 Nov 2026 | A2 | `BP_Bat` three-bug follow-up | DONE | issues 1–3 verified in PIE; live `RefreshStateFlipbook` has the 13-node hit branch + `MaxFlySpeed=ChaseSpeed`; EventGraph `HangIdle` gated on `bTriggered` | — | live CDO `TriggerRadius=1000`, `ChaseSpeed=1000`, `MaxFlySpeed=400`, `MaxAcceleration=8192`; staged 17-node patch remains available for a clean re-paste | `Enemies.md` §6.8, `EnemyAI.md` §8.8 |
+| 7 Nov 2026 | A2 | `BP_Bat` Level 1 instance | DONE | headless export + CDO readback: hit branch, `HangIdle` gate and `MaxFlySpeed` write all intact (17-node `RefreshStateFlipbook`); `L_Level_01` instance was at `Y=-100` vs terrain `Y=0` (`TM_Background`, 200 uu BlockAll slab; `ortho_width=3000`) | — | the Y offset put the sprite behind the terrain plane (invisible under tiles) and the capsule ~70 uu inside the collision slab (slow / ejected behind walls); moved the instance to `Y=0` | `L_Level_01.umap`, `Enemies.md` §6.8, `EnemyPlacement.md` §2 |
+| 7 Nov 2026 | A2 | `BP_Bat` slow after a hit (2nd pass) | DONE (A1 row below) | live T3D export: `BP_EnemyBase.K2Node_CallFunction_28.bZOverride = false`; `BP_Bat` has no `SetMovementMode`; `Scripts/_check_bat_hit_knockback.py` → FAIL. Live CDOs: `BP_Bat` is the only `KnockbackForce=0` (`MoveSpeed=100`, `MaxWalkSpeed=0`, `MaxFlySpeed=400`) | — | `bZOverride=false` makes the launch inherit the Bat's own Z velocity, so `HandlePendingLaunch()` forces `MOVE_Falling`; the cap becomes `MaxWalkSpeed = MoveSpeed = 100` and only `AirControl` (0.05) X/Y input applies, so `MaxFlySpeed=1000` never matters → the Bat crawls until it lands. Fix = base `bZOverride=true` (root cause; grounded walkers unchanged) or the pre-wired Bat Tick guard `Scripts/_bp_bat_flying_guard_paste.txt`; PIE pending | `Enemies.md` §4.2/§6.8, `EnemyAI.md` §7.1/§8.8, `Scripts/_check_bat_hit_knockback.py`, `Scripts/_bp_bat_flying_guard_paste.txt` |
+| 7 Nov 2026 | A1 | `BP_EnemyBase` knockback Z override | DONE | live T3D export: `K2Node_CallFunction_28.bZOverride = true`; `Scripts/_check_bat_hit_knockback.py` → `RESULT: PASS (A: bZOverride=true)`; `_verify_enemy_base.py` 45 PASS / 0 FAIL / 0 PENDING | — | the shared `AnyDamage` launch no longer inherits the victim's Z velocity, so a flying enemy with `KnockbackForce=0` keeps `MOVE_Flying` and `MaxFlySpeed`; grounded walkers are unchanged (`Vz ≈ 0`); the Option-B Bat Tick guard is not in the asset and is not needed; closes the A2 row above. Commit `BP_EnemyBase.uasset` + docs, push, then re-run PIE 7/8/14 | `BP_EnemyBase.uasset`, `Enemies.md` §4.2/§6.8, `EnemyAI.md` §7.1/§8.8, `EnemyWorkPlan.md` |
 
 **Defect report (B → A1, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
 Binary inspection of the committed `BP_EnemyBase.uasset` (458 KB, commit
