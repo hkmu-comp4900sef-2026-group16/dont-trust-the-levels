@@ -336,11 +336,13 @@ If `DamageCauser` is not valid, use `-Facing * KnockbackForce`.
 > (`KnockbackForce = 0`) still sends a zero vector and keeps
 > `MOVE_Flying`/`MaxFlySpeed`.
 >
-> **Status (7 Nov 2026):** `KnockbackForce = 1200` is saved in
-> `BP_EnemyBase.uasset`. The `MakeVector.Z` link is a one-node paste
-> (`Scripts/_bp_enemy_base_knockback_lift_paste.txt`) and is **not** in the asset
-> yet: `Scripts/_check_knockback_lift.py` reports `RESULT: PENDING` until it
-> lands, and `PASS` with `shove≈392 uu` once it does.
+> **Status (7 Nov 2026):** both halves are live. `KnockbackForce = 1200` is saved
+> in `BP_EnemyBase.uasset`, and the `MakeVector.Z` link
+> (`KnockbackForce → Multiply(0.4) → Z`, pasted from
+> `Scripts/_bp_enemy_base_knockback_lift_paste.txt`, compiled and saved) is in the
+> asset: `py -3 Scripts/_run_knockback_lift_check.py` prints `RESULT: PASS` with
+> `lift=480 uu air=0.327 s shove=392 uu`. What is left is the *feel* check in PIE
+> (tests 7 and 8), not the wiring.
 
 > **`bZOverride` must be `true`** (corrected 7 Nov 2026). With `false`,
 > `LaunchCharacter` adds the victim's *current* Z velocity to the authored

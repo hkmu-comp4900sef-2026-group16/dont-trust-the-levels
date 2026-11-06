@@ -532,9 +532,10 @@ friction, and Tick is gated by `bWasKnockedBack`) for
 `2 * Lift / (980 * GravityScale)` and covers `KnockbackForce * t_air`. With the
 live `KnockbackForce = 1200` and `GravityScale = 3` that is `Lift 480`,
 `0.327 s`, ~392 uu. `BP_Bat` keeps `KnockbackForce = 0`, so both components stay
-zero and the flyer is untouched. The paste is
-`Scripts/_bp_enemy_base_knockback_lift_paste.txt`;
-`Scripts/_check_knockback_lift.py` proves the link.
+zero and the flyer is untouched. The link is in the asset (pasted from
+`Scripts/_bp_enemy_base_knockback_lift_paste.txt`, compiled and saved):
+`py -3 Scripts/_run_knockback_lift_check.py` prints `RESULT: PASS` with
+`lift=480 uu`, `air=0.327 s`, `shove=392 uu`.
 
 `Set bAggro = false` clears the current chase but not the hit window:
 `LastDamageTime` was stamped a few nodes earlier, so once `bWasKnockedBack`
