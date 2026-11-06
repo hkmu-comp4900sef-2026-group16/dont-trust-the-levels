@@ -208,7 +208,7 @@ it does not add a Behavior Tree or any AI logic.
 | `bDealContactDamage` | Boolean | `true` | contact hazards on/off |
 | `ContactDamageCooldown` | Float | `0.50` | prevents overlap spam |
 | `LastContactDamageTime` | Float | `-1000.0` | cooldown stamp |
-| `KnockbackForce` | Float | `200.0` | hit reaction |
+| `KnockbackForce` | Float | `1200.0` | hit reaction (retuned from `200` on 7 Nov 2026, §4.2) |
 | `HitRecoveryTime` | Float | `0.20` | hit flipbook return |
 | `IdleFlipbook` | Paper Flipbook | child | base state |
 | `HitFlipbook` | Paper Flipbook | child | damage reaction |
@@ -304,12 +304,43 @@ Knockback (optional, but it sells the hit):
 ```text
 Get Actor Location (DamageCauser) → Break Vector
 Get Actor Location (Self)         → Break Vector
-Sign(Self.X - Causer.X) → Multiply(KnockbackForce) → LaunchCharacter(X, 0, 0,
-                                                        bXYOverride = true,
-                                                        bZOverride = true)
+Sign(Self.X - Causer.X) → Multiply(KnockbackForce) ──┐
+KnockbackForce → Multiply(0.4)  → Z ─────────────────┴→ Make Vector(X, 0, Z)
+                                                       → Launch Character(
+                                                             bXYOverride = true,
+                                                             bZOverride  = true)
 ```
 
 If `DamageCauser` is not valid, use `-Facing * KnockbackForce`.
+
+> **The `Z` term is the knockback** (7 Nov 2026 retune). A purely horizontal
+> `(F, 0, 0)` vector moves a grounded walker about **15 uu**, however large `F`
+> is: `Launch()` stores the vector, `bForceNextFloorCheck` re-grounds the victim
+> on the next move (`Vz = 0`), and `ApplyVelocityBraking` strips everything above
+> `GetMaxSpeed()` = `MaxWalkSpeed` — written as `MoveSpeed` a few nodes earlier —
+> at `GroundFriction^2 * BrakingDecelerationWalking` = `8^2 * 2048` =
+> 131072 uu/s². Only the `GroundFriction` (8) decay is left, `~v/8` uu. The
+> vertical component keeps the victim in `MOVE_Falling`, where ground friction
+> does not apply and `bWasKnockedBack` skips the AI Tick, for
+>
+> ```text
+> t_air = 2 * Lift / (980 * GravityScale)       enemies run GravityScale = 3
+> shove = KnockbackForce * t_air = F^2 / 3675    when Lift = 0.4 * F
+> ```
+>
+> `F = 200` (the old default) gave `Lift 80`, `t_air 0.054 s`, `~11 uu`.
+> `F = 1200` (live since 7 Nov 2026) gives `Lift 480`, `t_air 0.327 s`,
+> **`~392 uu`** plus the ~15 uu ground slide — roughly half of a `600`-wide
+> platform, with a `39 uu` hop. Tune `KnockbackForce` per enemy weight; keep the
+> `0.4` factor. The lift is a **multiple of** `KnockbackForce`, so `BP_Bat`
+> (`KnockbackForce = 0`) still sends a zero vector and keeps
+> `MOVE_Flying`/`MaxFlySpeed`.
+>
+> **Status (7 Nov 2026):** `KnockbackForce = 1200` is saved in
+> `BP_EnemyBase.uasset`. The `MakeVector.Z` link is a one-node paste
+> (`Scripts/_bp_enemy_base_knockback_lift_paste.txt`) and is **not** in the asset
+> yet: `Scripts/_check_knockback_lift.py` reports `RESULT: PENDING` until it
+> lands, and `PASS` with `shove≈392 uu` once it does.
 
 > **`bZOverride` must be `true`** (corrected 7 Nov 2026). With `false`,
 > `LaunchCharacter` adds the victim's *current* Z velocity to the authored
@@ -783,7 +814,7 @@ cannot be killed.
 | `ShellTopHitFlipbook` | Paper Flipbook | `FLB_Snail_ShellTopHit` |
 | `WithoutShellFlipbook` | Paper Flipbook | `FLB_Snail_WithoutShell` |
 
-**Defaults:** `ChaseSpeed=80`, `AggroHalfWidth=0`, `AggroHalfHeight=0`,
+**Defaults:** `ChaseSpeed=250`, `AggroHalfWidth=0`, `AggroHalfHeight=0`,
 `bAggroOnHit=true`, `MaxHealth=2`, `MoveSpeed=50`, `ContactDamage=1`,
 `IdleFlipbook=FLB_Snail_Idle`, `HitFlipbook=FLB_Snail_Hit`,
 `DeathFlipbook=FLB_Snail_Hit`. The zero box is the point: the snail never
@@ -791,11 +822,17 @@ detects on its own, and `bAggroOnHit` gives it the `DeAggroTime` hit window
 (`EnemyAI.md` §6.2) so a player who shoots it once has to deal with it. Leaving
 `ChaseSpeed=0` would make it deaf to hits as well.
 
-**Status (5 Nov 2026):** the four aggro overrides are live on `BP_Snail`
-(`ChaseSpeed=80`, both aggro halves `0`, `bAggroOnHit=true`). The remaining
-defaults above (`MaxHealth=2`, `MoveSpeed=50`, the snail flipbooks) are still
-inherited base values and remain A1b work; the PIE test can run on the aggro
-flip alone.
+**Status (7 Nov 2026):** the four aggro overrides are live on `BP_Snail`
+(`ChaseSpeed=250`, both aggro halves `0`, `bAggroOnHit=true`). `ChaseSpeed` was
+`80` until the 7 Nov retune: the chase branch of `UpdateAggro` writes
+`MaxWalkSpeed = ChaseSpeed`, and `80` uu/s against the player's `1000` uu/s read
+as standing still, so a woken snail never reached the player. `250` is still
+escapable and is faster than the base walker `150` — exactly one knob to revisit
+if it feels too quick. **No proximity aggro was added on purpose:** the zero
+box means the snail ignores a player standing in front of it until it is shot.
+The remaining defaults above (`MaxHealth=2`, `MoveSpeed=50`, the snail
+flipbooks) are still inherited base values and remain A1b work; the PIE test can
+run on the aggro flip alone.
 
 **Normal state (21 Oct 2026 revision):** patrol left/right with
 `Add Movement Input` and the platform/ledge guard (`EnemyAI.md` §5). No
@@ -1270,8 +1307,9 @@ loses Z. The Bat therefore crawls at ≤100 uu/s towards the player until it
 lands and then keeps walking at `MaxWalkSpeed=100`; `MaxFlySpeed=1000` never
 applies while it is not in `MOVE_Flying`. This also explains the intermittency:
 a hit with `Vz ≈ 0` (Bat exactly level with the player) leaves the mode alone.
-`BP_Bat` is the only enemy with `KnockbackForce=0` (every other CDO is `200`),
-so the base pin change is a Bat-only behaviour change in practice.
+`BP_Bat` is the only enemy with `KnockbackForce=0` (every other CDO was `200`
+when this was diagnosed; retuned to `1200` later the same day — §4.2), so the
+base pin change is a Bat-only behaviour change in practice.
 
 Two fixes exist, either one is enough, and `Scripts/_check_bat_hit_knockback.py`
 reports PASS on either and FAIL when neither is in the asset:
@@ -1281,7 +1319,9 @@ reports PASS on either and FAIL when neither is in the asset:
    `bZOverride='true'`; checker `RESULT: PASS (A: bZOverride=true)`;
    `_verify_enemy_base.py` still `45 PASS / 0 FAIL`. A zero
    `KnockbackForce` now sends a zero vector and `HandlePendingLaunch()`
-   returns early. Walkers keep their knockback (they are grounded, `Vz ≈ 0`).
+   returns early. Walkers keep their knockback: their arc comes from the
+   authored `MakeVector.Z` lift (`KnockbackForce × 0.4`, §4.2) rather than from
+   the `Vz ≈ 0` they used to inherit, so the pin flip and the retune agree.
 2. **Bat only (A2) — not needed now:** `BP_Bat` Event Graph,
    `ReceiveTick → Set Movement Mode (Flying) → Bat Tick Logic`. The pre-wired
    node is in `Scripts/_bp_bat_flying_guard_paste.txt` (paste it into the Event

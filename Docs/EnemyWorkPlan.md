@@ -112,7 +112,7 @@ If two documents disagree, **stop and post the conflict** in the status log.
   `BP_FloatingSkull` all still hold the **base defaults** (`ChaseSpeed=150`,
   `MoveSpeed=100`, `MaxHealth=3`, `AggroHalfWidth=600`, `AggroHalfHeight=500`,
   `ContactDamage=1`) and declare **zero** own variables, so none of them has
-  started. `BP_Snail` now overrides the aggro values (`ChaseSpeed=80`, both
+  started. `BP_Snail` now overrides the aggro values (`ChaseSpeed=250`, both
   aggro halves `0`, `bAggroOnHit=true`; saved 5 Nov), but its health, movement
   and snail flipbooks are still on the base defaults (`MaxHealth=3`,
   `MoveSpeed=100`, `IdleFlipbook`/`HitFlipbook`/`DeathFlipbook` unset) — the
@@ -470,7 +470,7 @@ M2, because A2 is now single-threaded across both milestones.
 - A walker must not add its own movement Tick. Use base `PatrolStep`,
   `ChaseStep` and `UpdateAggro`; override only the state-specific parts.
 - Toxic Slime sets `ChaseSpeed=0` (no detection). Rocks, Rhino and Wood Log set
-  a positive `ChaseSpeed`. Snail is the §13 exception: `ChaseSpeed=80` with
+  a positive `ChaseSpeed`. Snail is the §13 exception: `ChaseSpeed=250` with
   `AggroHalfWidth=0` / `AggroHalfHeight=0` and `bAggroOnHit=true`, so it only
   reacts to being shot.
 - Snail's shell uses the same base `PatrolStep` with `MoveSpeed=ShellSpeed`;
@@ -869,18 +869,20 @@ the graph tasks below wait for `M1 GREEN`.
 **Status: NOT STARTED (4 Nov 2026).** Live CDO still holds the base defaults
 (`ChaseSpeed=150`, `MoveSpeed=100`, `MaxHealth=3`, `ContactDamage=1`), the asset
 declares zero own variables, and the instance sits at `(-451, 9, 225)` off every
-auto marker. **The aggro part is fixed (5 Nov):** the Snail now overrides
-`ChaseSpeed=80`, `AggroHalfWidth=0`, `AggroHalfHeight=0` and
-`bAggroOnHit=true` — hit-only aggro, patrol otherwise. The remaining health,
-movement and flipbook defaults are still base values and are tracked below. The
-CDO flip ships in the same commit as the base change.
+auto marker. **The aggro part is fixed (5 Nov, retuned 7 Nov):** the Snail overrides
+`ChaseSpeed=250` (was `80`), `AggroHalfWidth=0`, `AggroHalfHeight=0` and
+`bAggroOnHit=true` — hit-only aggro, patrol otherwise. No proximity aggro is
+wanted: a player standing in front of a snail is ignored until it is shot. The
+remaining health, movement and flipbook defaults are still base values and are
+tracked below. The CDO flip shipped in the same commit as the base change.
 
 **Tasks**
 
 - [ ] Add only the unique variables: `bShellPhase`, `ShellSpeed`,
       `ShellContactDamage`, `ShellLifetime`, `ShellIdleFlipbook`,
       `ShellWallHitFlipbook`, `ShellTopHitFlipbook`, `WithoutShellFlipbook`.
-- [x] **DONE 5 Nov 2026 — Class Defaults (aggro only):** `ChaseSpeed=80`,
+- [x] **DONE 5 Nov 2026 — Class Defaults (aggro only):** `ChaseSpeed=80`
+      (raised to `250` on 7 Nov — §10),
       `AggroHalfWidth=0`, `AggroHalfHeight=0`, `bAggroOnHit=true` (§13, locked
       4 Nov). Saved on `BP_Snail` and re-read from the live CDO/spawned instance.
 - [ ] Class Defaults (remaining A1b): `MaxHealth=2`, `MoveSpeed=50`,
@@ -1141,6 +1143,9 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 7 Nov 2026 | A2 | `BP_Bat` Level 1 instance | DONE | headless export + CDO readback: hit branch, `HangIdle` gate and `MaxFlySpeed` write all intact (17-node `RefreshStateFlipbook`); `L_Level_01` instance was at `Y=-100` vs terrain `Y=0` (`TM_Background`, 200 uu BlockAll slab; `ortho_width=3000`) | — | the Y offset put the sprite behind the terrain plane (invisible under tiles) and the capsule ~70 uu inside the collision slab (slow / ejected behind walls); moved the instance to `Y=0` | `L_Level_01.umap`, `Enemies.md` §6.8, `EnemyPlacement.md` §2 |
 | 7 Nov 2026 | A2 | `BP_Bat` slow after a hit (2nd pass) | DONE (A1 row below) | live T3D export: `BP_EnemyBase.K2Node_CallFunction_28.bZOverride = false`; `BP_Bat` has no `SetMovementMode`; `Scripts/_check_bat_hit_knockback.py` → FAIL. Live CDOs: `BP_Bat` is the only `KnockbackForce=0` (`MoveSpeed=100`, `MaxWalkSpeed=0`, `MaxFlySpeed=400`) | — | `bZOverride=false` makes the launch inherit the Bat's own Z velocity, so `HandlePendingLaunch()` forces `MOVE_Falling`; the cap becomes `MaxWalkSpeed = MoveSpeed = 100` and only `AirControl` (0.05) X/Y input applies, so `MaxFlySpeed=1000` never matters → the Bat crawls until it lands. Fix = base `bZOverride=true` (root cause; grounded walkers unchanged) or the pre-wired Bat Tick guard `Scripts/_bp_bat_flying_guard_paste.txt`; PIE pending | `Enemies.md` §4.2/§6.8, `EnemyAI.md` §7.1/§8.8, `Scripts/_check_bat_hit_knockback.py`, `Scripts/_bp_bat_flying_guard_paste.txt` |
 | 7 Nov 2026 | A1 | `BP_EnemyBase` knockback Z override | DONE | live T3D export: `K2Node_CallFunction_28.bZOverride = true`; `Scripts/_check_bat_hit_knockback.py` → `RESULT: PASS (A: bZOverride=true)`; `_verify_enemy_base.py` 45 PASS / 0 FAIL / 0 PENDING | — | the shared `AnyDamage` launch no longer inherits the victim's Z velocity, so a flying enemy with `KnockbackForce=0` keeps `MOVE_Flying` and `MaxFlySpeed`; grounded walkers are unchanged (`Vz ≈ 0`); the Option-B Bat Tick guard is not in the asset and is not needed; closes the A2 row above. Commit `BP_EnemyBase.uasset` + docs, push, then re-run PIE 7/8/14 | `BP_EnemyBase.uasset`, `Enemies.md` §4.2/§6.8, `EnemyAI.md` §7.1/§8.8, `EnemyWorkPlan.md` |
+| 7 Nov 2026 | A1 | Knockback retune (shared `AnyDamage`) | DONE | `Scripts/_run_enemy_tuning.py` → live CDO `BP_EnemyBase.KnockbackForce` 200 → 1200, saved and re-read; `Scripts/_run_knockback_lift_check.py` → `RESULT: PENDING` (the `MakeVector.Z` link is the remaining manual paste) | PIE pending | a horizontal-only launch is worth ~15 uu at *any* force (`ApplyVelocityBraking` caps the victim at `MaxWalkSpeed` with `GroundFriction^2 * BrakingDecelerationWalking` = `131072` uu/s², then `GroundFriction` 8 kills the rest), so the shove now carries an authored arc: `MakeVector.Z = KnockbackForce * 0.4` via `Scripts/_bp_enemy_base_knockback_lift_paste.txt` → `Lift 480`, `t_air 0.327 s`, ~392 uu at `GravityScale=3`. `BP_Bat` (`KnockbackForce=0`) still sends a zero vector, so the `bZOverride=true` fix above is untouched. Gotcha: every `Content/**` file is read-only on disk after a git operation — `save_loaded_asset` returns `False` until the flag is cleared | `BP_EnemyBase.uasset`, `Enemies.md` §4.2, `EnemyAI.md` §7.1, `Scripts/_set_enemy_tuning.py`, `Scripts/_check_knockback_lift.py`, `Scripts/_bp_enemy_base_knockback_lift_paste.txt` |
+| 7 Nov 2026 | A1 | `BP_Snail` chase speed | DONE | `Scripts/_run_enemy_tuning.py` → live CDO `BP_Snail.ChaseSpeed` 80 → 250, saved and re-read; aggro box still `0/0`, `bAggroOnHit=true` | PIE pending | `UpdateAggro`'s chase branch writes `MaxWalkSpeed = ChaseSpeed` (patrol writes `MoveSpeed`), so the old `80` uu/s against the player's `1000` uu/s was indistinguishable from standing still. No proximity aggro was added: the zero aggro box plus `bAggroOnHit` is the locked §13 design (a snail ignores a player until it is shot) | `BP_Snail.uasset`, `Enemies.md` §6.3, `EnemyAI.md` §8.3/§10, `EnemyWorkPlan.md` |
+
 
 **Defect report (B → A1, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**
 Binary inspection of the committed `BP_EnemyBase.uasset` (458 KB, commit
@@ -1224,7 +1229,7 @@ These are deliberate, and the technical docs must agree with them:
 - `bCanMove` is the shared walker-AI gate. Stationary/flyers set it false; their
   own movement still works.
 - `ChaseSpeed <= 0` means “no detection”: Toxic Slime patrols only. Snail is the
-  exception introduced by the hit-window decision below (`ChaseSpeed=80` with a
+  exception introduced by the hit-window decision below (`ChaseSpeed=250` with a
   zero-size aggro box).
 - Snail's shell uses base `PatrolStep`; there is no second shell Tick.
 - Wood Log stops by setting `bCanShoot=false` and `bCanMove=false` in
@@ -1240,7 +1245,7 @@ These are deliberate, and the technical docs must agree with them:
   the existing `DeAggroTime` (`2.0`), deliberately shared with the box de-aggro
   so there is one grace knob and not two. Enabled only on `BP_Rock1/2/3`,
   `BP_WoodLog` and `BP_Snail`.
-  The Snail rule above is therefore replaced by `ChaseSpeed=80` with
+  The Snail rule above is therefore replaced by `ChaseSpeed=250` with
   `AggroHalfWidth=0` / `AggroHalfHeight=0` and `bAggroOnHit=true`;
   `EnemyAI.md` §4/§6.2/§6.3/§8.2/§8.3/§8.9 and `Enemies.md`
   §4.2/§5.3/§6.2/§6.3 now describe it. Ghost and Rhino stay detection-only and

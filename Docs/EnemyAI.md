@@ -7,8 +7,9 @@ functions and **25/25** §4 variables exist with the documented defaults
 (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit change is landed:
 `UpdateAggro` is **54 nodes**, with the box term and the post-hit term feeding a
 `BooleanOR` before the aggro branch; `_verify_enemy_base.py` now fails if any of
-the three old links returns. `BP_Snail` overrides `ChaseSpeed=80`,
-`AggroHalfWidth=0`, `AggroHalfHeight=0` and `bAggroOnHit=true` (saved 5 Nov);
+the three old links returns. `BP_Snail` overrides `ChaseSpeed=250`
+(`80` before the 7 Nov 2026 retune), `AggroHalfWidth=0`, `AggroHalfHeight=0` and
+`bAggroOnHit=true` (saved 5 Nov);
 its remaining health/movement/flipbook defaults are still open. `BP_EnemyPlatform`
 auto-placement works (7 auto zones in `L_Level_01`). The next work item is PIE
 tests 1–9 and the `M1 GREEN` line, not another child enemy. This document
@@ -521,6 +522,20 @@ scales by `AirControl` (`0.05`). Use `bZOverride = true`: a zero force then send
 a zero vector, `HandlePendingLaunch()` returns early and `MOVE_Flying` /
 `MaxFlySpeed` survive. `Enemies.md` §4.2 and §6.8 have the Bat case.
 
+**The vertical component is the knockback (7 Nov 2026).** With the pin forced to
+`true`, a launch of `(F, 0, 0)` has no arc at all, so the victim re-grounds on the
+next move and `ApplyVelocityBraking` removes everything above `MaxWalkSpeed` at
+`GroundFriction^2 * BrakingDecelerationWalking` = `8^2 * 2048` = `131072` uu/s² —
+about 15 uu of travel for any `F`. `AnyDamage` therefore feeds `MakeVector.Z`
+with `KnockbackForce * 0.4`: the victim stays in `MOVE_Falling` (no ground
+friction, and Tick is gated by `bWasKnockedBack`) for
+`2 * Lift / (980 * GravityScale)` and covers `KnockbackForce * t_air`. With the
+live `KnockbackForce = 1200` and `GravityScale = 3` that is `Lift 480`,
+`0.327 s`, ~392 uu. `BP_Bat` keeps `KnockbackForce = 0`, so both components stay
+zero and the flyer is untouched. The paste is
+`Scripts/_bp_enemy_base_knockback_lift_paste.txt`;
+`Scripts/_check_knockback_lift.py` proves the link.
+
 `Set bAggro = false` clears the current chase but not the hit window:
 `LastDamageTime` was stamped a few nodes earlier, so once `bWasKnockedBack`
 clears the walker re-aggros for the remaining `DeAggroTime` (§6.2). That is
@@ -691,10 +706,13 @@ authoring contract.
 
 ### 8.3 Snail
 
-- `ChaseSpeed=80` with **both aggro halves `0`** and `bAggroOnHit=true`: the
+- `ChaseSpeed=250` with **both aggro halves `0`** and `bAggroOnHit=true`: the
   zero box means it never detects on its own, the hit window
   (`EnemyAI.md` §6.2) means a bullet wakes it for `DeAggroTime`. `ChaseSpeed=0`
   would swallow the hit too — the gate returns to `PatrolStep` before the box.
+  Raised from `80` on 7 Nov 2026: `UpdateAggro`'s chase branch writes
+  `MaxWalkSpeed = ChaseSpeed`, and `80` uu/s against the player's `1000` uu/s
+  looked like standing still.
 - Keep the normal patrol and the shell death override.
 - Both the body and the shell use the base `PatrolStep` + `LedgeAhead`; do not
   add a second shell Tick. The shell must sweep the platform, not fall off it.
@@ -908,7 +926,7 @@ gate is PIE.** The base has all 13/13 AI functions and 25/25 §4 variables with
 the documented defaults (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
 change is in `UpdateAggro` (54 nodes; the three corrected links are asserted by
 `_verify_enemy_base.py`, which is now **45 PASS / 0 FAIL**). The Snail's aggro
-CDO is set (`ChaseSpeed=80`, zero box, `bAggroOnHit=true`); its health/movement/
+CDO is set (`ChaseSpeed=250`, zero box, `bAggroOnHit=true`); its health/movement/
 flipbook defaults remain. The next task is PIE tests 1–9 and the `M1 GREEN` line.
 Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
 `WoodLog` aggro) until that line exists. Stationary/flyer children (`SpikeTurtle`,
