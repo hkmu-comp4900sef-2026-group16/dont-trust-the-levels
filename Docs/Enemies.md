@@ -771,11 +771,13 @@ asset and adds no nodes — the base graph reads the flag.
 saved class default objects.
 
 **Status (7 Nov 2026):** the acquire/keep split that keeps a rock chasing past
-its own rectangle is staged in `Scripts/_bp_enemy_base_aggro_keep_paste.txt`
-(`EnemyAI.md` §6.2). Until it is pasted, a rock that chases a player who runs
-further than `700` uu along the same platform still drops aggro after
-`DeAggroTime`; after the paste, `Scripts/_run_aggro_keep_check.py` must print
-`RESULT: PASS`.
+its own rectangle ships as a whole-graph paste,
+`Scripts/_bp_enemy_base_updateaggro_full_paste.txt` (`EnemyAI.md` §6.2) — the
+seven nodes are already in the asset, but UE's paste cannot link them to the
+nodes that were there before it, so six wires are still empty. Until it is
+applied, a rock that chases a player who runs further than `700` uu along the
+same platform still drops aggro after `DeAggroTime`; afterwards,
+`Scripts/_run_aggro_keep_check.py` must print `RESULT: PASS`.
 
 **`Die` override**
 

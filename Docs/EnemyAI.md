@@ -1,17 +1,24 @@
 # Enemy AI — platforms, patrol, detection, aggro and stairs
 
-**Status (5 Nov 2026): shared base AI complete; walker PIE pending.**
+**Status (7 Nov 2026): shared base AI complete; walker PIE pending.**
 `BP_EnemyBase` has its shared health/damage/death graph, the `ContactBox`
-contact fix, and the full AI core (**44 PASS / 0 FAIL / 2 PENDING** until the
-acquire/keep paste lands; then 46 PASS). All **13/13** functions and **25/25**
+contact fix, and the full AI core. All **13/13** functions and **25/25**
 §4 variables exist with the documented defaults
-(`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit change is landed:
-`UpdateAggro` is **54 nodes**, with the box term and the post-hit term feeding a
-`BooleanOR` before the aggro branch; `_verify_enemy_base.py` now fails if any of
-the three old links returns. The **acquire/keep split** is staged as
-`Scripts/_bp_enemy_base_aggro_keep_paste.txt` (**+7 nodes → 61**): paste it into
-`UpdateAggro`, compile, save, then `Scripts/_run_aggro_keep_check.py` must print
-`RESULT: PASS` (§6.2). `BP_Snail` overrides `ChaseSpeed=250`
+(`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit change is landed: the box
+term and the post-hit term feed one `BooleanOR` before the aggro branch, and
+`_verify_enemy_base.py` now fails if any of the three old links returns. The
+seven **acquire/keep** nodes are in the asset too (`UpdateAggro` is **61 nodes,
+one connected piece**); the split ships as one whole-graph paste,
+`Scripts/_bp_enemy_base_updateaggro_full_paste.txt`, because UE's paste only
+wires nodes it creates itself and never to nodes already in the graph. The gate
+is `Scripts/_run_aggro_keep_check.py` (§6.2): it prints `RESULT: PASS` or names
+each wire still missing with its node position, so run it rather than trusting
+this paragraph. `_verify_enemy_base.py` reports **43 PASS | 3 FAIL | 0 PENDING**;
+the three FAILs are the `InitEnemy` / `AnyDamage` / `Die` structure checks, and
+`AnyDamage` is not a function graph in this asset at all (its chain lives in
+`EventGraph` under `ReceiveAnyDamage`), so the reconciliation is logged as an
+open item in `EnemyWorkPlan.md` §9 rather than quoted as a pass count.
+`BP_Snail` overrides `ChaseSpeed=250`
 (`80` before the 7 Nov 2026 retune), `AggroHalfWidth=0`, `AggroHalfHeight=0` and
 `bAggroOnHit=true` (saved 5 Nov);
 its remaining health/movement/flipbook defaults are still open. `BP_EnemyPlatform`
@@ -433,44 +440,138 @@ In the asset this is `Chase = BooleanOR(Detect, BooleanAND(bAggro, Keep))`: seve
 extra nodes pasted from `Scripts/_bp_enemy_base_aggro_keep_paste.txt`
 (`AndStay`, `OrStayFly`, `OrKeep`, `AndAggroKeep`, `OrChase`, `Greater`,
 `Get AggroRadius`), 54 → **61**. `Scripts/_run_aggro_keep_check.py` proves the
-aggro-box pin reaches `Detect` only and that `Keep` is platform + Z (+ hit
-window + flyer sphere).
+aggro-box pin reaches `Detect` only, that `Keep` is platform + Z (+ hit
+window + flyer sphere), and that the graph is still one connected piece.
 
-**Pasting it (manual, no Python graph API in 4.27):**
+**Pasting it (manual — UE 4.27 has no Python graph API):** paste the **whole
+graph**, not the seven nodes. The importer only recreates `LinkedTo` between the
+nodes it creates itself, so a partial paste drops every link whose other end is
+already in the asset — all six of them did on 7 Nov 2026, while all six
+new→new links arrived. A whole-graph paste has no foreign endpoint, so every
+link lands — and each link is written on **both** pins, because the editor
+renames a pasted node whose name is taken (`K2Node_FunctionEntry_0` came back as
+`K2Node_FunctionEntry_4`) and the importer then discards every `LinkedTo` that
+still names the old name. One surviving half is enough to keep the wire.
 
-1. Open `BP_EnemyBase` → **`UpdateAggro`** tab.
-2. Alt+Click the wire from the `BooleanOR` at `(1632, 176)` into the `Branch` at
-   `(1920, 128)` — its **Condition** pin must end up empty (the paste replaces
-   it). There are four Branch nodes in this graph; it is the one right of the
-   `BooleanOR`, not the `ChaseSpeed <= 0` gate on the far left.
-3. Paste `Scripts/_bp_enemy_base_aggro_keep_paste.txt` into the same graph,
-   **Compile**, **Save**.
+1. `py -3 Scripts/_make_full_aggro_paste.py` writes
+   `Scripts/_bp_enemy_base_updateaggro_full_paste.txt` (61 nodes, the graph as it
+   is now plus the six acquire/keep links and the five `FunctionEntry` wires —
+   `Player` → both predicates and the player `K2_GetActorLocation`, `Player` →
+   `ChaseStep`, `Delta Seconds` → `Add.A`; the read-only T3D export is the source,
+   and the node `Class=` — dropped by the exporter — is re-derived from the
+   editor's `<Class>_<n>` node names and checked against each pin signature).
+2. Open `BP_EnemyBase` → **`Update Aggro`** (the editor spells it with a space;
+   every script accepts both), `Ctrl+A`, `Delete`. The paste brings the
+   `FunctionEntry`/`FunctionResult` nodes back, so nothing has to survive.
+3. Paste the file, **Compile**, **Save**. Nothing has to be dragged.
 4. `py -3 Scripts/_run_aggro_keep_check.py` must print `RESULT: PASS`
-   (`_verify_enemy_base.py` then reports 46/0/0).
+   (`_verify_enemy_base.py` then reports 43 PASS | 3 FAIL | 0 PENDING; the three
+   FAILs are the `InitEnemy` / `AnyDamage` / `Die` structure checks — `AnyDamage` is
+   not a function graph in this asset (its chain lives in `EventGraph` under
+   `ReceiveAnyDamage`), so they cannot see the calls; they are unrelated to
+   `UpdateAggro`).
 5. PIE: aggro a rock, run along the platform past `700` uu — it must keep
    chasing; step off the platform — it must still de-aggro after 2 s.
 
-**After pasting, six wires must be dragged by hand.** The importer only recreates
-links between the nodes it creates; every link with a pre-existing endpoint is
-dropped (checked 7 Nov 2026: all six new→old links came in empty, all six
-new→new links survived). `py -3 Scripts/_run_aggro_keep_check.py` prints exactly
-the missing ones as `target.pin <- source.pin   # note`, using the titles and
-positions below. By hand (`A` is the upper pin, `B` the lower):
+**The `Function Entry` rename (7 Nov 2026).** `Ctrl+A`/`Delete` does not always
+remove the old `Function Entry` node: it may survive as a pending-kill object, so
+the pasted entry is issued a free name (`K2Node_FunctionEntry_0` → `_4`) and the
+importer drops every `LinkedTo` that names the old one. The exec wire
+(`then` → `Branch.execute`) survived, because it is declared on the entry's own
+pin, but **five** object wires went:
+
+| from | to | what it is |
+|---|---|---|
+| `FunctionEntry.Player` `(96,-752)` | `IsPlayerInAggroBox.Player` `(592,-640)` | the acquire box test |
+| `FunctionEntry.Player` | `IsPlayerOnHomePlatform.Player` `(880,-640)` | the platform test |
+| `FunctionEntry.Player` | `K2_GetActorLocation.self` **`(592,-288)`** | *the player's* location: → `BreakVector` (864,-272) → `Subtract` (1216,-336) → `Abs` → `<= MaxChaseStepZ`, and → `Subtract` (1248,-176) → `SetFacing.Direction` |
+| `FunctionEntry.Player` | `ChaseStep.Player` `(4208,-960)` | the chase call, easy to miss because it is the *last* node in the graph |
+| `FunctionEntry.Delta Seconds` | `Add.A` `(3440,-480)` | `UnreachableTime += dt`; lost silently, it becomes `+= 0`, so the walker **never de-aggros** |
+
+That is what the editor reported as a compile error ("missing connection for
+`Player`"). Two things to know when repairing it by hand:
+
+- There are **two** `K2_GetActorLocation` nodes in the graph and only the upper
+  one takes `Player`. `(592,-288)` feeds `BreakVector` → the Z test and
+  `SetFacing`; **`(592,-432)` stays unwired on purpose** — it is the enemy's own
+  location (the node returns self by default) and feeds `Subtract.B`. Wire
+  `Player` into it as well and `Player.Z − Player.Z` collapses to `0`: the enemy
+  would never turn around and would always count itself "on my platform".
+
+  Told apart by hand, without coordinates: the two sit **directly under
+  `Is Player In Aggro Box`, one above the other**, each followed by its own
+  `Break Vector`. The **upper** one's `Break Vector` is the one whose `X` feeds
+  the `Subtract` that plugs into `Set Facing`'s `Direction` pin and whose `Z`
+  feeds the `Subtract` → `Abs` → `≤ Max Chase Step Z`; that is the player's, and
+  it takes `Player`. The **lower** one's `Break Vector` feeds only the second
+  (`B`) input of those same two `Subtract` nodes — that is the enemy's own, and
+  it stays empty. (The three further `K2_GetActorLocation` nodes at `X ≥ 1328`
+  belong to the target-scan loop and are untouched.)
+- `Delta Seconds` is the only entry pin whose loss produces no compile error.
+
+The pair is easy to get wrong: the first repair on 7 Nov wired the **lower**
+node. `_run_aggro_keep_check.py` therefore also fails on a stray
+`Player → K2_GetActorLocation (592,-432)` wire and prints it as
+`DELETE this wire`, next to the list of wires still to drag.
+
+A half-finished drag also leaves an empty reroute knot behind — the 4:03 save
+carried `K2Node_Knot_1` with both pins unconnected, which reads as
+`connectivity: 2 piece(s)` / `floating: K2Node_Knot_1` and would have made the
+paste 62 nodes. The checks name it, the graph needs it deleted, and
+`_make_full_aggro_paste.py` refuses to copy it into the paste.
+
+The paste now writes all five on **both** pins, so a renamed entry can no longer
+cost a wire; `Scripts/_test_full_paste.py` re-runs the eleven checks with the
+entry renamed on purpose to prove it, and `_check_aggro_keep.py` asserts all six
+entry wires (`then` plus the five above) in one check,
+`FunctionEntry drives Tick, both player pins and the clock`. Otherwise `Ctrl+Z`,
+delete the leftover entry on its own, and re-paste.
+
+Offline proof before touching the asset: `py -3 Scripts/_test_full_paste.py`
+rebuilds the graph container from the paste alone and runs the same eleven
+checks → `PASS`, 61 nodes, no link leaving the paste. Then
+`py -3 Scripts/_make_aggro_paste_graph.py` renders the result to
+`Scripts/_aggro_paste_graph.html` (real node positions, every wire the paste adds
+in green, the replaced wire in red, and a `! DELETE` line for the stray
+enemy-location wire if the asset has one — the green count shrinks as the asset
+catches up, so treat it as a to-do list, not a constant).
+
+**Two pieces vs one.** The asset is now *one* piece of 61 nodes: the whole-graph
+paste landed the six new→old links and the 7-node island is gone. The paste is
+that same graph plus the five `FunctionEntry` wires above, so the offline test
+sees 74 resolved links and asserts that every `LinkedTo` names a node inside the
+paste (`self-contained: yes`). Both `_test_full_paste.py` and
+`_run_aggro_keep_check.py` print `connectivity: N piece(s)` plus the names of any
+floating nodes, so a paste that loses a wire names the cluster that broke off
+instead of failing vaguely. Note that the export is not symmetric — a
+`FunctionEntry` output pin keeps its `LinkedTo` to itself — so the checker
+resolves links from *both* ends and never counts a wire twice; it also matches
+mirrored links by **peer name as well as pin id**, because duplicating a node in
+the editor copies its `PinId`s (`K2_GetActorLocation_3` and `_4` share
+`4AAAD250…`), and an id-only match would let one wire claim both nodes.
+
+**Fallback — dragging the six wires by hand.** Same result, no graph wipe. The
+checker prints the missing ones as `target.pin <- source.pin  # note`, using the
+titles below (`A` is the upper pin, `B` the lower):
 
 | New node | Pin | Connect to |
 |---|---|---|
-| `AND` (1104,560) | A | `IsPlayerOnHomePlatform` (672,240) · `Return` — the node with exec pins that feeds the old box `AND` |
-| | B | `<=` (1440,544) · `ReturnValue` — `Abs(Player.Z - Self.Z) <= MaxChaseStepZ` |
-| `>` (1344,880) | A | `Get AggroRadius` (1104,880) · `AggroRadius`; leave `B` at `0.0` |
-| `OR` (1344,640) | A | hit `AND` (1344,-80) · `ReturnValue` — the one whose `A` is `bAggroOnHit`; it was the old `OR`'s `A` |
-| | B | `>` (1344,880) · `ReturnValue` |
-| `OR` (1568,720) | A | `AND` (1104,560) · `ReturnValue` |
-| | B | `OR` (1344,640) · `ReturnValue` |
-| `AND` (1792,720) | A | `Get bAggro` (1968,464) · `bAggro` — the getter that feeds the lower `Branch` (2160,336) |
-| | B | `OR` (1568,720) · `ReturnValue` |
-| `OR` (2032,560) | A | old `OR` (1632,176) · `ReturnValue` — the now-disconnected Detect node |
-| | B | `AND` (1792,720) · `ReturnValue` |
-| | `ReturnValue` | `Branch` (1920,128) · `Condition` — break the old `OR` wire first (`Alt+Click`) |
+| `AND` (1920,-864) | A | `IsPlayerOnHomePlatform` (880,-640) · `Return` — the node with exec pins that feeds the old box `AND` |
+| | B | `<=` (1648,-336) · `ReturnValue` — `Abs(Player.Z - Self.Z) <= MaxChaseStepZ` |
+| `>` (2160,-544) | A | `Get AggroRadius` (1920,-544) · `AggroRadius`; leave `B` at `0.0` |
+| `OR` (2144,-672) | A | hit `AND` (1552,-960) · `ReturnValue` — the one whose `A` is `bAggroOnHit` |
+| | B | `>` (2160,-544) · `ReturnValue` |
+| `OR` (2384,-704) | A | `AND` (1920,-864) · `ReturnValue` |
+| | B | `OR` (2144,-672) · `ReturnValue` |
+| `AND` (2608,-704) | A | `Get bAggro` (3200,-512) · `bAggro` |
+| | B | `OR` (2384,-704) · `ReturnValue` |
+| `OR` (2848,-864) | A | old `OR` (1888,-704) · `ReturnValue` — the now-disconnected Detect node |
+| | B | `AND` (2608,-704) · `ReturnValue` |
+| | `ReturnValue` | `Branch` (3152,-848) · `Condition` — break the old `OR` wire first (`Alt+Click`) |
+
+Those are the saved positions of the graph as it stands. A whole-graph paste
+(`Ctrl+A`, `Delete`, paste) brings every node back exactly there; the old 7-node
+paste used to land at the cursor instead.
 
 None of the seven new nodes has an exec pin, so the Tick flow is unchanged: the
 `Branch` still executes from `IsPlayerOnHomePlatform.then`.
@@ -1003,13 +1104,16 @@ turtle and snail shell.
 
 ## 10. Build order
 
-**Current position (5 Nov 2026): steps 0–2 are code-complete; step 2's remaining
+**Current position (7 Nov 2026): steps 0–2 are code-complete; step 2's remaining
 gate is PIE.** The base has all 13/13 AI functions and 25/25 §4 variables with
 the documented defaults (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
-change is in `UpdateAggro` (54 nodes; the three corrected links are asserted by
-`_verify_enemy_base.py`, which is now **45 PASS / 0 FAIL**). The Snail's aggro
-CDO is set (`ChaseSpeed=250`, zero box, `bAggroOnHit=true`); its health/movement/
-flipbook defaults remain. The next task is PIE tests 1–9 and the `M1 GREEN` line.
+and acquire/keep changes are in `UpdateAggro` (61 nodes, one connected piece;
+`_run_aggro_keep_check.py` asserts all eleven links and the five
+`FunctionEntry` wires). `_verify_enemy_base.py` currently reports **43 PASS |
+3 FAIL | 0 PENDING**; the three FAILs name `InitEnemy`, `AnyDamage` and `Die`,
+which this work never touched — see the open note in `EnemyWorkPlan.md`. The
+Snail's aggro CDO is set (`ChaseSpeed=250`, zero box, `bAggroOnHit=true`); its
+health/movement/flipbook defaults remain. The next task is PIE tests 1–9 and the `M1 GREEN` line.
 Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
 `WoodLog` aggro) until that line exists. Stationary/flyer children (`SpikeTurtle`,
 `Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be
