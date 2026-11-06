@@ -2,12 +2,16 @@
 
 **Status (5 Nov 2026): shared base AI complete; walker PIE pending.**
 `BP_EnemyBase` has its shared health/damage/death graph, the `ContactBox`
-contact fix, and the full AI core (**45 PASS / 0 FAIL**). All **13/13**
-functions and **25/25** §4 variables exist with the documented defaults
+contact fix, and the full AI core (**44 PASS / 0 FAIL / 2 PENDING** until the
+acquire/keep paste lands; then 46 PASS). All **13/13** functions and **25/25**
+§4 variables exist with the documented defaults
 (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit change is landed:
 `UpdateAggro` is **54 nodes**, with the box term and the post-hit term feeding a
 `BooleanOR` before the aggro branch; `_verify_enemy_base.py` now fails if any of
-the three old links returns. `BP_Snail` overrides `ChaseSpeed=250`
+the three old links returns. The **acquire/keep split** is staged as
+`Scripts/_bp_enemy_base_aggro_keep_paste.txt` (**+7 nodes → 61**): paste it into
+`UpdateAggro`, compile, save, then `Scripts/_run_aggro_keep_check.py` must print
+`RESULT: PASS` (§6.2). `BP_Snail` overrides `ChaseSpeed=250`
 (`80` before the 7 Nov 2026 retune), `AggroHalfWidth=0`, `AggroHalfHeight=0` and
 `bAggroOnHit=true` (saved 5 Nov);
 its remaining health/movement/flipbook defaults are still open. `BP_EnemyPlatform`
@@ -39,8 +43,11 @@ default `AIController` (Auto Possess AI = Placed In World Or Spawned).
    jump and shallow enough not to catch a player on the platform above/below.
    The primary cross-platform discriminator is a **same-platform check**, not
    the Z size alone.
-5. **Walking enemies de-aggro.** If the player leaves the rectangle or becomes
-   unreachable for `DeAggroTime`, the enemy returns to patrol.
+5. **Walking enemies de-aggro only when the player is unreachable.** If the
+   player leaves the enemy's platform or becomes unreachable for `DeAggroTime`,
+   the enemy returns to patrol. Running along the same platform never starts
+   that clock, however far past `AggroHalfWidth`: the rectangle only *starts* a
+   chase, it does not end one (§6.2).
 6. **Flying aggro uses a sphere and never de-aggros.** Once a Ghost or Bat is
    triggered, it chases until it or the player dies.
 7. **No pathfinding around walls.** A walker that meets a wall turns around. A
@@ -61,7 +68,7 @@ Four booleans, evaluated in this order:
 |---|---|---|---|
 | 1 | Dead | `bIsDead` | base death, no movement/contact |
 | 2 | Stranded | `bStranded` | landed on a non-patrol surface (stair step, prop, narrow ledge) |
-| 3 | Aggro | `bAggro` | player is in range and reachable |
+| 3 | Aggro | `bAggro` | player was detected and is still reachable (same platform) |
 | 4 | Patrol | default | walk between platform bounds |
 
 `bWasKnockedBack` is a short-lived flag set by `AnyDamage` and cleared by
@@ -212,10 +219,10 @@ Add these in **My Blueprint → Variables**. Existing variables are in
 | `bAggro` | Boolean | `false` | runtime |
 | `bStranded` | Boolean | `false` | landed off a valid platform |
 | `bWasKnockedBack` | Boolean | `false` | suppresses AI until `ResolveKnockback` clears it |
-| `AggroHalfWidth` | Float | `600.0` | rectangle half-width; walkers |
+| `AggroHalfWidth` | Float | `600.0` | rectangle half-width; walkers — **acquire only** (§6.2) |
 | `AggroHalfHeight` | Float | `500.0` | rectangle half-height; covers jump/double-jump |
-| `AggroRadius` | Float | `0.0` | sphere radius; flyers (`0` = disabled) |
-| `DeAggroTime` | Float | `2.0` | walker only; seconds unreachable/out of range |
+| `AggroRadius` | Float | `0.0` | sphere radius; flyers (`0` = disabled); `> 0` also means "never de-aggro" |
+| `DeAggroTime` | Float | `2.0` | walker only; seconds off-platform/unreachable |
 | `UnreachableTime` | Float | `0.0` | runtime accumulator |
 | `MaxChaseStepZ` | Float | `500.0` | vertical tolerance while the ground trace confirms the platform |
 | `bRequireAggroLineOfSight` | Boolean | `false` | optional wall trace |
@@ -381,11 +388,29 @@ reach 600 uu above and aggro through the floor above. The rectangle's
 same-platform gate means it cannot aggro a player standing on a different
 platform even if the boxes overlap.
 
-### 6.2 Reachability
+### 6.2 Reachability — acquire vs keep
 
-A walker chases when **either** term is true.
+Two questions, two tests. **Acquire** (start chasing) may use the aggro
+rectangle. **Keep** (stay chasing) may not: the rectangle is centred on the
+*enemy* and is far narrower than a platform, so a player who runs past
+`AggroHalfWidth` is still reachable. Counting that as unreachable made a walker
+give up mid-chase after `DeAggroTime` while the player stood on the same
+platform (fixed 7 Nov 2026).
 
-**Box term** — the normal detection, all of:
+```text
+Detect = (InBox AND OnHome AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+         OR (bAggroOnHit AND Now - LastDamageTime <= DeAggroTime)     # acquire
+Keep   = (OnHome AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+         OR (bAggroOnHit AND Now - LastDamageTime <= DeAggroTime)     # stay
+         OR AggroRadius > 0                                           # flyer
+Chase  = Detect OR (bAggro AND Keep)
+```
+
+`UnreachableTime` accumulates only on `bAggro AND NOT Keep`, so the de-aggro
+clock starts when the player leaves the platform (or drops out of
+`MaxChaseStepZ`), never because of the rectangle.
+
+**Box term (acquire)** — the normal detection, all of:
 
 - player is inside the aggro rectangle;
 - `IsPlayerOnHomePlatform()` is true;
@@ -404,10 +429,51 @@ platform. `Bat` must implement the hit branch itself because it replaces the bas
 walker Tick; `bAggroOnHit` is never read there. Rhino, Ghost, Spike Turtle and
 the Skull cannot be gun-aggroed; Toxic Slime cannot be aggroed at all.
 
-```text
-Reachable = (InBox AND OnHome AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
-            OR (bAggroOnHit AND Now - LastDamageTime <= DeAggroTime)
-```
+In the asset this is `Chase = BooleanOR(Detect, BooleanAND(bAggro, Keep))`: seven
+extra nodes pasted from `Scripts/_bp_enemy_base_aggro_keep_paste.txt`
+(`AndStay`, `OrStayFly`, `OrKeep`, `AndAggroKeep`, `OrChase`, `Greater`,
+`Get AggroRadius`), 54 → **61**. `Scripts/_run_aggro_keep_check.py` proves the
+aggro-box pin reaches `Detect` only and that `Keep` is platform + Z (+ hit
+window + flyer sphere).
+
+**Pasting it (manual, no Python graph API in 4.27):**
+
+1. Open `BP_EnemyBase` → **`UpdateAggro`** tab.
+2. Alt+Click the wire from the `BooleanOR` at `(1632, 176)` into the `Branch` at
+   `(1920, 128)` — its **Condition** pin must end up empty (the paste replaces
+   it). There are four Branch nodes in this graph; it is the one right of the
+   `BooleanOR`, not the `ChaseSpeed <= 0` gate on the far left.
+3. Paste `Scripts/_bp_enemy_base_aggro_keep_paste.txt` into the same graph,
+   **Compile**, **Save**.
+4. `py -3 Scripts/_run_aggro_keep_check.py` must print `RESULT: PASS`
+   (`_verify_enemy_base.py` then reports 46/0/0).
+5. PIE: aggro a rock, run along the platform past `700` uu — it must keep
+   chasing; step off the platform — it must still de-aggro after 2 s.
+
+**After pasting, six wires must be dragged by hand.** The importer only recreates
+links between the nodes it creates; every link with a pre-existing endpoint is
+dropped (checked 7 Nov 2026: all six new→old links came in empty, all six
+new→new links survived). `py -3 Scripts/_run_aggro_keep_check.py` prints exactly
+the missing ones as `target.pin <- source.pin   # note`, using the titles and
+positions below. By hand (`A` is the upper pin, `B` the lower):
+
+| New node | Pin | Connect to |
+|---|---|---|
+| `AND` (1104,560) | A | `IsPlayerOnHomePlatform` (672,240) · `Return` — the node with exec pins that feeds the old box `AND` |
+| | B | `<=` (1440,544) · `ReturnValue` — `Abs(Player.Z - Self.Z) <= MaxChaseStepZ` |
+| `>` (1344,880) | A | `Get AggroRadius` (1104,880) · `AggroRadius`; leave `B` at `0.0` |
+| `OR` (1344,640) | A | hit `AND` (1344,-80) · `ReturnValue` — the one whose `A` is `bAggroOnHit`; it was the old `OR`'s `A` |
+| | B | `>` (1344,880) · `ReturnValue` |
+| `OR` (1568,720) | A | `AND` (1104,560) · `ReturnValue` |
+| | B | `OR` (1344,640) · `ReturnValue` |
+| `AND` (1792,720) | A | `Get bAggro` (1968,464) · `bAggro` — the getter that feeds the lower `Branch` (2160,336) |
+| | B | `OR` (1568,720) · `ReturnValue` |
+| `OR` (2032,560) | A | old `OR` (1632,176) · `ReturnValue` — the now-disconnected Detect node |
+| | B | `AND` (1792,720) · `ReturnValue` |
+| | `ReturnValue` | `Branch` (1920,128) · `Condition` — break the old `OR` wire first (`Alt+Click`) |
+
+None of the seven new nodes has an exec pin, so the Tick flow is unchanged: the
+`Branch` still executes from `IsPlayerOnHomePlatform.then`.
 
 The hit term deliberately skips `IsPlayerOnHomePlatform()` and the Z check: the
 point is that a walker shot from a platform above walks to the ledge under the
@@ -434,11 +500,17 @@ Event Tick:
   Branch: ChaseSpeed <= 0 -> PatrolStep(); return   # Snail/Slime: no detection
   Player = Get Player Character(0)
   InBox = IsPlayerInAggroBox(Player)
-  Reachable = (InBox AND IsPlayerOnHomePlatform(Player)
-                   AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
-              OR (bAggroOnHit AND
-                  Get Game Time in Seconds - LastDamageTime <= DeAggroTime)
-  Branch: Reachable
+  Detect = (InBox AND IsPlayerOnHomePlatform(Player)
+                 AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+            OR (bAggroOnHit AND
+                Get Game Time in Seconds - LastDamageTime <= DeAggroTime)
+  Keep   = (IsPlayerOnHomePlatform(Player)
+                 AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+            OR (bAggroOnHit AND
+                Get Game Time in Seconds - LastDamageTime <= DeAggroTime)
+            OR AggroRadius > 0
+  Chase  = Detect OR (bAggro AND Keep)
+  Branch: Chase
     True  -> Set bAggro = true
              Set UnreachableTime = 0
              ChaseStep(Player)
@@ -465,15 +537,21 @@ Add Movement Input ((Facing,0,0), 1)
 If the player jumps over the enemy, `Player.X - Self.X` flips and the enemy
 turns. It does not jump, path around a wall, or step down.
 
-**De-aggro rule:** after `DeAggroTime` seconds of the player being out of range
-or unreachable, `bAggro=false` and the enemy resumes patrol from its current
-position. If the player returns to a reachable spot inside the rectangle, the
-enemy re-aggros immediately. `UnreachableTime` resets whenever the player is
-reachable again — including while the hit term is what keeps the enemy
-reachable, which is why the timer restarts after the window closes.
+**De-aggro rule:** the clock behind `DeAggroTime` starts only while the player
+is **unreachable** — off the enemy's platform, or more than `MaxChaseStepZ`
+above/below it. Running along the platform, past the rectangle or not, keeps
+`bAggro` and resets `UnreachableTime` every frame. After `DeAggroTime` seconds
+unreachable, `bAggro=false` and the enemy resumes patrol from its current
+position. If the player returns to a reachable spot, the enemy re-aggros
+immediately (`Detect`, and `Keep` alone keeps it aggroed once it is chasing).
+`UnreachableTime` also resets while the hit term is what keeps the enemy
+chasing, which is why the timer restarts after the window closes.
 
 **Flying aggro has no de-aggro path.** Ghost and Bat never run the de-aggro
-branch.
+branch: they replace the base walker Tick, so `UpdateAggro` is not called at
+all. The base rule also carries `AggroRadius > 0` inside `Keep`, so a flyer that
+ever does run the walker loop cannot start an `UnreachableTime` clock either —
+a sphere has no platform edge to lose the player over.
 
 
 ### 6.4 Suggested defaults
@@ -485,14 +563,17 @@ branch.
 | Wood Log | rectangle | `1400` | `500` | `2.0 s` | no — stops to shoot |
 | Ghost | sphere | `550` | — | **never** | yes, through walls |
 | Bat | sphere `1000` + hit branch (staged) | — | — | **never** | yes, collides |
-| Snail | hit only | — | — | `2.0 s` | yes, after a hit (`80`) |
+| Snail | hit only | — | — | `2.0 s` | yes, after a hit (`250`) |
 | Toxic Slime | none | — | — | — | no |
 | Spike Turtle | none | — | — | — | no |
 | Floating Skull | none | — | — | — | no |
 
 The `500` height is intentional: it covers the player's jump/double-jump. It
 does **not** cause cross-platform aggro because `IsPlayerOnHomePlatform()` is
-part of the reachability test. Tune the width/speed after PIE.
+part of the acquire test. It also does not *end* a chase: once `bAggro` is set,
+only the platform + `MaxChaseStepZ` pair (the `Keep` term) can start the
+de-aggro clock, so the rectangle width is purely a "how far away do I notice
+you" number. Tune the width/speed after PIE.
 
 ---
 
@@ -850,9 +931,9 @@ Branch: CurrentHealth <= 0
   **DONE 5 Nov 2026:** live and verified on `BP_WoodLog`.
 - It only fires horizontally: projectile direction `(Facing,0,0)`, muzzle Z
   fixed by `MuzzleOffset.Z`. Do not aim at the player's Z.
-- If the player leaves the rectangle or becomes unreachable for `DeAggroTime`,
-  `bAggro=false`, `EndAttack`, resume patrol. If the player re-enters while
-  reachable, re-aggro.
+- If the player leaves the platform / becomes unreachable for `DeAggroTime`,
+  `bAggro=false`, `EndAttack`, resume patrol (the rectangle itself is
+  acquire-only, `§6.2`). If the player re-enters while reachable, re-aggro.
 - No vertical aim means a jumping player can dodge; that is intended.
 - Contact `1`; health `3`.
 

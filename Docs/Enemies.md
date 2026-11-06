@@ -750,11 +750,14 @@ component broadcasting a finish delegate.
 | `HitFlipbook` | `FLB_Rock1_Hit` | `FLB_Rock2_Hit` | `FLB_Rock3_Hit` |
 | `DeathFlipbook` | `FLB_Rock1_Hit` | `FLB_Rock2_Hit` | `FLB_Rock3_Hit` |
 
-**Movement (21 Oct 2026 revision):** patrol with the platform/ledge guard
-(`EnemyAI.md` §5); do **not** copy the turtle — it is now stationary. Rocks have
-**detection**: a horizontal rectangle (`AggroHalfWidth=700`,
-`AggroHalfHeight=500`), same-platform/reachability gate, and `DeAggroTime=2.0`.
-They chase horizontally on their own platform, stop at ledges, and return to
+**Movement (21 Oct 2026 revision, keep-term 7 Nov):** patrol with the
+platform/ledge guard (`EnemyAI.md` §5); do **not** copy the turtle — it is now
+stationary. Rocks have **detection**: a horizontal rectangle
+(`AggroHalfWidth=700`, `AggroHalfHeight=500`), a same-platform gate, and
+`DeAggroTime=2.0`. The rectangle is **acquire-only**: once a rock is chasing,
+only the platform + `MaxChaseStepZ` check (the `Keep` term, `EnemyAI.md` §6.2)
+starts the de-aggro clock, so running along the platform no longer makes it give
+up. They chase horizontally on their own platform, stop at ledges, and return to
 patrol when the player leaves or becomes unreachable. Each tier keeps its own
 `MoveSpeed`/`ChaseSpeed`. `RefreshStateFlipbook` chooses `FLB_RockN_Run` when
 `Abs(GetVelocity.X) > 10`, else `FLB_RockN_Idle`. Split pieces run the same
@@ -766,6 +769,13 @@ tier-1 hit does not immediately lose the player. It costs one checkbox per
 asset and adds no nodes — the base graph reads the flag.
 **Status (5 Nov 2026):** live on all three CDOs and verified by readback from the
 saved class default objects.
+
+**Status (7 Nov 2026):** the acquire/keep split that keeps a rock chasing past
+its own rectangle is staged in `Scripts/_bp_enemy_base_aggro_keep_paste.txt`
+(`EnemyAI.md` §6.2). Until it is pasted, a rock that chases a player who runs
+further than `700` uu along the same platform still drops aggro after
+`DeAggroTime`; after the paste, `Scripts/_run_aggro_keep_check.py` must print
+`RESULT: PASS`.
 
 **`Die` override**
 
@@ -1426,7 +1436,9 @@ instance for SCS components, and checks every §3.2 variable (type/default),
 §3.3 function signature, `Kill` event binding, the §4 event/helper graphs, and
 the `ContactBox` collision setup. `PENDING` means not built yet; `FAIL` means
 present but mis-wired. Expected baseline once `ContactBox` is compiled and its
-non-Pawn responses are `Ignore`: **45 PASS / 0 FAIL / 0 PENDING**.
+non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
+`UpdateAggro` acquire/keep paste lands (`EnemyAI.md` §6.2), then **46 PASS /
+0 FAIL / 0 PENDING**.
 
 ---
 
@@ -1440,6 +1452,7 @@ non-Pawn responses are `Ignore`: **45 PASS / 0 FAIL / 0 PENDING**.
 | Any walker | Player on platform above/below | no aggro; no chase |
 | Any walker | Player jumps over it on the same platform | walker turns, does not jump or step off |
 | Any walker | Player drops to a lower platform | walker stops at the edge; after `DeAggroTime` resumes patrol |
+| Any walker | Player runs along the same platform, past `AggroHalfWidth` | keeps chasing, `UnreachableTime` stays `0`; only leaving the platform starts the clock (`EnemyAI.md` §6.2) |
 | Any walker | Player returns to its platform | walker re-aggros and chases |
 | Any walker | Shoot it off the platform | lands on the lower broad platform and adopts it as home |
 | Any walker | Knock it into a stair step | `Stranded` idle; drops to nearest lower `BP_EnemyPlatform` if one exists; otherwise stays put |
