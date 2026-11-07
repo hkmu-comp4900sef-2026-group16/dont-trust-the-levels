@@ -28,6 +28,18 @@ DEFAULT_CLASS_PATH = (
     "BP_EnemyPlatform.BP_EnemyPlatform_C"
 )
 DEFAULT_AUTO_TAG = "EnemyPlatform.Auto"
+# A fake floor (BP_Trap_FakeFloor) is a real walking surface that disappears
+# when the player touches it. The tile scan cannot see it (it is an actor, not
+# a tile), so it splits one patrol run into two markers. Bridging merges the
+# runs on both sides back into a single marker, which is the authored intent:
+# "two platforms with a fake floor between them are one platform until it
+# breaks". After it breaks the marker still spans the hole, but LedgeAhead
+# stops the enemy at the edge, so each side paces on its own.
+DEFAULT_BRIDGE_CLASS = "BP_Trap_FakeFloor"
+DEFAULT_BRIDGE_MAX_SPAN = 400.0    # widest gap one bridge actor may span (uu)
+DEFAULT_BRIDGE_SLACK = 50.0        # the bridge must reach within this of both edges
+DEFAULT_BRIDGE_Y_TOLERANCE = 100.0  # bridge/zone Y distance (uu)
+DEFAULT_BRIDGE_Z_TOLERANCE = 60.0   # bridge/zone surface Z distance (uu)
 
 
 def find_tile_map(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER):
@@ -75,10 +87,116 @@ def _match_layer(layers, layer_match):
     return partial if partial else (None, "")
 
 
+def find_bridges(class_match=DEFAULT_BRIDGE_CLASS):
+    """Return the walkable-gap actors (fake floors) as world X intervals.
+
+    Each entry is ``{label, x0, x1, y, z}`` where ``z`` lists candidate surface
+    heights (actor origin and box top) so a marker can match either convention.
+    """
+    if not class_match:
+        return []
+    match = class_match.lower()
+    bridges = []
+    for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+        if match not in actor.get_class().get_name().lower():
+            continue
+        box = None
+        for component in actor.get_components_by_class(unreal.BoxComponent):
+            box = component
+            break
+        location = actor.get_actor_location()
+        if box is not None:
+            location = box.get_world_location()
+            extent = box.get_scaled_box_extent()
+        else:
+            extent = unreal.Vector(0.0, 0.0, 0.0)
+        bridges.append({
+            "label": str(actor.get_actor_label()),
+            "x0": location.x - extent.x,
+            "x1": location.x + extent.x,
+            "y": location.y,
+            "z": (location.z, location.z + extent.z),
+        })
+    return bridges
+
+
+def merge_bridge_gaps(plan, bridges, min_width=DEFAULT_MIN_WIDTH, tile_uu=100.0,
+                      max_span=DEFAULT_BRIDGE_MAX_SPAN,
+                      slack=DEFAULT_BRIDGE_SLACK,
+                      y_tolerance=DEFAULT_BRIDGE_Y_TOLERANCE,
+                      z_tolerance=DEFAULT_BRIDGE_Z_TOLERANCE):
+    """Merge same-row markers whose gap is covered by a bridge actor.
+
+    A merge needs a positive gap no wider than ``max_span``, a bridge that
+    reaches within ``slack`` of both run edges, the same Y and the same surface
+    Z. ``slack`` exists because a fake floor's collision box is a little
+    narrower than the tile gap it fills (190 vs 200 uu in L_Level_01), so a
+    strict "covers the gap" test never matches. Runs are merged repeatedly, so
+    one fake floor between three ground runs still yields a single marker.
+    """
+    if not plan:
+        return plan
+    if not bridges:
+        return plan
+
+    rows = {}
+    for zone in plan:
+        rows.setdefault(int(zone["row"]), []).append(zone)
+
+    merged = []
+    for row, zones in rows.items():
+        zones.sort(key=lambda z: z["center_x"] - z["width"] / 2.0)
+        current = dict(zones[0])
+        for nxt in zones[1:]:
+            left_edge = current["center_x"] + current["width"] / 2.0
+            right_edge = nxt["center_x"] - nxt["width"] / 2.0
+            gap = right_edge - left_edge
+            bridge = None
+            if 0.0 < gap <= max_span:
+                for candidate in bridges:
+                    if (candidate["x0"] <= left_edge + slack
+                            and candidate["x1"] >= right_edge - slack
+                            and abs(candidate["y"] - current["center_y"]) <= y_tolerance
+                            and any(abs(z - current["surface_z"]) <= z_tolerance
+                                    for z in candidate["z"])):
+                        bridge = candidate
+                        break
+            if bridge is None:
+                merged.append(current)
+                current = dict(nxt)
+                continue
+            left = current["center_x"] - current["width"] / 2.0
+            right = nxt["center_x"] + nxt["width"] / 2.0
+            width = right - left
+            current = {
+                "zone_id": current["zone_id"],
+                "start_tile": current["start_tile"],
+                "end_tile": nxt["end_tile"],
+                "tiles": current["tiles"] + nxt["tiles"] + int(round(gap / tile_uu)),
+                "row": row,
+                "width": round(width, 1),
+                "center_x": round((left + right) / 2.0, 1),
+                "center_y": current["center_y"],
+                "surface_z": current["surface_z"],
+                "box_extent_x": round(width / 2.0, 1),
+                "box_extent_y": current["box_extent_y"],
+                "box_extent_z": current["box_extent_z"],
+                "patrol_eligible": width >= min_width,
+                "bridges": list(current.get("bridges", [])) + [bridge["label"]],
+            }
+        merged.append(current)
+
+    merged.sort(key=lambda z: (z["surface_z"], z["center_x"]))
+    for index, zone in enumerate(merged):
+        zone["zone_id"] = "P_{:02d}".format(index)
+    return merged
+
+
 def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
                max_width=DEFAULT_MAX_WIDTH, min_width=DEFAULT_MIN_WIDTH,
                y_extent=DEFAULT_Y_EXTENT, z_extent=DEFAULT_Z_EXTENT,
-               obstacle_layer=DEFAULT_OBSTACLE_LAYER):
+               obstacle_layer=DEFAULT_OBSTACLE_LAYER,
+               bridge_class=DEFAULT_BRIDGE_CLASS):
     """Scan the tile map and return a JSON-serializable placement plan."""
     actor, component, tile_map, names = find_tile_map(actor_label, layer_match)
     if not component:
@@ -185,6 +303,11 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
             })
             start = end + 1
 
+    bridges = find_bridges(bridge_class)
+    plan = merge_bridge_gaps(plan, bridges, min_width=min_width,
+                             tile_uu=tile_world_x)
+    bridged = [zone for zone in plan if zone.get("bridges")]
+
     return {
         "actor": actor.get_actor_label(),
         "layer": floor_name,
@@ -198,6 +321,9 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
         "max_width": max_width,
         "min_width": min_width,
         "runs_found": len(runs),
+        "bridge_class": bridge_class or "",
+        "bridges_found": len(bridges),
+        "bridged_zones": len(bridged),
         "zones": plan,
     }
 
@@ -375,7 +501,8 @@ def markers_match_plan(data, auto_tag=DEFAULT_AUTO_TAG):
 
 
 def tile_signature(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
-                   obstacle_layer=DEFAULT_OBSTACLE_LAYER):
+                   obstacle_layer=DEFAULT_OBSTACLE_LAYER,
+                   bridge_class=DEFAULT_BRIDGE_CLASS):
     """Hash the floor and obstacle layers so the watcher sees edits cheaply."""
     actor, component, tile_map, names = find_tile_map(actor_label, layer_match)
     if not component:
@@ -418,5 +545,12 @@ def tile_signature(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
                 packed = info.get_editor_property("packed_tile_index")
                 digest.update("{}:{}:{}:{};".format(
                     x, y, tile_set.get_path_name(), packed).encode("utf-8"))
+
+    # A bridge actor changes the plan without touching a tile, so its transform
+    # is part of the signature: moving or deleting a fake floor re-bakes.
+    for bridge in find_bridges(bridge_class):
+        digest.update("BRIDGE:{}:{}:{}:{}:{};".format(
+            bridge["label"], round(bridge["x0"], 1), round(bridge["x1"], 1),
+            round(bridge["y"], 1), round(bridge["z"][0], 1)).encode("utf-8"))
     return digest.hexdigest()
 

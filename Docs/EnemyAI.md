@@ -1,6 +1,7 @@
 # Enemy AI — platforms, patrol, detection, aggro and stairs
 
-**Status (7 Nov 2026): shared base AI complete; walker PIE pending.**
+**Status (7 Nov 2026): shared base AI complete; both `Is Flying` guards are in;
+PIE pending for the flyers.**
 `BP_EnemyBase` has its shared health/damage/death graph, the `ContactBox`
 contact fix, and the full AI core. All **13/13** functions and **25/25**
 §4 variables exist with the documented defaults
@@ -13,11 +14,14 @@ one connected piece**); the split ships as one whole-graph paste,
 wires nodes it creates itself and never to nodes already in the graph. The gate
 is `Scripts/_run_aggro_keep_check.py` (§6.2): it prints `RESULT: PASS` or names
 each wire still missing with its node position, so run it rather than trusting
-this paragraph. `_verify_enemy_base.py` reports **43 PASS | 3 FAIL | 0 PENDING**;
-the three FAILs are the `InitEnemy` / `AnyDamage` / `Die` structure checks, and
-`AnyDamage` is not a function graph in this asset at all (its chain lives in
-`EventGraph` under `ReceiveAnyDamage`), so the reconciliation is logged as an
-open item in `EnemyWorkPlan.md` §9 rather than quoted as a pass count.
+this paragraph. `_verify_enemy_base.py` reports **52 PASS | 0 FAIL | 0 PENDING**,
+including the two `Is Flying` guards of §7.2 items 4 and 6. The three
+`FAIL`s that stood here until 7 Nov 2026 (`InitEnemy` / `AnyDamage` / `Die`) were
+a *verifier* bug, not a missing graph: `exec_edges()` looked a collapsed graph up
+by its raw name while `parse_nodes()` keys graphs space-stripped, so every
+`K2Node_Composite` body was invisible — and those three chains keep
+`Set CurrentHealth`, `PlayStateFlipbook` and `SetLifeSpan` inside collapsed nodes.
+Write-up in §7.2 under "Whole-graph audit".
 `BP_Snail` overrides `ChaseSpeed=250`
 (`80` before the 7 Nov 2026 retune), `AggroHalfWidth=0`, `AggroHalfHeight=0` and
 `bAggroOnHit=true` (saved 5 Nov);
@@ -242,7 +246,7 @@ Add these in **My Blueprint → Variables**. Existing variables are in
 | `HomePlatform` | `BP_EnemyPlatform` object reference | `None` | current home zone |
 | `PatrolMinX` | Float | `0.0` | runtime world-space bound |
 | `PatrolMaxX` | Float | `0.0` | runtime world-space bound |
-| `RescueRadius` | Float | `500.0` | stranded search radius |
+| `RescueRadius` | Float | `2000.0` | stranded search radius (XZ, from the actor origin; `500` until 7 Nov 2026) |
 | `MinPatrolWidth` | Float | `300.0` | fallback width scan only; override per child (Rhino/Wood Log `450`) |
 | `MaxPatrolWidth` | Float | `600.0` | fallback width scan only |
 | `MaxDrop` | Float | `500.0` | fallback safe-drop probe only |
@@ -465,11 +469,8 @@ still names the old name. One surviving half is enough to keep the wire.
    `FunctionEntry`/`FunctionResult` nodes back, so nothing has to survive.
 3. Paste the file, **Compile**, **Save**. Nothing has to be dragged.
 4. `py -3 Scripts/_run_aggro_keep_check.py` must print `RESULT: PASS`
-   (`_verify_enemy_base.py` then reports 43 PASS | 3 FAIL | 0 PENDING; the three
-   FAILs are the `InitEnemy` / `AnyDamage` / `Die` structure checks — `AnyDamage` is
-   not a function graph in this asset (its chain lives in `EventGraph` under
-   `ReceiveAnyDamage`), so they cannot see the calls; they are unrelated to
-   `UpdateAggro`).
+   (`_verify_enemy_base.py` then reports 52 PASS | 0 FAIL | 0 PENDING; the two
+   `Is Flying` guards of §7.2 are separate checks that already pass).
 5. PIE: aggro a rock, run along the platform past `700` uu — it must keep
    chasing; step off the platform — it must still de-aggro after 2 s.
 
@@ -773,6 +774,194 @@ Because `FindHomePlatform` runs after **every** landing, a rock knocked onto a
 lower platform adopts that platform as its new home. It stays there until the
 next knockback, exactly as requested.
 
+**Rule change requested 7 Nov 2026: rescue only when there is no home platform.**
+The `MeasurePlatformWidth` gate above is the reason a wide, zone-less surface is
+declared healthy: a walker placed on a 900-uu floor with no `BP_EnemyPlatform`
+gets `bStranded = false`, `bCanMove = true` — and then no patrol bounds, because
+`AdoptPlatform` never ran. `PatrolStep` sees `IsValid(HomePlatform) == false`,
+skips both X bound tests and keeps only `LedgeAhead`, which is a **downward**
+probe: it cannot see a wall, so the enemy walks in one straight line and leaves
+the tile it was placed on (measured in `L_Level_01`).
+
+The agreed shape of the fix — **implemented in `BP_EnemyBase.uasset` on 7 Nov
+2026**. All six items are live: a walker has been rescued end to end in PIE
+(rock on a zone-less floor -> `Auto_00` -> pacing), and both flyer guards are in
+the asset (`52 PASS | 0 FAIL | 0 PENDING`), waiting on the flyer PIE pass:
+
+1. `ResolveKnockback`: the `IsValid(HomePlatform) == false` branch goes **straight
+   to the stranded chain** (`bStranded`, `bCanMove = false`, idle,
+   `SetTimer("TryRescue")`); the width gate is gone. `MeasurePlatformWidth` is
+   still in the asset but nothing calls it (`MinPatrolWidth` has zero
+   references), so a stranded walker now waits for a rescue instead of being
+   declared healthy.
+2. `TryRescue`: returns immediately when `IsValid(HomePlatform)` — a walker that
+   has a platform is never teleported.
+3. `PatrolStep`: the no-platform `else` no longer reaches `LedgeAhead` (the
+   leftmost `Branch[Is Valid]` at x≈592 has an empty `else`), so a zone-less
+   enemy stands still until the rescue timer fires.
+4. `EventGraph`: `BeginPlay -> InitEnemy -> Set Timer by Function Name
+   ("TryRescue", 0.5, looping = true)` (live since 21:41). The timer is armed at
+   spawn because a *placed* enemy never lands, so `ResolveKnockback` alone would
+   never run for it. It sits in the event graph, not at the end of `InitEnemy`,
+   because the collapsed `K2Node_Composite_2` that ends `InitEnemy` has **no exec
+   output pin** to hang anything off.
+   **FIXED 7 Nov 2026 (22:34).** `Branch[Is Flying]` sits inside **`TryRescue`**,
+   immediately after the `bIs Dead` branch (`true -> Return`), not in the event
+   graph. One node inside the function covers both entry points (the looping
+   `BeginPlay` timer *and* the one-shot from `ResolveKnockback`), whereas a guard
+   in the event graph would only cover the first and would leave the timer wire
+   split across two `Branch` nodes. A flyer now pays one `Branch` twice a second,
+   nothing else. Without it every flyer — they never adopt a `HomePlatform` — was
+   teleported twice a second once `RescueRadius` became `2000`: `BP_Bat` sits
+   1217 uu from `Auto_00` with a negative `Delta.Z`, so it passes every candidate
+   test (`_run_probe_rescue.py` prints `would be snapped to
+   BP_EnemyPlatform_Auto_00`). Verifier:
+   `PASS TryRescue: Is Flying returns before the platform search`, and the
+   walker-side checks stayed green (`a valid HomePlatform returns before the
+   teleport`, `SET Candidate is fed by the platform loop`), so the guard did not
+   cut the walker path.
+5. **Found 7 Nov 2026 (PIE: nothing happens for walkers either) — FIXED 7 Nov
+   2026 22:17, PIE-confirmed.** The `Set Candidate` node in the `ForEach` body
+   had **no value pin wired**. It ran on a match
+   (`Branch[Delta.Z < 50].true → Set Candidate → Set BestDistance`), but with
+   `Candidate` still holding its default the loop threw away every zone it had
+   just accepted, so the final `Branch[Is Valid(Candidate)]` was always **false**
+   and `TryRescue` returned without ever reaching `Set Actor Location`. The
+   compiler does not warn: an unlinked object pin is silently `None`, and the
+   looping timer only made it a silent no-op twice a second. Fix = drag the
+   `ForEachLoop` **Array Element** output into `Set Candidate`'s `Candidate`
+   input (`K2Node_VariableSet_2`, the one at x≈3536 inside the loop body — *not*
+   the loop-entry `Set Candidate = None` at x≈464). Verifier before/after:
+   `FAIL`/`PASS TryRescue: SET Candidate is fed by the platform loop`; the audit
+   went from `9 unwired (1 suspicious)` to `11 unwired (0 suspicious)` — the two
+   extra are inside collapsed graphs, and the suspicious one is gone.
+
+   Lesson: "the algorithm is right" is not testable from the T3D by replaying
+   the tests — a *wired* graph is a separate claim. `Scripts/_verify_enemy_base.py`
+   now checks the wire itself (`incoming(nodes, k, "Candidate")`), and
+   `Scripts/_probe_rescue.py` only proves the data side.
+6. **Flyers must not acquire a platform either** (requested 7 Nov 2026): add
+   `Branch[Is Flying] -> Return` at the top of `FindHomePlatform`. Guarding only
+   `TryRescue` (item 4) stops the *snap*, not the ownership: a flyer that drifts
+   within ±40 uu of a zone origin still adopts it from `InitEnemy` /
+   `ResolveKnockback`, and then `PatrolStep` paces it horizontally with
+   `bCanMove = true` (a bat that stops roaming and slides through the air).
+   `MOVE_Flying` is used only by `BP_Ghost`, `BP_FloatingSkull` and `BP_Bat`
+   (`Scripts/_make_enemies.py`), so `Character Movement -> Is Flying` is an
+   exact flyer test here — no tag or class check needed. Measured on the placed
+   actors 7 Nov 2026: `BP_Bat` `movement_mode = MOVE_FLYING`, `BP_Rock1` and
+   `BP_SpikeTurtle` `MOVE_NONE`, so the test separates them even while the
+   walkers are standing still.
+   Recipe (this is what the asset now has): in `FindHomePlatform`, drag
+   `Character Movement` from the Components panel into the graph → **`Is Flying`**
+   (bool) → `Branch`; `true` → the `Return Node` (returns `false`: "no home"),
+   `false` → the existing `Set HomePlatform = None` chain. The verifier accepts
+   either form of the node (`is_isflying()` matches the call *and* the variable
+   get, with or without the display space), so whichever drag you get is fine.
+   **FIXED 7 Nov 2026 (22:34)**: `PASS FindHomePlatform: Is Flying returns before
+   the zone search`.
+
+   Note for anyone re-running the verifier on this item: the first run after the
+   guard was built *still* said `PENDING ... the FindHomePlatform function graph
+   is missing`, because `verify()` tested `"FindHomePlatform" in names` while
+   `graph_names()` returns the T3D's display name, `"Find Home Platform"` — the
+   third appearance of the `gnorm()` trap (§7.2 audit below). `names` is now
+   space-stripped once, so a built guard cannot hide behind its display name.
+
+**Whole-graph audit (7 Nov 2026).** `Scripts/_audit_enemy_base.py` re-reads the
+T3D and expands the **23** `K2Node_Composite` bodies that
+`Scripts/_bp_enemy_dump.txt` can only print as one node each (Tick, AnyDamage and
+`InitEnemy` keep their real code inside them). The first run reported 9 unwired
+inputs with one actionable defect — item 5's unlinked `Candidate` pin — and
+**that count was under-reported**: `exec_edges()` followed a composite's
+`BoundGraph` by its raw name, while `parse_nodes()` keys graphs through
+`gnorm()` (spaces stripped, because the editor renames `UpdateAggro` ->
+`Update Aggro` on a whole-graph paste). Every collapsed graph here is named
+after its description (`"Set Max Health"`, `"Aggro Update"`, `"Destory Actor after
+delay"`), so the tunnel lookup missed and **every composite was a dead end** —
+invisible to `walk()`, `flow()` and `reach()`. `_verify_enemy_base.py` shares
+that helper, which is why it reported three `FAIL`s (`InitEnemy`, `AnyDamage`,
+`Die`) whose evidence — `Set CurrentHealth`, `PlayStateFlipbook`,
+`SetLifeSpan`, `Set Sprite Color`, the two hit timers — all lives inside those
+graphs. One `gnorm()` on the tunnel key fixed both tools:
+`52 PASS | 0 FAIL | 0 PENDING` and
+`11 unwired inputs (0 suspicious), 0 orphans`. The old `1 orphan` was also a
+tool bug: `K2Node_ComponentBoundEvent` is an event root.
+
+The remaining 11 unlinked pins are deliberate, and the audit now tags each with
+its reason — `Set Candidate = None` / `Set HomePlatform = None` (explicit reset),
+`ApplyDamage.DamageTypeClass` and `LineTraceSingle.ActorsToIgnore` (optional),
+`EqualEqual_ObjectObject.B` in `Is NewFlipbook None` (a `None` comparison), and
+five `Object` pins on `Set Timer by Function Name` / `Clear Timer`: those are
+`DefaultToSelf` (`K2_SetTimer` in
+`Engine/Source/Runtime/Engine/Classes/Kismet/KismetSystemLibrary.h`, and the pin
+in this asset carries the engine tooltip "Object that implements the delegate
+function. **Defaults to self (this blueprint)**"), so the rescue timers really are
+armed on the enemy — no wire needed there.
+
+Both tools survive a closed editor: `_verify_enemy_base.py` prints
+`NOTE: editor not reachable` and verifies the cached T3D (the CDO/component
+checks then say `live probe did not run`), `_audit_enemy_base.py` exits 2 with a
+pointed message instead of a traceback, and neither deletes the cache before the
+editor answers — the old `__main__` wiped `_enemy_base_export/` and the live JSON
+*before* connecting, so one closed-editor run destroyed the only export.
+
+Verified call graph for a walker:
+
+```
+BeginPlay -> InitEnemy -> SetTimer("TryRescue", 0.5, looping)     [placed enemies]
+OnLanded  -> ResolveKnockback                                     [knocked enemies]
+Tick -> Sequence
+   then_0 "Aggro Update": Branch[bIsDead | bStranded | !bCanMove] -> return
+                          else Branch[bWasKnockedBack] -> return, else UpdateAggro
+   then_1 "Fallback Logic": (bWasKnockedBack && !Is Falling) -> ResolveKnockback
+ResolveKnockback: bIsDead -> return; bWasKnockedBack = false; bAggro = false;
+   UnreachableTime = 0; FindHomePlatform()          [Is Flying -> return]
+   valid  -> AdoptPlatform, bCanMove = true, GroundZ, RefreshStateFlipbook -> return
+   invalid-> GroundZ, bStranded = true, bCanMove = false, idle flipbook,
+             SetTimer("TryRescue", 0.5, once) -> return
+TryRescue: bIsDead -> return;                       [Is Flying -> return]
+   Is Valid(HomePlatform) -> return;
+   BestDistance = RescueRadius; Candidate = None; GetAllActorsOfClass(BP_EnemyPlatform)
+   per zone: bEnabled && VSize(XZ) <= BestDistance && Delta.Z < 50
+             -> Candidate = Array Element, BestDistance = distance
+   Is Valid(Candidate) -> Set Actor Location(zone + (0,0,120), teleport)
+                          -> SetMovementMode(Falling)
+   landing -> OnLanded -> ResolveKnockback -> FindHomePlatform adopts (feet within
+              ZTolerance 40) -> AdoptPlatform + bCanMove = true -> Tick patrols
+```
+
+So the round trip is complete and **PIE-confirmed on 7 Nov 2026**: a walker left
+on a zone-less floor is pulled onto the nearest enabled zone and resumes
+pacing. The last hop was measured too (`_run_probe_rescue.py` prints `drop`):
+what decides the drop is the capsule, not the zone box — `BP_EnemyPlatform` is a
+marker, `BP_SpikeTurtle` rests with its feet at its zone's Z, not at the box top.
+Live numbers: `BP_Rock1` half height 106 -> `drop = +14`, `BP_SpikeTurtle` 81 ->
+`+39`; both fall, land and re-adopt, so the `120` literal is fine for today's
+roster (it stops working at half height >= 120, e.g. a 240-uu-tall capsule). If a
+walker teleports onto a zone and then stands there with `bCanMove = false`, that
+is `drop <= 0` — no `Landed`, so no re-adopt — and the knob is that literal.
+Walkers were proven in PIE first, then the `Is Flying` guards of items 4 and 6
+went in — in that order, so a flyer guard can never hide a walker defect. The two
+guards are now structural PASSes; what is left is the flyer PIE pass (a
+`BP_Bat` / `BP_Ghost` / `BP_FloatingSkull` in `L_Level_01` must never move when
+it drifts near a zone, and `_run_probe_rescue.py` must print `flyer -> Is Flying
+gates the rescue` for it).
+
+`RescueRadius` is `2000` since 7 Nov 2026 (`500` before): `TryRescue` measures XZ
+distance from the actor origin, and the level is ~4000 uu wide, so 500 only ever
+matched the platform the enemy could almost touch.
+
+**Gotcha: a child BP keeps its own serialized default.** Writing `2000` into
+`BP_EnemyBase` changed nothing at runtime — all 15 children still carried
+`500`, so a knocked `BP_Rock1` standing 1766 uu from the merged `Auto_00` run
+had no candidate and stood still forever. `Scripts/_set_rescue_radius.py` now
+reads the base value and writes it onto **every** enemy child (same pattern as
+`_set_knockback_uniform.py`); check with
+`py -3 Scripts/_run_set_rescue_radius.py` (idempotent) and
+`py -3 Scripts/_run_probe_rescue.py`, which replays the three candidate tests
+against the zones actually placed in the level.
+
 ### 7.3 Stairs: the safe recommendation
 
 A stair step is a narrow platform. The enemy may be knocked into one but must
@@ -783,13 +972,19 @@ the enemy becomes `Stranded`, stops, and idles instead of pacing a 100 uu box.
 
 ```text
 Branch: bIsDead -> return
+Branch: Is Valid(HomePlatform) -> return   # §7.2 item 2
+Branch: Is Flying -> return     # <-- still to paste (7 Nov 2026): flyers never
+                                # adopt a HomePlatform, so they must never be
+                                # teleported (§7.2 item 4). The same guard is
+                                # still missing in FindHomePlatform (§7.2 item 6)
 Get All Actors of Class (BP_EnemyPlatform)
 ForEach:
   Branch: Platform.bEnabled
   Branch: 2D distance(Self, Platform) <= RescueRadius
   Branch: Delta.Z < 50           # Delta = Platform.Location - Self.Location
                                  # same as Platform.Z < Self.Z + 50
-  Keep nearest valid Candidate
+  Set Candidate = Array Element  # <-- REQUIRED, still unwired 7 Nov 2026
+  Set BestDistance = Distance    # (unlinked Candidate = every rescue no-ops)
 Branch: Candidate valid
   True  -> SetActorLocation(Candidate.Location + (0,0,120),
                             bSweep=false, bTeleport=true)
@@ -1109,11 +1304,17 @@ gate is PIE.** The base has all 13/13 AI functions and 25/25 §4 variables with
 the documented defaults (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
 and acquire/keep changes are in `UpdateAggro` (61 nodes, one connected piece;
 `_run_aggro_keep_check.py` asserts all eleven links and the five
-`FunctionEntry` wires). `_verify_enemy_base.py` currently reports **43 PASS |
-3 FAIL | 0 PENDING**; the three FAILs name `InitEnemy`, `AnyDamage` and `Die`,
-which this work never touched — see the open note in `EnemyWorkPlan.md`. The
+`FunctionEntry` wires). `_verify_enemy_base.py` currently reports **52 PASS |
+0 FAIL | 0 PENDING**, the two `Is Flying` guards of §7.2 items 4 and 6 included;
+the `InitEnemy`/`AnyDamage`/`Die` FAILs quoted here until 7 Nov 2026 were a
+composite blind spot inside the verifier's own `exec_edges()`, and the
+`FindHomePlatform` PENDING that survived the guard was a display-name lookup in
+the same file (§7.2). The
 Snail's aggro CDO is set (`ChaseSpeed=250`, zero box, `bAggroOnHit=true`); its
-health/movement/flipbook defaults remain. The next task is PIE tests 1–9 and the `M1 GREEN` line.
+health/movement/flipbook defaults remain. The next task is PIE tests 1–9, the
+flyer pass, and the `M1 GREEN` line.
+Test 9a — the zone-less walker rescue — **passed on 7 Nov 2026**; the rest of 1–9
+still needs a run.
 Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
 `WoodLog` aggro) until that line exists. Stationary/flyer children (`SpikeTurtle`,
 `Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be
@@ -1165,6 +1366,8 @@ built in parallel because they do not read the walker AI. See
 | 7 | Shoot a walker off the platform | it lands on the lower broad platform and adopts it as home |
 | 8 | Knock an enemy into a stair step | it becomes stranded, idles, then drops to the nearest zone if one exists |
 | 9 | No zone below a stair step | it stays stranded; it never jumps into a pit |
+| 9a | Placed walker on a zone-less floor (`BP_Rock1` at `(-1180, 0, 356)` in `L_Level_01`) | **PASS 7 Nov 2026** — snapped to `Auto_00` (1766 uu) within 0.5 s, dropped 14 uu, re-adopted, pacing |
+| 9b | `BP_Bat` / `BP_Ghost` / `BP_FloatingSkull` near a zone (flyers) | verifier **PASS 7 Nov 2026** (`TryRescue` + `FindHomePlatform` gate on `Is Flying`); PIE run pending — it must never snap and never adopt a zone |
 | 10 | Spike Turtle | stationary, no detection, bullets do nothing; `KillVolume` kills |
 | 11 | Rock | patrols/chases, splits, pieces adopt their landing platform |
 | 12 | Ghost before trigger | invisible, no collision, no contact, no chase |

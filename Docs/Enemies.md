@@ -343,6 +343,17 @@ If `DamageCauser` is not valid, use `-Facing * KnockbackForce`.
 > asset: `py -3 Scripts/_run_knockback_lift_check.py` prints `RESULT: PASS` with
 > `lift=480 uu air=0.327 s shove=392 uu`. What is left is the *feel* check in PIE
 > (tests 7 and 8), not the wiring.
+>
+> **Every walker now shares one number (7 Nov 2026, later).** `BP_Snail` still
+> carried the pre-retune `KnockbackForce = 200` override while the base and all
+> other walkers were `1200`, so it moved 11 uu where a rock moved 392 uu — the
+> "rock flies, snail twitches" report. Because the reach is `F² / 3675`, a child
+> that keeps an old force is 35x weaker at the same lift factor. The override is
+> removed: `py -3 Scripts/_run_set_knockback_uniform.py` copies the base value
+> onto every walker child (idempotent; `BP_Bat` stays `0` on purpose, see §6.8,
+> and the MOVE_Flying children are reported, not written). Inspect the live
+> values with `py -3 Scripts/_run_dump_enemy_cdo.py`.
+
 
 > **`bZOverride` must be `true`** (corrected 7 Nov 2026). With `false`,
 > `LaunchCharacter` adds the victim's *current* Z velocity to the authored

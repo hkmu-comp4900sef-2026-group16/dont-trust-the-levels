@@ -1106,12 +1106,19 @@ An asset is **DONE** only when all are true:
       default; inherited names are not duplicated.
 - [ ] Every function/event in the card is wired; no orphan or disabled node that
       the card requires.
-- [ ] `BP_EnemyBase` still reports **43 PASS / 3 FAIL / 0 PENDING** with no new
-      FAIL (7 Nov 2026: the three standing FAILs are `InitEnemy`, `AnyDamage` and
-      `Die`; `AnyDamage` is not a function graph in this asset — its chain lives
-      in `EventGraph` under `ReceiveAnyDamage` — so the checker reports it
-      missing. The 45 PASS / 0 FAIL quoted in the dated rows above came from an
-      export in which those graphs were found; reconcile before quoting a count).
+- [ ] `BP_EnemyBase` still reports **52 PASS / 0 FAIL / 0 PENDING** with no new
+      FAIL (7 Nov 2026: the two `Is Flying` guards of `EnemyAI.md` §7.2 items 4
+      and 6 are in and PASS. The `InitEnemy` / `AnyDamage` / `Die` FAILs quoted
+      here until 7 Nov 2026 were a bug in the checker, not in the asset:
+      `exec_edges()` looked collapsed graphs up by their raw name while
+      `parse_nodes()` keys them space-stripped, so every `K2Node_Composite` body
+      was invisible — and those three chains keep `Set CurrentHealth`,
+      `PlayStateFlipbook` and `SetLifeSpan` inside collapsed nodes. A third
+      instance of the same trap hid `FindHomePlatform` itself: `verify()` tested
+      the T3D display name `"Find Home Platform"` against the space-free
+      `"FindHomePlatform"`, so a guard that had just been built still read as
+      PENDING. Both are fixed in `Scripts/_verify_enemy_base.py`; the audit tool
+      `Scripts/_audit_enemy_base.py` now expands the same bodies).
 - [ ] The card's PIE acceptance test passes; record what you actually observed.
 - [ ] No regression in an already-done enemy (contact, health, death, split).
 - [ ] The asset is committed and pushed, and the LFS lock is released.
@@ -1151,6 +1158,8 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 7 Nov 2026 | A1 | Knockback retune (shared `AnyDamage`) | DONE | `Scripts/_run_enemy_tuning.py` → live CDO `BP_EnemyBase.KnockbackForce` 200 → 1200, saved and re-read; `Scripts/_run_knockback_lift_check.py` → `RESULT: PASS` (`MakeVector.Z ← Multiply(KnockbackForce, 0.4)`, `lift=480 uu air=0.327 s shove=392 uu`) | PIE pending | a horizontal-only launch is worth ~15 uu at *any* force (`ApplyVelocityBraking` caps the victim at `MaxWalkSpeed` with `GroundFriction^2 * BrakingDecelerationWalking` = `131072` uu/s², then `GroundFriction` 8 kills the rest), so the shove now carries an authored arc: `MakeVector.Z = KnockbackForce * 0.4` via `Scripts/_bp_enemy_base_knockback_lift_paste.txt` → `Lift 480`, `t_air 0.327 s`, ~392 uu at `GravityScale=3`. `BP_Bat` (`KnockbackForce=0`) still sends a zero vector, so the `bZOverride=true` fix above is untouched. Gotcha: every `Content/**` file is read-only on disk after a git operation — `save_loaded_asset` returns `False` until the flag is cleared | `BP_EnemyBase.uasset`, `Enemies.md` §4.2, `EnemyAI.md` §7.1, `Scripts/_set_enemy_tuning.py`, `Scripts/_check_knockback_lift.py`, `Scripts/_bp_enemy_base_knockback_lift_paste.txt` |
 | 7 Nov 2026 | A1 | `BP_Snail` chase speed | DONE | `Scripts/_run_enemy_tuning.py` → live CDO `BP_Snail.ChaseSpeed` 80 → 250, saved and re-read; aggro box still `0/0`, `bAggroOnHit=true` | PIE pending | `UpdateAggro`'s chase branch writes `MaxWalkSpeed = ChaseSpeed` (patrol writes `MoveSpeed`), so the old `80` uu/s against the player's `1000` uu/s was indistinguishable from standing still. No proximity aggro was added: the zero aggro box plus `bAggroOnHit` is the locked §13 design (a snail ignores a player until it is shot) | `BP_Snail.uasset`, `Enemies.md` §6.3, `EnemyAI.md` §8.3/§10, `EnemyWorkPlan.md` |
 | 7 Nov 2026 | A1 | `BP_EnemyBase` acquire/keep split | IN PROGRESS | whole-graph paste applied: live T3D `Update Aggro` is 61 nodes, **1 piece**, 10 of 11 checks PASS — the six new→old links landed. The editor renamed the pasted `FunctionEntry` (`K2Node_FunctionEntry_0` → `_4`), so the importer dropped **five** entry wires, not the three that were first noticed: `FunctionEntry.Player` → `IsPlayerInAggroBox.Player` `(592,-640)`, → `IsPlayerOnHomePlatform.Player` `(880,-640)`, → `K2_GetActorLocation.self` `(592,-288)` (the *player* location; the second `K2_GetActorLocation` at `(592,-432)` is the enemy's own and must stay unwired), → `ChaseStep.Player` `(4208,-960)`, and `FunctionEntry.Delta Seconds` → `Add.A` `(3440,-480)` (without it `UnreachableTime += dt` becomes `+= 0`, so a walker would never de-aggro). The `then` wire survived. The regenerated paste writes all five on both pins and `Scripts/_test_full_paste.py` PASSes 11/11 both as-is and with the entry renamed on purpose | drag those five wires (entry `(96,-752)`) or re-paste `Scripts/_bp_enemy_base_updateaggro_full_paste.txt` → compile → save → `_run_aggro_keep_check.py` = PASS → PIE | the box term is acquire-only now: `Chase = Detect OR (bAggro AND Keep)` where `Keep = OnHome AND |ΔZ| ≤ MaxChaseStepZ (+ hit window + AggroRadius > 0)`. A walker used to de-aggro after `DeAggroTime` whenever the player ran past `AggroHalfWidth` on the *same* platform, because acquire and keep shared one 600–1400 uu rectangle. Flyers are unaffected (they never call `UpdateAggro`) and the `AggroRadius > 0` term keeps that guarantee inside the shared rule | `Scripts/_bp_enemy_base_updateaggro_full_paste.txt`, `Scripts/_make_full_aggro_paste.py`, `Scripts/_test_full_paste.py`, `Scripts/_make_aggro_paste_graph.py`, `Scripts/_check_aggro_keep.py`, `Scripts/_run_aggro_keep_check.py`, `Scripts/_verify_enemy_base.py`, `EnemyAI.md` §1/§4/§6.2/§6.3/§6.4, `Enemies.md` §5.1/§7.3 |
+| 7 Nov 2026 | A1 | `BP_EnemyBase` flyer guards | DONE (flyer PIE pending) | `_verify_enemy_base.py` **52 PASS / 0 FAIL / 0 PENDING** — both `Is Flying` guards present; `_audit_enemy_base.py` 50 graphs / 23 composites / **11 unwired (0 suspicious)** / 0 orphans; walker rescue PIE-confirmed (9a) | 9a PASS (walker); 9b open (flyers) | `TryRescue` and `FindHomePlatform` now return immediately for `MOVE_Flying`, so a flyer is never snapped to a zone and never adopts one. Three checker bugs fixed in the same session, all the same `gnorm()` trap: `exec_edges()` looked a composite's `BoundGraph` up by raw name (3 false FAILs, 23 composite bodies invisible), `verify()` tested the T3D display name `"Find Home Platform"` (a built guard still read PENDING), and the audit counted `K2Node_ComponentBoundEvent` as an orphan. `_probe_rescue.py` no longer hard-codes `guard PENDING`: it reads `_verify_enemy_base_out.txt` (`guards_built()`), covered by `Scripts/_test_probe_guards.py` |
+
 
 
 **Defect report (B → A1, 25 Oct 2026) — `BP_EnemyBase` contact chain cannot fire.**

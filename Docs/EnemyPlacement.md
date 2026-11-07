@@ -24,7 +24,7 @@ Walking enemies **never climb and never walk off a ledge**.
 - Stair rescue is **one-way downward/level only**. It never teleports an enemy
   upward.
 - If a stranded enemy has no valid lower/level `BP_EnemyPlatform` within
-  `RescueRadius` (500 uu), it stays on the stair step and idles. It does not
+  `RescueRadius` (2000 uu since 7 Nov 2026; `500` before), it stays on the stair step and idles. It does not
   jump into a pit.
 
 Flying enemies (Ghost, Bat, Floating Skull) are the exception: they move in 3D
@@ -148,6 +148,37 @@ py -3 Scripts/_plan_enemy_platforms.py --apply --save
 only deletes markers tagged `EnemyPlatform.Auto`. Manual markers such as the
 `BP_Trap_FakeFloor` zone are left alone.
 
+### Fake floors bridge two runs into one platform (7 Nov 2026)
+
+A `BP_Trap_FakeFloor` is a **walking surface**, but it is an actor, not a tile,
+so the tile scan cannot see it: it leaves a 200-uu hole and the floor on either
+side becomes two markers. That is the wrong authoring intent — two platforms
+with a fake floor between them should act as **one** platform until the trap
+breaks.
+
+`build_plan` therefore merges two runs into one marker when a bridge actor
+
+- sits in the same row (same surface Z within `DEFAULT_BRIDGE_Z_TOLERANCE` = 60 uu),
+- is within `DEFAULT_BRIDGE_Y_TOLERANCE` = 100 uu in Y,
+- reaches within `DEFAULT_BRIDGE_SLACK` = 50 uu of both run edges, and
+- spans a gap no wider than `DEFAULT_BRIDGE_MAX_SPAN` = 400 uu.
+
+The slack exists because the fake-floor collision box is a little narrower than
+the tile gap it fills (190 vs 200 uu in `L_Level_01`). The bridge class is
+`--bridge-class BP_Trap_FakeFloor` (empty disables it), and the bridge actors
+are part of `tile_signature`, so moving or deleting a fake floor re-bakes the
+markers automatically.
+
+Live result in `L_Level_01` (7 Nov 2026): the Z = 0 run became one
+`X = -800..1900` marker (2700 uu) over `BP_Trap_FakeFloor`, and the Z = 1100 run
+became one `X = -100..1900` marker (2000 uu) over `BP_Trap_FakeFloor2`, so the
+8 auto markers became 6.
+
+**After the trap breaks** the marker still spans the hole. That is deliberate:
+`LedgeAhead` is a downward probe at the enemy's feet, so the walker stops at the
+new edge and turns around, and each side paces on its own. The marker is the
+*intended* run, the geometry is the *current* one.
+
 ### Automatic generation (editor-time bake)
 
 `Content/Python/init_unreal.py` runs when the editor opens and keeps the
@@ -248,6 +279,36 @@ Place the enemy’s **capsule centre** at least `EffectiveInset` from the zone
 end, and keep its feet on the surface. Do not spawn it intersecting the floor,
 a wall, or the player’s start. A spawn outside the zone will not adopt that
 platform.
+
+**What a misplaced enemy actually does (measured 7 Nov 2026):** it walks off in
+one direction forever. It is not that it ignores the nearest platform — it never
+learns about any platform. `FindHomePlatform` runs once from `InitEnemy` and only
+stores a `HomePlatform` when the point at its **feet** is inside an enabled zone
+(|dX| ≤ BoxExtent.X, |dY| ≤ 100, |dZ| ≤ 40). `AdoptPlatform` is the only writer
+of `PatrolMinX/PatrolMaxX`, and `PatrolStep` branches on
+`IsValid(HomePlatform)`: without one it skips both bound tests and keeps only
+`LedgeAhead`, which is a **downward** probe at the feet. That probe cannot see a
+wall, so the enemy walks straight, ignores walls, and leaves the tile it was
+placed on.
+
+The one "go to the nearest zone" routine, `TryRescue`, is started only by the
+stranded branch after a knockback landing — never at spawn — it measures XZ
+distance from the actor origin against `RescueRadius` (`2000` since 7 Nov 2026,
+`500` before) and it never accepts a zone above the enemy (`Delta.Z < 50`).
+
+To see which placed enemies are in that state:
+
+```text
+py -3 Scripts/_run_report_enemy_coverage.py
+```
+
+It prints every enemy instance, the zone it starts in, and the nearest zone
+with its distance, so "it just stands there" can be traced to a placement
+choice instead of the AI. Fixes, cheapest first: move the enemy into an
+enabled zone box; paint the surface on the `TM_Background` `Floor` layer and
+re-bake (`py -3 Scripts/_plan_enemy_platforms.py --apply --save`); or, if you
+want the enemy to relocate itself, add a spawn-time `TryRescue` (a graph change
+in `BP_EnemyBase`).
 
 ### Y depth
 
