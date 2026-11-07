@@ -1,16 +1,33 @@
 # Enemy AI — platforms, patrol, detection, aggro and stairs
 
-**Status (24 Oct 2026): design locked; shared base only.** `BP_EnemyBase` has
-its shared health/damage/death graph and the `ContactBox` contact fix
-(**44 PASS**), and `BP_EnemyPlatform` auto-placement works (7 auto zones in
-`L_Level_01`). The AI core is **not built yet**: none of the new §4 AI variables
-(`ChaseSpeed`, `bAggro`, `HomePlatform`, …) or the §3/§5/§6 helper functions
-exist. The existing `MoveSpeed`/`bCanMove` remain. The next work item is §10
-step 2, not a child enemy. This document supersedes the movement/detection
-passages in `Docs/Enemies.md` where they disagree. The level-placement rules
-distilled from this document are in **`Docs/EnemyPlacement.md`** for level
-designers. The three-person execution split, gates and asset locks are in
-**`Docs/EnemyWorkPlan.md`**.
+**Status (7 Nov 2026): shared base AI complete; walker PIE pending.**
+`BP_EnemyBase` has its shared health/damage/death graph, the `ContactBox`
+contact fix, and the full AI core. All **13/13** functions and **25/25**
+§4 variables exist with the documented defaults
+(`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit change is landed: the box
+term and the post-hit term feed one `BooleanOR` before the aggro branch, and
+`_verify_enemy_base.py` now fails if any of the three old links returns. The
+seven **acquire/keep** nodes are in the asset too (`UpdateAggro` is **61 nodes,
+one connected piece**); the split ships as one whole-graph paste,
+`Scripts/_bp_enemy_base_updateaggro_full_paste.txt`, because UE's paste only
+wires nodes it creates itself and never to nodes already in the graph. The gate
+is `Scripts/_run_aggro_keep_check.py` (§6.2): it prints `RESULT: PASS` or names
+each wire still missing with its node position, so run it rather than trusting
+this paragraph. `_verify_enemy_base.py` reports **43 PASS | 3 FAIL | 0 PENDING**;
+the three FAILs are the `InitEnemy` / `AnyDamage` / `Die` structure checks, and
+`AnyDamage` is not a function graph in this asset at all (its chain lives in
+`EventGraph` under `ReceiveAnyDamage`), so the reconciliation is logged as an
+open item in `EnemyWorkPlan.md` §9 rather than quoted as a pass count.
+`BP_Snail` overrides `ChaseSpeed=250`
+(`80` before the 7 Nov 2026 retune), `AggroHalfWidth=0`, `AggroHalfHeight=0` and
+`bAggroOnHit=true` (saved 5 Nov);
+its remaining health/movement/flipbook defaults are still open. `BP_EnemyPlatform`
+auto-placement works (7 auto zones in `L_Level_01`). The next work item is PIE
+tests 1–9 and the `M1 GREEN` line, not another child enemy. This document
+supersedes the movement/detection passages in `Docs/Enemies.md` where they
+disagree. The level-placement rules distilled from this document are in
+**`Docs/EnemyPlacement.md`** for level designers. The three-person execution
+split, gates and asset locks are in **`Docs/EnemyWorkPlan.md`**.
 
 **Engine:** Unreal Engine **4.27.2**, Blueprint-only, Paper2D. No C++, no
 Behavior Tree, no EQS, no NavMesh. Movement is `Add Movement Input` with a
@@ -33,8 +50,11 @@ default `AIController` (Auto Possess AI = Placed In World Or Spawned).
    jump and shallow enough not to catch a player on the platform above/below.
    The primary cross-platform discriminator is a **same-platform check**, not
    the Z size alone.
-5. **Walking enemies de-aggro.** If the player leaves the rectangle or becomes
-   unreachable for `DeAggroTime`, the enemy returns to patrol.
+5. **Walking enemies de-aggro only when the player is unreachable.** If the
+   player leaves the enemy's platform or becomes unreachable for `DeAggroTime`,
+   the enemy returns to patrol. Running along the same platform never starts
+   that clock, however far past `AggroHalfWidth`: the rectangle only *starts* a
+   chase, it does not end one (§6.2).
 6. **Flying aggro uses a sphere and never de-aggros.** Once a Ghost or Bat is
    triggered, it chases until it or the player dies.
 7. **No pathfinding around walls.** A walker that meets a wall turns around. A
@@ -55,7 +75,7 @@ Four booleans, evaluated in this order:
 |---|---|---|---|
 | 1 | Dead | `bIsDead` | base death, no movement/contact |
 | 2 | Stranded | `bStranded` | landed on a non-patrol surface (stair step, prop, narrow ledge) |
-| 3 | Aggro | `bAggro` | player is in range and reachable |
+| 3 | Aggro | `bAggro` | player was detected and is still reachable (same platform) |
 | 4 | Patrol | default | walk between platform bounds |
 
 `bWasKnockedBack` is a short-lived flag set by `AnyDamage` and cleared by
@@ -206,13 +226,14 @@ Add these in **My Blueprint → Variables**. Existing variables are in
 | `bAggro` | Boolean | `false` | runtime |
 | `bStranded` | Boolean | `false` | landed off a valid platform |
 | `bWasKnockedBack` | Boolean | `false` | suppresses AI until `ResolveKnockback` clears it |
-| `AggroHalfWidth` | Float | `600.0` | rectangle half-width; walkers |
+| `AggroHalfWidth` | Float | `600.0` | rectangle half-width; walkers — **acquire only** (§6.2) |
 | `AggroHalfHeight` | Float | `500.0` | rectangle half-height; covers jump/double-jump |
-| `AggroRadius` | Float | `0.0` | sphere radius; flyers (`0` = disabled) |
-| `DeAggroTime` | Float | `2.0` | walker only; seconds unreachable/out of range |
+| `AggroRadius` | Float | `0.0` | sphere radius; flyers (`0` = disabled); `> 0` also means "never de-aggro" |
+| `DeAggroTime` | Float | `2.0` | walker only; seconds off-platform/unreachable |
 | `UnreachableTime` | Float | `0.0` | runtime accumulator |
 | `MaxChaseStepZ` | Float | `500.0` | vertical tolerance while the ground trace confirms the platform |
 | `bRequireAggroLineOfSight` | Boolean | `false` | optional wall trace |
+| `bAggroOnHit` | Boolean | `false` | walker only; chase for `DeAggroTime` after a hit, even outside the box |
 | `LedgeProbeAhead` | Float | `30.0` | forward probe distance |
 | `LedgeProbeDepth` | Float | `80.0` | downward probe length |
 | `MaxPatrolStepZ` | Float | `15.0` | flat-platform tolerance |
@@ -263,7 +284,7 @@ meaningful:
 | Milestone | Variables needed |
 |---|---|
 | Platform ownership + patrol | `HomePlatform`, `PatrolMinX`, `PatrolMaxX`, `GroundZ`, `bStranded`, `bAggro`, `LedgeProbeAhead`, `LedgeProbeDepth`, `MaxPatrolStepZ` |
-| Aggro + chase | `ChaseSpeed`, `AggroHalfWidth`, `AggroHalfHeight`, `DeAggroTime`, `UnreachableTime`, `MaxChaseStepZ`, `PlayerGroundProbeDepth`, `bRequireAggroLineOfSight` |
+| Aggro + chase | `ChaseSpeed`, `AggroHalfWidth`, `AggroHalfHeight`, `DeAggroTime`, `UnreachableTime`, `MaxChaseStepZ`, `PlayerGroundProbeDepth`, `bRequireAggroLineOfSight`, `bAggroOnHit` |
 | Knockback + rescue | `bWasKnockedBack`, `RescueRadius`, `MinPatrolWidth`, `MaxPatrolWidth`, `MaxDrop` |
 | Flyers only | `AggroRadius` |
 
@@ -374,14 +395,199 @@ reach 600 uu above and aggro through the floor above. The rectangle's
 same-platform gate means it cannot aggro a player standing on a different
 platform even if the boxes overlap.
 
-### 6.2 Reachability
+### 6.2 Reachability — acquire vs keep
 
-A walker may only chase when all are true:
+Two questions, two tests. **Acquire** (start chasing) may use the aggro
+rectangle. **Keep** (stay chasing) may not: the rectangle is centred on the
+*enemy* and is far narrower than a platform, so a player who runs past
+`AggroHalfWidth` is still reachable. Counting that as unreachable made a walker
+give up mid-chase after `DeAggroTime` while the player stood on the same
+platform (fixed 7 Nov 2026).
+
+```text
+Detect = (InBox AND OnHome AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+         OR (bAggroOnHit AND Now - LastDamageTime <= DeAggroTime)     # acquire
+Keep   = (OnHome AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+         OR (bAggroOnHit AND Now - LastDamageTime <= DeAggroTime)     # stay
+         OR AggroRadius > 0                                           # flyer
+Chase  = Detect OR (bAggro AND Keep)
+```
+
+`UnreachableTime` accumulates only on `bAggro AND NOT Keep`, so the de-aggro
+clock starts when the player leaves the platform (or drops out of
+`MaxChaseStepZ`), never because of the rectangle.
+
+**Box term (acquire)** — the normal detection, all of:
 
 - player is inside the aggro rectangle;
 - `IsPlayerOnHomePlatform()` is true;
 - `Abs(Player.Z - Self.Z) <= MaxChaseStepZ`;
 - optional: a horizontal line trace to the player is clear.
+
+**Hit term** — `bAggroOnHit`, all of:
+
+- `bAggroOnHit` is true (default `false`);
+- `Get Game Time in Seconds - LastDamageTime <= DeAggroTime`.
+
+**Gun-aggro set (5 Nov 2026):** `Rock1/2/3`, `Snail`, `WoodLog` and `Bat`. The
+walkers use `bAggroOnHit=true`; the base hit term is deliberately cross-platform
+and lets `ChaseStep` walk to the ledge (closest safe X) without leaving the
+platform. `Bat` must implement the hit branch itself because it replaces the base
+walker Tick; `bAggroOnHit` is never read there. Rhino, Ghost, Spike Turtle and
+the Skull cannot be gun-aggroed; Toxic Slime cannot be aggroed at all.
+
+In the asset this is `Chase = BooleanOR(Detect, BooleanAND(bAggro, Keep))`: seven
+extra nodes pasted from `Scripts/_bp_enemy_base_aggro_keep_paste.txt`
+(`AndStay`, `OrStayFly`, `OrKeep`, `AndAggroKeep`, `OrChase`, `Greater`,
+`Get AggroRadius`), 54 → **61**. `Scripts/_run_aggro_keep_check.py` proves the
+aggro-box pin reaches `Detect` only, that `Keep` is platform + Z (+ hit
+window + flyer sphere), and that the graph is still one connected piece.
+
+**Pasting it (manual — UE 4.27 has no Python graph API):** paste the **whole
+graph**, not the seven nodes. The importer only recreates `LinkedTo` between the
+nodes it creates itself, so a partial paste drops every link whose other end is
+already in the asset — all six of them did on 7 Nov 2026, while all six
+new→new links arrived. A whole-graph paste has no foreign endpoint, so every
+link lands — and each link is written on **both** pins, because the editor
+renames a pasted node whose name is taken (`K2Node_FunctionEntry_0` came back as
+`K2Node_FunctionEntry_4`) and the importer then discards every `LinkedTo` that
+still names the old name. One surviving half is enough to keep the wire.
+
+1. `py -3 Scripts/_make_full_aggro_paste.py` writes
+   `Scripts/_bp_enemy_base_updateaggro_full_paste.txt` (61 nodes, the graph as it
+   is now plus the six acquire/keep links and the five `FunctionEntry` wires —
+   `Player` → both predicates and the player `K2_GetActorLocation`, `Player` →
+   `ChaseStep`, `Delta Seconds` → `Add.A`; the read-only T3D export is the source,
+   and the node `Class=` — dropped by the exporter — is re-derived from the
+   editor's `<Class>_<n>` node names and checked against each pin signature).
+2. Open `BP_EnemyBase` → **`Update Aggro`** (the editor spells it with a space;
+   every script accepts both), `Ctrl+A`, `Delete`. The paste brings the
+   `FunctionEntry`/`FunctionResult` nodes back, so nothing has to survive.
+3. Paste the file, **Compile**, **Save**. Nothing has to be dragged.
+4. `py -3 Scripts/_run_aggro_keep_check.py` must print `RESULT: PASS`
+   (`_verify_enemy_base.py` then reports 43 PASS | 3 FAIL | 0 PENDING; the three
+   FAILs are the `InitEnemy` / `AnyDamage` / `Die` structure checks — `AnyDamage` is
+   not a function graph in this asset (its chain lives in `EventGraph` under
+   `ReceiveAnyDamage`), so they cannot see the calls; they are unrelated to
+   `UpdateAggro`).
+5. PIE: aggro a rock, run along the platform past `700` uu — it must keep
+   chasing; step off the platform — it must still de-aggro after 2 s.
+
+**The `Function Entry` rename (7 Nov 2026).** `Ctrl+A`/`Delete` does not always
+remove the old `Function Entry` node: it may survive as a pending-kill object, so
+the pasted entry is issued a free name (`K2Node_FunctionEntry_0` → `_4`) and the
+importer drops every `LinkedTo` that names the old one. The exec wire
+(`then` → `Branch.execute`) survived, because it is declared on the entry's own
+pin, but **five** object wires went:
+
+| from | to | what it is |
+|---|---|---|
+| `FunctionEntry.Player` `(96,-752)` | `IsPlayerInAggroBox.Player` `(592,-640)` | the acquire box test |
+| `FunctionEntry.Player` | `IsPlayerOnHomePlatform.Player` `(880,-640)` | the platform test |
+| `FunctionEntry.Player` | `K2_GetActorLocation.self` **`(592,-288)`** | *the player's* location: → `BreakVector` (864,-272) → `Subtract` (1216,-336) → `Abs` → `<= MaxChaseStepZ`, and → `Subtract` (1248,-176) → `SetFacing.Direction` |
+| `FunctionEntry.Player` | `ChaseStep.Player` `(4208,-960)` | the chase call, easy to miss because it is the *last* node in the graph |
+| `FunctionEntry.Delta Seconds` | `Add.A` `(3440,-480)` | `UnreachableTime += dt`; lost silently, it becomes `+= 0`, so the walker **never de-aggros** |
+
+That is what the editor reported as a compile error ("missing connection for
+`Player`"). Two things to know when repairing it by hand:
+
+- There are **two** `K2_GetActorLocation` nodes in the graph and only the upper
+  one takes `Player`. `(592,-288)` feeds `BreakVector` → the Z test and
+  `SetFacing`; **`(592,-432)` stays unwired on purpose** — it is the enemy's own
+  location (the node returns self by default) and feeds `Subtract.B`. Wire
+  `Player` into it as well and `Player.Z − Player.Z` collapses to `0`: the enemy
+  would never turn around and would always count itself "on my platform".
+
+  Told apart by hand, without coordinates: the two sit **directly under
+  `Is Player In Aggro Box`, one above the other**, each followed by its own
+  `Break Vector`. The **upper** one's `Break Vector` is the one whose `X` feeds
+  the `Subtract` that plugs into `Set Facing`'s `Direction` pin and whose `Z`
+  feeds the `Subtract` → `Abs` → `≤ Max Chase Step Z`; that is the player's, and
+  it takes `Player`. The **lower** one's `Break Vector` feeds only the second
+  (`B`) input of those same two `Subtract` nodes — that is the enemy's own, and
+  it stays empty. (The three further `K2_GetActorLocation` nodes at `X ≥ 1328`
+  belong to the target-scan loop and are untouched.)
+- `Delta Seconds` is the only entry pin whose loss produces no compile error.
+
+The pair is easy to get wrong: the first repair on 7 Nov wired the **lower**
+node. `_run_aggro_keep_check.py` therefore also fails on a stray
+`Player → K2_GetActorLocation (592,-432)` wire and prints it as
+`DELETE this wire`, next to the list of wires still to drag.
+
+A half-finished drag also leaves an empty reroute knot behind — the 4:03 save
+carried `K2Node_Knot_1` with both pins unconnected, which reads as
+`connectivity: 2 piece(s)` / `floating: K2Node_Knot_1` and would have made the
+paste 62 nodes. The checks name it, the graph needs it deleted, and
+`_make_full_aggro_paste.py` refuses to copy it into the paste.
+
+The paste now writes all five on **both** pins, so a renamed entry can no longer
+cost a wire; `Scripts/_test_full_paste.py` re-runs the eleven checks with the
+entry renamed on purpose to prove it, and `_check_aggro_keep.py` asserts all six
+entry wires (`then` plus the five above) in one check,
+`FunctionEntry drives Tick, both player pins and the clock`. Otherwise `Ctrl+Z`,
+delete the leftover entry on its own, and re-paste.
+
+Offline proof before touching the asset: `py -3 Scripts/_test_full_paste.py`
+rebuilds the graph container from the paste alone and runs the same eleven
+checks → `PASS`, 61 nodes, no link leaving the paste. Then
+`py -3 Scripts/_make_aggro_paste_graph.py` renders the result to
+`Scripts/_aggro_paste_graph.html` (real node positions, every wire the paste adds
+in green, the replaced wire in red, and a `! DELETE` line for the stray
+enemy-location wire if the asset has one — the green count shrinks as the asset
+catches up, so treat it as a to-do list, not a constant).
+
+**Two pieces vs one.** The asset is now *one* piece of 61 nodes: the whole-graph
+paste landed the six new→old links and the 7-node island is gone. The paste is
+that same graph plus the five `FunctionEntry` wires above, so the offline test
+sees 74 resolved links and asserts that every `LinkedTo` names a node inside the
+paste (`self-contained: yes`). Both `_test_full_paste.py` and
+`_run_aggro_keep_check.py` print `connectivity: N piece(s)` plus the names of any
+floating nodes, so a paste that loses a wire names the cluster that broke off
+instead of failing vaguely. Note that the export is not symmetric — a
+`FunctionEntry` output pin keeps its `LinkedTo` to itself — so the checker
+resolves links from *both* ends and never counts a wire twice; it also matches
+mirrored links by **peer name as well as pin id**, because duplicating a node in
+the editor copies its `PinId`s (`K2_GetActorLocation_3` and `_4` share
+`4AAAD250…`), and an id-only match would let one wire claim both nodes.
+
+**Fallback — dragging the six wires by hand.** Same result, no graph wipe. The
+checker prints the missing ones as `target.pin <- source.pin  # note`, using the
+titles below (`A` is the upper pin, `B` the lower):
+
+| New node | Pin | Connect to |
+|---|---|---|
+| `AND` (1920,-864) | A | `IsPlayerOnHomePlatform` (880,-640) · `Return` — the node with exec pins that feeds the old box `AND` |
+| | B | `<=` (1648,-336) · `ReturnValue` — `Abs(Player.Z - Self.Z) <= MaxChaseStepZ` |
+| `>` (2160,-544) | A | `Get AggroRadius` (1920,-544) · `AggroRadius`; leave `B` at `0.0` |
+| `OR` (2144,-672) | A | hit `AND` (1552,-960) · `ReturnValue` — the one whose `A` is `bAggroOnHit` |
+| | B | `>` (2160,-544) · `ReturnValue` |
+| `OR` (2384,-704) | A | `AND` (1920,-864) · `ReturnValue` |
+| | B | `OR` (2144,-672) · `ReturnValue` |
+| `AND` (2608,-704) | A | `Get bAggro` (3200,-512) · `bAggro` |
+| | B | `OR` (2384,-704) · `ReturnValue` |
+| `OR` (2848,-864) | A | old `OR` (1888,-704) · `ReturnValue` — the now-disconnected Detect node |
+| | B | `AND` (2608,-704) · `ReturnValue` |
+| | `ReturnValue` | `Branch` (3152,-848) · `Condition` — break the old `OR` wire first (`Alt+Click`) |
+
+Those are the saved positions of the graph as it stands. A whole-graph paste
+(`Ctrl+A`, `Delete`, paste) brings every node back exactly there; the old 7-node
+paste used to land at the cursor instead.
+
+None of the seven new nodes has an exec pin, so the Tick flow is unchanged: the
+`Branch` still executes from `IsPlayerOnHomePlatform.then`.
+
+The hit term deliberately skips `IsPlayerOnHomePlatform()` and the Z check: the
+point is that a walker shot from a platform above walks to the ledge under the
+player and waits there instead of forgetting the hit. It reuses `DeAggroTime`
+rather than adding a second duration, so one number tunes both clocks; the
+consequence is that aggro after a hit lasts up to `2 * DeAggroTime` (about 4 s
+at the `2.0` default) — `DeAggroTime` of the window itself, then `DeAggroTime`
+again of accumulating `UnreachableTime`. Clear `bAggroOnHit` on a child to get
+the pre-change behaviour back with no graph edit.
+
+`LastDamageTime` is stamped by `Event AnyDamage` (`Enemies.md` §4.2) and is
+already `-1000.0` at spawn, so a fresh enemy is never pre-aggroed. A hit that
+lands during i-frames returns before the stamp and does not refresh the window.
 
 If the player is on another platform, jumping across a gap, or falling into a
 pit, the enemy **stands at the ledge** and does not follow.
@@ -395,9 +601,17 @@ Event Tick:
   Branch: ChaseSpeed <= 0 -> PatrolStep(); return   # Snail/Slime: no detection
   Player = Get Player Character(0)
   InBox = IsPlayerInAggroBox(Player)
-  Reachable = InBox AND IsPlayerOnHomePlatform(Player)
-                  AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ
-  Branch: Reachable
+  Detect = (InBox AND IsPlayerOnHomePlatform(Player)
+                 AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+            OR (bAggroOnHit AND
+                Get Game Time in Seconds - LastDamageTime <= DeAggroTime)
+  Keep   = (IsPlayerOnHomePlatform(Player)
+                 AND Abs(Player.Z - Self.Z) <= MaxChaseStepZ)
+            OR (bAggroOnHit AND
+                Get Game Time in Seconds - LastDamageTime <= DeAggroTime)
+            OR AggroRadius > 0
+  Chase  = Detect OR (bAggro AND Keep)
+  Branch: Chase
     True  -> Set bAggro = true
              Set UnreachableTime = 0
              ChaseStep(Player)
@@ -424,14 +638,21 @@ Add Movement Input ((Facing,0,0), 1)
 If the player jumps over the enemy, `Player.X - Self.X` flips and the enemy
 turns. It does not jump, path around a wall, or step down.
 
-**De-aggro rule:** after `DeAggroTime` seconds of the player being out of range
-or unreachable, `bAggro=false` and the enemy resumes patrol from its current
-position. If the player returns to a reachable spot inside the rectangle, the
-enemy re-aggros immediately. `UnreachableTime` resets whenever the player is
-reachable again.
+**De-aggro rule:** the clock behind `DeAggroTime` starts only while the player
+is **unreachable** — off the enemy's platform, or more than `MaxChaseStepZ`
+above/below it. Running along the platform, past the rectangle or not, keeps
+`bAggro` and resets `UnreachableTime` every frame. After `DeAggroTime` seconds
+unreachable, `bAggro=false` and the enemy resumes patrol from its current
+position. If the player returns to a reachable spot, the enemy re-aggros
+immediately (`Detect`, and `Keep` alone keeps it aggroed once it is chasing).
+`UnreachableTime` also resets while the hit term is what keeps the enemy
+chasing, which is why the timer restarts after the window closes.
 
 **Flying aggro has no de-aggro path.** Ghost and Bat never run the de-aggro
-branch.
+branch: they replace the base walker Tick, so `UpdateAggro` is not called at
+all. The base rule also carries `AggroRadius > 0` inside `Keep`, so a flyer that
+ever does run the walker loop cannot start an `UnreachableTime` clock either —
+a sphere has no platform edge to lose the player over.
 
 
 ### 6.4 Suggested defaults
@@ -442,15 +663,18 @@ branch.
 | Rhino | rectangle | `1200` | `500` | `2.0 s` | yes (charge) |
 | Wood Log | rectangle | `1400` | `500` | `2.0 s` | no — stops to shoot |
 | Ghost | sphere | `550` | — | **never** | yes, through walls |
-| Bat | sphere | `1000` | — | **never** | yes, collides |
-| Snail | none | — | — | — | no |
+| Bat | sphere `1000` + hit branch (staged) | — | — | **never** | yes, collides |
+| Snail | hit only | — | — | `2.0 s` | yes, after a hit (`250`) |
 | Toxic Slime | none | — | — | — | no |
 | Spike Turtle | none | — | — | — | no |
 | Floating Skull | none | — | — | — | no |
 
 The `500` height is intentional: it covers the player's jump/double-jump. It
 does **not** cause cross-platform aggro because `IsPlayerOnHomePlatform()` is
-part of the reachability test. Tune the width/speed after PIE.
+part of the acquire test. It also does not *end* a chase: once `bAggro` is set,
+only the platform + `MaxChaseStepZ` pair (the `Keep` term) can start the
+de-aggro clock, so the rectangle width is purely a "how far away do I notice
+you" number. Tune the width/speed after PIE.
 
 ---
 
@@ -468,6 +692,38 @@ Set MaxWalkSpeed = MoveSpeed
 Set UnreachableTime = 0
 LaunchCharacter(...)
 ```
+
+`LaunchCharacter` is `ACharacter::LaunchCharacter`. With `bZOverride=false` it
+adds the victim's **current** Z velocity to the vector, so a `KnockbackForce`
+of `0` still produces a non-zero `PendingLaunchVelocity`.
+`UCharacterMovementComponent::HandlePendingLaunch()` then runs
+`SetMovementMode(MOVE_Falling)`. For a walker that is the intended arc; for a
+flyer it is a trap — `GetMaxSpeed()` returns `MaxWalkSpeed`, which the block
+above just set to `MoveSpeed`, and `GetFallingLateralAcceleration()` drops Z and
+scales by `AirControl` (`0.05`). Use `bZOverride = true`: a zero force then sends
+a zero vector, `HandlePendingLaunch()` returns early and `MOVE_Flying` /
+`MaxFlySpeed` survive. `Enemies.md` §4.2 and §6.8 have the Bat case.
+
+**The vertical component is the knockback (7 Nov 2026).** With the pin forced to
+`true`, a launch of `(F, 0, 0)` has no arc at all, so the victim re-grounds on the
+next move and `ApplyVelocityBraking` removes everything above `MaxWalkSpeed` at
+`GroundFriction^2 * BrakingDecelerationWalking` = `8^2 * 2048` = `131072` uu/s² —
+about 15 uu of travel for any `F`. `AnyDamage` therefore feeds `MakeVector.Z`
+with `KnockbackForce * 0.4`: the victim stays in `MOVE_Falling` (no ground
+friction, and Tick is gated by `bWasKnockedBack`) for
+`2 * Lift / (980 * GravityScale)` and covers `KnockbackForce * t_air`. With the
+live `KnockbackForce = 1200` and `GravityScale = 3` that is `Lift 480`,
+`0.327 s`, ~392 uu. `BP_Bat` keeps `KnockbackForce = 0`, so both components stay
+zero and the flyer is untouched. The link is in the asset (pasted from
+`Scripts/_bp_enemy_base_knockback_lift_paste.txt`, compiled and saved):
+`py -3 Scripts/_run_knockback_lift_check.py` prints `RESULT: PASS` with
+`lift=480 uu`, `air=0.327 s`, `shove=392 uu`.
+
+`Set bAggro = false` clears the current chase but not the hit window:
+`LastDamageTime` was stamped a few nodes earlier, so once `bWasKnockedBack`
+clears the walker re-aggros for the remaining `DeAggroTime` (§6.2). That is
+intended — a knocked-back walker comes back for the player instead of
+forgetting the hit.
 
 Do not clear `bWasKnockedBack` with a single fixed timer. A character can be in
 the air for a variable time, and a purely horizontal hit may **not leave the
@@ -621,6 +877,9 @@ authoring contract.
 ### 8.2 Rocks
 
 - Add the rectangle aggro/de-aggro loop from §6.
+- Set `bAggroOnHit=true` on all three tiers (A2's CDOs): the rectangle is
+  `700` wide, so a hit from outside it would otherwise be forgotten instantly.
+  **DONE 5 Nov 2026:** live and verified on all three CDOs.
 - `MoveSpeed`/`ChaseSpeed` per tier; keep the existing `100 / 140 / 180`
   identities and use `120 / 160 / 200` for chase as a starting point. Tune
   separately after PIE.
@@ -630,7 +889,13 @@ authoring contract.
 
 ### 8.3 Snail
 
-- Set `ChaseSpeed=0`; no detection and no chase.
+- `ChaseSpeed=250` with **both aggro halves `0`** and `bAggroOnHit=true`: the
+  zero box means it never detects on its own, the hit window
+  (`EnemyAI.md` §6.2) means a bullet wakes it for `DeAggroTime`. `ChaseSpeed=0`
+  would swallow the hit too — the gate returns to `PatrolStep` before the box.
+  Raised from `80` on 7 Nov 2026: `UpdateAggro`'s chase branch writes
+  `MaxWalkSpeed = ChaseSpeed`, and `80` uu/s against the player's `1000` uu/s
+  looked like standing still.
 - Keep the normal patrol and the shell death override.
 - Both the body and the shell use the base `PatrolStep` + `LedgeAhead`; do not
   add a second shell Tick. The shell must sweep the platform, not fall off it.
@@ -714,16 +979,37 @@ Branch: CurrentHealth <= 0
 - Trigger sphere is `1000` (was `800`; `600` was the first playtest value). The
   wider sphere covers the approach from the playable floor; it still only
   starts the chase when the player is inside it.
-- `KnockbackForce=0` for the Bat. `LaunchCharacter` then receives a zero vector
-  and leaves the flying character in `MOVE_Flying`, so a hit cannot slide it
-  along the ceiling or push it out of the trigger.
-- A non-lethal hit does **not** force aggro by itself: the base damage path
-  clears aggro while knocked back. The Bat's own Tick must see the player
-  inside `TriggerRadius`; zero knockback keeps it there long enough to trigger.
-  A hit from outside `1000` still leaves it hanging.
+- `KnockbackForce=0` for the Bat, so a hit cannot slide it along the ceiling or
+  push it out of the trigger. **`KnockbackForce=0` alone is not enough** (found
+  7 Nov 2026): with the base's `bZOverride=false` the launch vector still carries
+  the Bat's own Z velocity, and `HandlePendingLaunch()` forces `MOVE_Falling`,
+  where `GetMaxSpeed()` returns `MaxWalkSpeed = MoveSpeed = 100` and only
+  `AirControl`-scaled X/Y input applies. Fix the base pin
+  (`LaunchCharacter.bZOverride = true`) or give the Bat a Tick guard that
+  re-asserts `SetMovementMode(Flying)` — see `Enemies.md` §4.2 and §6.8 and
+  `Scripts/_check_bat_hit_knockback.py`.
+- A non-lethal hit is meant to force aggro: the `RefreshStateFlipbook` branch
+  checks `bWasKnockedBack`, clears the flag, sets
+  `bTriggered`/`bChasing`/`bDealContactDamage`, **sets
+  `CharacterMovement.MaxFlySpeed = ChaseSpeed`**, then calls the parent. The
+  full staged patch additionally clears the pending `HangIdle` timer.
+  `bAggroOnHit` is walker-only and is
+  never read here. All three issues are verified fixed in PIE: the live asset
+  has the 13-node hit branch plus the `MaxFlySpeed` write, and the EventGraph
+  `HangIdle` custom event is gated on `bTriggered`. The full 17-node
+  replacement remains staged in `Scripts/_bp_bat_refresh_modified_v2.txt` for a
+  clean re-paste. Without the speed write, a hit before `StartChase` leaves the
+  Bat at the flying default `400` instead of `1000`.
 - `CharacterMovement.MaxAcceleration=8192` so that after a hit or the
   `StartChase` transition it reaches `MaxFlySpeed` immediately instead of
   drifting slowly.
+- The `BeginPlay` `HangIdle` timer is `0.6 s`, but `StartChase` is started after
+  `0.5 s`. The live fix gates the EventGraph `HangIdle` custom event on
+  `bTriggered` (optionally `bTriggered OR bIsDead`): once the Bat is triggered,
+  return instead of playing `HangingFlipbook`. That covers both the normal
+  trigger and the hit path without relying on timer order. Alternative: shorten
+  the `HangIdle` delay to `0.3 s` and call `K2_ClearTimer("HangIdle")` on the hit
+  chain.
 - After the `CeilingOut` animation, `bChasing=true` and it chases directly in
   the X/Z plane. Unlike Ghost, it **collides with walls and floors**: do not set
   `WorldStatic = Ignore`. If it hits a wall, it stops/slides; there is no
@@ -740,11 +1026,15 @@ Branch: CurrentHealth <= 0
   `1400×500`, same platform, `DeAggroTime=2.0`.
 - It **stops and shoots** while aggro; it does not chase around the platform.
   `TryFire` is gated by `bAggro`, not by "player exists anywhere".
+- Set `bAggroOnHit=true` (A2's CDO) so a hit from outside the `1400×500`
+  rectangle still turns it. It needs `ChaseSpeed > 0` (the gate above), and the
+  `ChaseStep` override keeps it planted, so the flag buys aim, not movement.
+  **DONE 5 Nov 2026:** live and verified on `BP_WoodLog`.
 - It only fires horizontally: projectile direction `(Facing,0,0)`, muzzle Z
   fixed by `MuzzleOffset.Z`. Do not aim at the player's Z.
-- If the player leaves the rectangle or becomes unreachable for `DeAggroTime`,
-  `bAggro=false`, `EndAttack`, resume patrol. If the player re-enters while
-  reachable, re-aggro.
+- If the player leaves the platform / becomes unreachable for `DeAggroTime`,
+  `bAggro=false`, `EndAttack`, resume patrol (the rectangle itself is
+  acquire-only, `§6.2`). If the player re-enters while reachable, re-aggro.
 - No vertical aim means a jumping player can dodge; that is intended.
 - Contact `1`; health `3`.
 
@@ -756,7 +1046,7 @@ Branch: CurrentHealth <= 0
 **Fixed 24 Oct 2026:** option A is implemented — `ContactBox` is compiled with
 `QueryOnly`, `Pawn = Overlap`, all other channels `Ignore`, and the existing
 contact chain is bound to its component-overlap event. The base verifier reports
-**44 PASS / 0 FAIL**. The finding below is kept as the rationale.
+**45 PASS / 0 FAIL**. The finding below is kept as the rationale.
 
 **Fixed 25 Oct 2026 — capsule is now non-solid.** All four enemy classes compile
 with `CollisionCylinder → Pawn = Overlap`; `WorldStatic`/`WorldDynamic` remain
@@ -814,44 +1104,43 @@ turtle and snail shell.
 
 ## 10. Build order
 
-**Current position (26 Oct 2026): steps 0 and 1 are done; step 2 is in progress
-at 6/13 functions.** The platform/patrol functions are built and all 14
-aggro/rescue variables are now in with the documented defaults. Two variable
-names still need correcting (see step 3); after that the aggro set is the next
-task.
+**Current position (7 Nov 2026): steps 0–2 are code-complete; step 2's remaining
+gate is PIE.** The base has all 13/13 AI functions and 25/25 §4 variables with
+the documented defaults (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
+and acquire/keep changes are in `UpdateAggro` (61 nodes, one connected piece;
+`_run_aggro_keep_check.py` asserts all eleven links and the five
+`FunctionEntry` wires). `_verify_enemy_base.py` currently reports **43 PASS |
+3 FAIL | 0 PENDING**; the three FAILs name `InitEnemy`, `AnyDamage` and `Die`,
+which this work never touched — see the open note in `EnemyWorkPlan.md`. The
+Snail's aggro CDO is set (`ChaseSpeed=250`, zero box, `bAggroOnHit=true`); its
+health/movement/flipbook defaults remain. The next task is PIE tests 1–9 and the `M1 GREEN` line.
 Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
-`WoodLog` aggro) until the shared `PatrolStep` + `LedgeAhead` loop works on a
-`BP_Rock1` or `BP_Snail`. Stationary/flyer children (`SpikeTurtle`, `Ghost`,
-`Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be built in
-parallel because they do not read the walker AI. See
+`WoodLog` aggro) until that line exists. Stationary/flyer children (`SpikeTurtle`,
+`Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be
+built in parallel because they do not read the walker AI. See
 `Docs/EnemyWorkPlan.md` for the owner split and M1 gate.
 
 0. **DONE — contact fix.** `ContactBox` is compiled and the
-   `On Component Begin Overlap` chain is verified: **44 PASS / 0 FAIL**.
+   `On Component Begin Overlap` chain is verified: **45 PASS / 0 FAIL**.
    Re-run `py -3 Scripts\_verify_enemy_base.py` if the base is edited.
 1. **DONE — `BP_EnemyPlatform` marker + auto-placement.** Seven auto zones
    exist in `L_Level_01`. `bEnable` was renamed to `bEnabled` on 24 Oct 2026;
    live check: `bEnabled=true`, `Zone` is a `BoxComponent`
    (`extent 50,50,20`, `NoCollision`, hidden), `PatrolInset=80`.
-2. **IN PROGRESS — `BP_EnemyBase` AI core (6/13 functions).** The first six
-   platform/patrol functions are built; all 14 aggro/rescue variables are in.
-   Continue in this order so each step is testable on its own:
+2. **DONE — `BP_EnemyBase` AI core (13/13 functions).** All platform/patrol,
+   aggro/chase and rescue functions are built; all 25 §4 variables are in with
+   the documented defaults. The aggro-on-hit `BooleanOR` is wired and verified.
    1. **DONE** — `PointInPlatformZone`, `PointInPlatformXZ`,
       `FindHomePlatform`, `AdoptPlatform` (home ownership).
    2. **DONE** — `LedgeAhead`, `PatrolStep` (edge-safe patrol).
-   3. **NEXT** — variables are in. Rename `AggroHalfheight` ->
-      `AggroHalfHeight` and `bRequiredAggroLineOfSight` ->
-      `bRequireAggroLineOfSight`, re-run `Scripts\_check_enemy_ai_vars.py`
-      (**24 PASS / 0 FAIL** expected), then build `IsPlayerOnHomePlatform`
-      (`Scripts\_is_player_on_home_platform_graph.html` is the design page),
-      `IsPlayerInAggroBox`, `ChaseStep`, `UpdateAggro` (rectangle + de-aggro).
-   4. **NEXT AFTER 3** — the rescue variables already exist; build
-      `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue` (landing,
-      stranded, stairs).
-   5. Wire `BeginPlay` → `FindHomePlatform`, `Event On Landed` →
-      `ResolveKnockback`, `Tick` → the state loop, and set `bWasKnockedBack` in
-      `AnyDamage` before `LaunchCharacter`. `InitEnemy` already calls
-      `FindHomePlatform`; do not add a second BeginPlay call.
+   3. **DONE** — `IsPlayerOnHomePlatform`, `IsPlayerInAggroBox`, `ChaseStep`,
+      `UpdateAggro` (rectangle + de-aggro + post-hit window).
+   4. **DONE** — `ResolveKnockback`, `MeasurePlatformWidth`, `TryRescue`
+      (landing, stranded, stairs).
+   5. **DONE** — `BeginPlay` → `FindHomePlatform`, `Event On Landed` →
+      `ResolveKnockback`, `Tick` → the state loop, and `bWasKnockedBack` is set
+      in `AnyDamage` before `LaunchCharacter`.
+   **NEXT** — run PIE tests 1–9 and post `M1 GREEN`.
 3. **`BP_EnemyProjectile` → `BP_ToxicPuddle` → `BP_ShooterEnemyBase`** — the
    pending work from `Enemies.md` §7.1; projectile/puddle kill is independent of
    the AI rework.
@@ -899,7 +1188,7 @@ parallel because they do not read the walker AI. See
 - **The player has no health.** Contact/projectile/puddle all call `Kill`.
 - **Contact overlap is fixed (24 Oct 2026).** `BP_EnemyBase` has a compiled
   `ContactBox` (`QueryOnly`, `Pawn = Overlap`, everything else `Ignore`) and the
-  component-overlap chain. `Scripts\_verify_enemy_base.py` reports **44 PASS /
+  component-overlap chain. `Scripts\_verify_enemy_base.py` reports **45 PASS /
   0 FAIL**; keep that chain intact while adding the AI nodes.
 - **All numbers are starting points.** PIE-tune after the first placement.
 

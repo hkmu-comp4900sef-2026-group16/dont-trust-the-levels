@@ -166,7 +166,7 @@ an active spike can be walked through without a special enemy state.
 > **Contact damage (fixed 25 Oct 2026).** `BP_EnemyBase` has a `ContactBox`
 > (`Pawn=Overlap`, all else `Ignore`) bound to the contact chain, and
 > `CollisionCylinder` is now `Pawn = Overlap`, so the player cannot stand on the
-> enemy and the box catches the fall. Verified **44 PASS / 0 FAIL** for the
+> enemy and the box catches the fall. Verified **45 PASS / 0 FAIL** for the
 > contact chain and **4 PASS / 0 FAIL** for the four enemy classes. See
 > `EnemyAI.md` §9.
 
@@ -208,7 +208,7 @@ it does not add a Behavior Tree or any AI logic.
 | `bDealContactDamage` | Boolean | `true` | contact hazards on/off |
 | `ContactDamageCooldown` | Float | `0.50` | prevents overlap spam |
 | `LastContactDamageTime` | Float | `-1000.0` | cooldown stamp |
-| `KnockbackForce` | Float | `200.0` | hit reaction |
+| `KnockbackForce` | Float | `1200.0` | hit reaction (retuned from `200` on 7 Nov 2026, §4.2) |
 | `HitRecoveryTime` | Float | `0.20` | hit flipbook return |
 | `IdleFlipbook` | Paper Flipbook | child | base state |
 | `HitFlipbook` | Paper Flipbook | child | damage reaction |
@@ -294,17 +294,71 @@ Event AnyDamage (Damage, DamageType, InstigatedBy, DamageCauser)
           False → optional LaunchCharacter knockback
 ```
 
+`LastDamageTime` has two readers: the i-frame bookkeeping here and, when
+`bAggroOnHit` is true, the base `UpdateAggro` hit window (`EnemyAI.md` §6.2).
+The stamp only happens after the gate above, so a hit swallowed by i-frames
+does not wake a sleeping walker.
+
 Knockback (optional, but it sells the hit):
 
 ```text
 Get Actor Location (DamageCauser) → Break Vector
 Get Actor Location (Self)         → Break Vector
-Sign(Self.X - Causer.X) → Multiply(KnockbackForce) → LaunchCharacter(X, 0, 0,
-                                                        bXYOverride = true,
-                                                        bZOverride = false)
+Sign(Self.X - Causer.X) → Multiply(KnockbackForce) ──┐
+KnockbackForce → Multiply(0.4)  → Z ─────────────────┴→ Make Vector(X, 0, Z)
+                                                       → Launch Character(
+                                                             bXYOverride = true,
+                                                             bZOverride  = true)
 ```
 
 If `DamageCauser` is not valid, use `-Facing * KnockbackForce`.
+
+> **The `Z` term is the knockback** (7 Nov 2026 retune). A purely horizontal
+> `(F, 0, 0)` vector moves a grounded walker about **15 uu**, however large `F`
+> is: `Launch()` stores the vector, `bForceNextFloorCheck` re-grounds the victim
+> on the next move (`Vz = 0`), and `ApplyVelocityBraking` strips everything above
+> `GetMaxSpeed()` = `MaxWalkSpeed` — written as `MoveSpeed` a few nodes earlier —
+> at `GroundFriction^2 * BrakingDecelerationWalking` = `8^2 * 2048` =
+> 131072 uu/s². Only the `GroundFriction` (8) decay is left, `~v/8` uu. The
+> vertical component keeps the victim in `MOVE_Falling`, where ground friction
+> does not apply and `bWasKnockedBack` skips the AI Tick, for
+>
+> ```text
+> t_air = 2 * Lift / (980 * GravityScale)       enemies run GravityScale = 3
+> shove = KnockbackForce * t_air = F^2 / 3675    when Lift = 0.4 * F
+> ```
+>
+> `F = 200` (the old default) gave `Lift 80`, `t_air 0.054 s`, `~11 uu`.
+> `F = 1200` (live since 7 Nov 2026) gives `Lift 480`, `t_air 0.327 s`,
+> **`~392 uu`** plus the ~15 uu ground slide — roughly half of a `600`-wide
+> platform, with a `39 uu` hop. Tune `KnockbackForce` per enemy weight; keep the
+> `0.4` factor. The lift is a **multiple of** `KnockbackForce`, so `BP_Bat`
+> (`KnockbackForce = 0`) still sends a zero vector and keeps
+> `MOVE_Flying`/`MaxFlySpeed`.
+>
+> **Status (7 Nov 2026):** both halves are live. `KnockbackForce = 1200` is saved
+> in `BP_EnemyBase.uasset`, and the `MakeVector.Z` link
+> (`KnockbackForce → Multiply(0.4) → Z`, pasted from
+> `Scripts/_bp_enemy_base_knockback_lift_paste.txt`, compiled and saved) is in the
+> asset: `py -3 Scripts/_run_knockback_lift_check.py` prints `RESULT: PASS` with
+> `lift=480 uu air=0.327 s shove=392 uu`. What is left is the *feel* check in PIE
+> (tests 7 and 8), not the wiring.
+
+> **`bZOverride` must be `true`** (corrected 7 Nov 2026). With `false`,
+> `LaunchCharacter` adds the victim's *current* Z velocity to the authored
+> `(Force, 0, 0)` vector, so `KnockbackForce = 0` still sends a **non-zero**
+> `PendingLaunchVelocity` whenever the victim is moving vertically.
+> `UCharacterMovementComponent::Launch` stores it, and the next
+> `PerformMovement` calls `HandlePendingLaunch()`, which runs
+> `SetMovementMode(MOVE_Falling)`. Grounded walkers have `Vz ≈ 0`, so their
+> knockback is unchanged; a flyer loses `MOVE_Flying`. `GetMaxSpeed()` then
+> returns `MaxWalkSpeed` — which this same handler writes as `MoveSpeed` — and
+> `GetFallingLateralAcceleration()` keeps only X/Y and scales by `AirControl`
+> (0.05). That is the "Bat crawls after a hit" bug. With `bZOverride = true` a
+> zero force produces a zero vector, `HandlePendingLaunch()` returns early and
+> the flyer keeps `MOVE_Flying` / `MaxFlySpeed`. The live pin is `true` since
+> 7 Nov 2026; if it is ever reverted, every flying child needs its own guard
+> (`Enemies.md` §6.8, Option B).
 
 > `ApplyPointDamage` from `BP_Projectile` raises **both** `AnyDamage` and
 > `PointDamage`. Bind only **AnyDamage** here; binding both would subtract twice.
@@ -538,6 +592,14 @@ same-platform check. It stops to shoot, fires only horizontally
 (`Direction=(Facing,0,0)`, fixed muzzle Z), and resumes patrol when the player
 leaves or becomes unreachable. `TryFire` is gated by `bAggro`. See
 `EnemyAI.md` §6 and §8.9. A jumping player can dodge the shot by design.
+`bAggroOnHit=true` (A2 flips the CDO) matters here: the log **stops and shoots**
+rather than chases (`ChaseStep` override in §8.9), so a hit from outside the
+rectangle turns it on the player without moving it. The flag needs
+`ChaseSpeed > 0`, because the base `UpdateAggro` returns to `PatrolStep` before
+the box test when `ChaseSpeed <= 0`.
+**Status (5 Nov 2026):** `bAggroOnHit=true` is live on `BP_WoodLog` and verified
+by readback; it buys aim, not movement, because the child `ChaseStep` stands
+still.
 
 `BP_PeaPlant`: no patrol; `bCanMove=false`; `RefreshStateFlipbook` always
 `FLB_Plant_Idle`. It is unused in the current build.
@@ -580,6 +642,18 @@ Stationary/flyers (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) set
 `ChaseSpeed=0` for Turtle/Ghost/Skull; Bat inherits `ChaseSpeed=1000` because
 that value is also its `MaxFlySpeed`. `ChaseSpeed=0` also means "no detection"
 for Snail and Slime. See `EnemyAI.md` §4.3.
+
+**Gun-aggro set (5 Nov 2026):** only enemies the player's gun can damage are
+eligible to be woken by a hit: `BP_Rock1/2/3`, `BP_Snail`, `BP_WoodLog` and
+`BP_Bat`. The three walkers use `bAggroOnHit=true`; the base hit term deliberately
+skips `IsPlayerOnHomePlatform()` and the Z gate, so a shot from another platform
+still makes them walk toward the player's X and stop at the ledge (the closest
+safe spot on their platform). `BP_Bat` is the flying exception and needs its own
+hit branch because it replaces the base walker Tick; `bAggroOnHit` alone is a
+no-op there (`EnemyAI.md` §8.8). `BP_Rhino` (bullets no-op), `BP_Ghost`
+(intangible/invulnerable until its sphere trigger), `BP_SpikeTurtle`
+(invulnerable), and `BP_FloatingSkull` (no chase) cannot be gun-aggroed;
+`BP_ToxicSlime` cannot be aggroed at all (`ChaseSpeed=0`).
 
 **Do not duplicate inherited variables.** `bAggro`, `AggroRadius`, `ChaseSpeed`,
 `MoveSpeed`, `KnockbackForce`, `Facing`, the health/contact variables and
@@ -671,19 +745,39 @@ component broadcasting a finish delegate.
 | `RockTier` | `1` | `2` | `3` |
 | `ChildRockClass` | `BP_Rock2` | `BP_Rock3` | `None` |
 | `bCanSplit` | `true` | `true` | `false` |
+| `bAggroOnHit` | `true` | `true` | `true` |
 | `IdleFlipbook` | `FLB_Rock1_Idle` | `FLB_Rock2_Idle` | `FLB_Rock3_Idle` |
 | `HitFlipbook` | `FLB_Rock1_Hit` | `FLB_Rock2_Hit` | `FLB_Rock3_Hit` |
 | `DeathFlipbook` | `FLB_Rock1_Hit` | `FLB_Rock2_Hit` | `FLB_Rock3_Hit` |
 
-**Movement (21 Oct 2026 revision):** patrol with the platform/ledge guard
-(`EnemyAI.md` §5); do **not** copy the turtle — it is now stationary. Rocks have
-**detection**: a horizontal rectangle (`AggroHalfWidth=700`,
-`AggroHalfHeight=500`), same-platform/reachability gate, and `DeAggroTime=2.0`.
-They chase horizontally on their own platform, stop at ledges, and return to
+**Movement (21 Oct 2026 revision, keep-term 7 Nov):** patrol with the
+platform/ledge guard (`EnemyAI.md` §5); do **not** copy the turtle — it is now
+stationary. Rocks have **detection**: a horizontal rectangle
+(`AggroHalfWidth=700`, `AggroHalfHeight=500`), a same-platform gate, and
+`DeAggroTime=2.0`. The rectangle is **acquire-only**: once a rock is chasing,
+only the platform + `MaxChaseStepZ` check (the `Keep` term, `EnemyAI.md` §6.2)
+starts the de-aggro clock, so running along the platform no longer makes it give
+up. They chase horizontally on their own platform, stop at ledges, and return to
 patrol when the player leaves or becomes unreachable. Each tier keeps its own
 `MoveSpeed`/`ChaseSpeed`. `RefreshStateFlipbook` chooses `FLB_RockN_Run` when
 `Abs(GetVelocity.X) > 10`, else `FLB_RockN_Idle`. Split pieces run the same
 `Landed`/platform adoption as the parent.
+
+`bAggroOnHit=true` on all three tiers (A2 flips the CDOs): a rock that is shot
+chases for `DeAggroTime` even when the player is outside the rectangle, so a
+tier-1 hit does not immediately lose the player. It costs one checkbox per
+asset and adds no nodes — the base graph reads the flag.
+**Status (5 Nov 2026):** live on all three CDOs and verified by readback from the
+saved class default objects.
+
+**Status (7 Nov 2026):** the acquire/keep split that keeps a rock chasing past
+its own rectangle ships as a whole-graph paste,
+`Scripts/_bp_enemy_base_updateaggro_full_paste.txt` (`EnemyAI.md` §6.2) — the
+seven nodes are already in the asset, but UE's paste cannot link them to the
+nodes that were there before it, so six wires are still empty. Until it is
+applied, a rock that chases a player who runs further than `700` uu along the
+same platform still drops aggro after `DeAggroTime`; afterwards,
+`Scripts/_run_aggro_keep_check.py` must print `RESULT: PASS`.
 
 **`Die` override**
 
@@ -734,13 +828,30 @@ cannot be killed.
 | `ShellTopHitFlipbook` | Paper Flipbook | `FLB_Snail_ShellTopHit` |
 | `WithoutShellFlipbook` | Paper Flipbook | `FLB_Snail_WithoutShell` |
 
-**Defaults:** `ChaseSpeed=0`, `MaxHealth=2`, `MoveSpeed=50`, `ContactDamage=1`,
+**Defaults:** `ChaseSpeed=250`, `AggroHalfWidth=0`, `AggroHalfHeight=0`,
+`bAggroOnHit=true`, `MaxHealth=2`, `MoveSpeed=50`, `ContactDamage=1`,
 `IdleFlipbook=FLB_Snail_Idle`, `HitFlipbook=FLB_Snail_Hit`,
-`DeathFlipbook=FLB_Snail_Hit`.
+`DeathFlipbook=FLB_Snail_Hit`. The zero box is the point: the snail never
+detects on its own, and `bAggroOnHit` gives it the `DeAggroTime` hit window
+(`EnemyAI.md` §6.2) so a player who shoots it once has to deal with it. Leaving
+`ChaseSpeed=0` would make it deaf to hits as well.
+
+**Status (7 Nov 2026):** the four aggro overrides are live on `BP_Snail`
+(`ChaseSpeed=250`, both aggro halves `0`, `bAggroOnHit=true`). `ChaseSpeed` was
+`80` until the 7 Nov retune: the chase branch of `UpdateAggro` writes
+`MaxWalkSpeed = ChaseSpeed`, and `80` uu/s against the player's `1000` uu/s read
+as standing still, so a woken snail never reached the player. `250` is still
+escapable and is faster than the base walker `150` — exactly one knob to revisit
+if it feels too quick. **No proximity aggro was added on purpose:** the zero
+box means the snail ignores a player standing in front of it until it is shot.
+The remaining defaults above (`MaxHealth=2`, `MoveSpeed=50`, the snail
+flipbooks) are still inherited base values and remain A1b work; the PIE test can
+run on the aggro flip alone.
 
 **Normal state (21 Oct 2026 revision):** patrol left/right with
 `Add Movement Input` and the platform/ledge guard (`EnemyAI.md` §5). No
-detection and no chase. `Event Hit` on a wall reverses `Facing`;
+detection box and no chase of its own; a hit opens the `DeAggroTime` window.
+`Event Hit` on a wall reverses `Facing`;
 `RefreshStateFlipbook` uses `FLB_Snail_Walk` when moving, otherwise
 `FLB_Snail_Idle`. The shell also uses the ledge guard: it sweeps its platform
 and never walks off an edge.
@@ -1094,16 +1205,54 @@ and floors**. No de-aggro once triggered.
 **Defaults:** `bCanMove=false`, `ChaseSpeed=1000`, `TriggerRadius=1000`,
 `KnockbackForce=0`, `MaxHealth=2`, `ContactDamage=1`, `HitFlipbook=FLB_Bat_Hit`,
 `DeathFlipbook=FLB_Bat_Hit`. The zero knockback keeps a hit from launching the
-flying Bat along the ceiling. Aggro is still driven by the Tick distance check:
-a hit by itself does **not** set `bTriggered`; the player must be inside
-`TriggerRadius` when the Bat ticks. `ChaseSpeed` is inherited from
-`BP_EnemyBase`; do not add it again.
+flying Bat along the ceiling. `bAggroOnHit` is a walker-only flag: the Bat's own
+Tick replaces the base walker loop, so the base flag is never read. The Bat needs
+the Bat-specific hit branch in `RefreshStateFlipbook`: on a valid hit
+(`bWasKnockedBack`), clear the flag, set `bTriggered`, `bChasing` and
+`bDealContactDamage`, then call the parent so the Flying flipbook is selected.
+`ChaseSpeed` is inherited from `BP_EnemyBase`; do not add it again.
+
+**Status (5 Nov 2026 — three playtest bugs):** all three are verified fixed
+in PIE. The live `RefreshStateFlipbook` contains the 13-node hit branch
+from `Scripts/_bp_bat_hit_aggro_only.txt` (Entry → `IfThenElse_1`; true sets the
+four flags, false joins the parent), plus a manual `Set MaxFlySpeed =
+ChaseSpeed` node in the true path before the parent call. The EventGraph
+`HangIdle` custom event is gated on `bTriggered`. The full 17-node replacement
+remains staged in `Scripts/_bp_bat_refresh_modified_v2.txt` for a clean
+re-paste; it also contains the hit-path `K2_ClearTimer("HangIdle")`. The three
+bugs were distinct:
+
+1. **No aggro after a hit** — without that Entry → branch wire the whole hit
+   branch is dead, so a shot from outside `TriggerRadius=1000` leaves the Bat
+   hanging.
+2. **Slow chase after a hit** — setting `bChasing=true` alone does not change
+   `CharacterMovement.MaxFlySpeed`; it stays at the flying default `400` until
+   `StartChase` runs. A hit before the normal trigger path therefore chases at
+   `400`, not `1000`. The hit chain now writes
+   `MaxFlySpeed = ChaseSpeed` at its end (plus the
+   `CharacterMovement`/`ChaseSpeed` getters); `MaxAcceleration=8192` makes
+   the change immediate.
+3. **Idle animation while chasing** — the `BeginPlay` `HangIdle` timer is `0.6 s`
+   while the normal `StartChase` timer is `0.5 s`. If the player enters the
+   sphere very soon after BeginPlay (or a hit fires the hit branch), the
+   `HangIdle` callback can land **after** `StartChase` and overwrite
+   `FLB_Bat_Flying` with `FLB_Bat_Hanging`. **Applied fix:** the live
+   EventGraph `HangIdle` custom event is gated on `bTriggered` (optionally
+   `bTriggered OR bIsDead`) and returns without playing the hanging flipbook
+   once the Bat has been triggered. This fixes both the normal and hit paths
+   without relying on timer ordering. Alternative: call
+   `K2_ClearTimer("HangIdle")` on the hit chain and shorten the `BeginPlay`
+   timer to `0.3 s`. Do not remove the timer: it is what starts the hanging
+   idle loop.
 
 **BeginPlay:** `InitEnemy`; `Set bDealContactDamage=false`;
 `PlayStateFlipbook(CeilingInFlipbook,false)`;
 `Set Timer by Function Name("HangIdle", 0.6, false)`.
 
-`HangIdle` → `PlayStateFlipbook(HangingFlipbook,true)`.
+`HangIdle` → Branch `bTriggered` (live; optionally `bTriggered OR
+bIsDead`); false → `PlayStateFlipbook(HangingFlipbook,true)`; true → return.
+The older alternative keeps the unconditional play and relies on the `0.3 s`
+timer plus `K2_ClearTimer("HangIdle")` on the hit chain.
 
 **`Event Tick` — trigger**
 
@@ -1145,6 +1294,59 @@ the Bat reach that speed immediately instead of drifting slowly after a hit.
 The bat is a normal health enemy: `AnyDamage` / `Kill` from the base. Contact
 damage is enabled only after the trigger, so a hanging bat is safe to touch.
 
+**Status (7 Nov 2026 — "still slows / turns invisible after a hit"):** the saved
+`BP_Bat` itself is intact — a headless T3D export shows the 17-node
+`RefreshStateFlipbook` (`bWasKnockedBack` → clear + `bTriggered`/`bChasing`/
+`bDealContactDamage` → `MaxFlySpeed = ChaseSpeed` → parent), the EventGraph
+`HangIdle` gate on `bTriggered OR bIsDead`, and the live CDO still has
+`ChaseSpeed=1000`, `KnockbackForce=0`, `TriggerRadius=1000`. The playtest
+symptoms are explained by the **Level 1 instance**: it was placed at `Y=-100`,
+while the terrain (`TM_Background`, `collision_thickness=200`, BlockAll) and
+every other character are on `Y=0`. Its sprite therefore rendered behind the
+terrain plane (hidden under floor/wall tiles) and its capsule sat ~70 uu inside
+the collision slab, so collision resolution could stop it (looks slow) or push
+it behind a wall while it kept chasing. The instance is now at `Y=0`. Keep
+flyers on the terrain plane — see `EnemyPlacement.md` §2.
+
+**Status (7 Nov 2026 — second pass, "still slow after a hit", FIXED):** the `Y`
+fix only removed the *invisible* half. The remaining slowdown was the **shared
+knockback**. `BP_EnemyBase.Event AnyDamage` called
+`LaunchCharacter((±KnockbackForce, 0, 0), bXYOverride=true, bZOverride=false)`.
+Because `bZOverride=false` carries the Bat's own vertical velocity, the launch
+vector is **not** zero even though `KnockbackForce=0`; `Launch()` stores it and
+`HandlePendingLaunch()` calls `SetMovementMode(MOVE_Falling)`. In `Falling`,
+`GetMaxSpeed()` returns `MaxWalkSpeed`, which the same handler just wrote as
+`MoveSpeed` (`100`), and lateral input is scaled by `AirControl` (`0.05`) and
+loses Z. The Bat therefore crawls at ≤100 uu/s towards the player until it
+lands and then keeps walking at `MaxWalkSpeed=100`; `MaxFlySpeed=1000` never
+applies while it is not in `MOVE_Flying`. This also explains the intermittency:
+a hit with `Vz ≈ 0` (Bat exactly level with the player) leaves the mode alone.
+`BP_Bat` is the only enemy with `KnockbackForce=0` (every other CDO was `200`
+when this was diagnosed; retuned to `1200` later the same day — §4.2), so the
+base pin change is a Bat-only behaviour change in practice.
+
+Two fixes exist, either one is enough, and `Scripts/_check_bat_hit_knockback.py`
+reports PASS on either and FAIL when neither is in the asset:
+
+1. **Root cause (`BP_EnemyBase`, A1) — APPLIED 7 Nov 2026:** `LaunchCharacter →
+   Z Override` = `true`. Live export: `K2Node_CallFunction_28`,
+   `bZOverride='true'`; checker `RESULT: PASS (A: bZOverride=true)`;
+   `_verify_enemy_base.py` still `45 PASS / 0 FAIL`. A zero
+   `KnockbackForce` now sends a zero vector and `HandlePendingLaunch()`
+   returns early. Walkers keep their knockback: their arc comes from the
+   authored `MakeVector.Z` lift (`KnockbackForce × 0.4`, §4.2) rather than from
+   the `Vz ≈ 0` they used to inherit, so the pin flip and the retune agree.
+2. **Bat only (A2) — not needed now:** `BP_Bat` Event Graph,
+   `ReceiveTick → Set Movement Mode (Flying) → Bat Tick Logic`. The pre-wired
+   node is in `Scripts/_bp_bat_flying_guard_paste.txt` (paste it into the Event
+   Graph). The Bat re-asserts its shell mode every frame; `SetMovementMode`
+   early-outs when the mode is unchanged, so the cost is one enum compare. This
+   also covers a future non-zero knockback or any other `LaunchCharacter` on the
+   Bat.
+
+The `RefreshStateFlipbook` hit branch (`MaxFlySpeed = ChaseSpeed`) is necessary
+but not sufficient — it fixes the *cap*, not the movement mode.
+
 ---
 
 ## 7. Build order, verification, test matrix
@@ -1172,7 +1374,7 @@ damage is enabled only after the trigger, so a hanging bat is safe to touch.
     generate overlaps), its `On Component Begin Overlap` is bound to the
     contact chain, and `CollisionCylinder` is now `Pawn=Overlap` on all four
     classes so the player cannot stand on the enemy. The verifiers report
-    **44 PASS / 0 FAIL** and **4 PASS / 0 FAIL**. See `EnemyAI.md` §9.
+    **45 PASS / 0 FAIL** and **4 PASS / 0 FAIL**. See `EnemyAI.md` §9.
 0b. **DONE — `BP_EnemyPlatform`** — box marker (no collision, hidden in game);
     seven auto zones exist in `L_Level_01`. The boolean is `bEnabled=true`; the
     old `bEnable` name is gone (live check 24 Oct 2026: `Zone` extent
@@ -1188,7 +1390,7 @@ damage is enabled only after the trigger, so a hanging bat is safe to touch.
    `py -3 Scripts\_verify_enemy_base.py` checks this whole block from a fresh
    T3D + live CDO + a transient spawned instance. It now also verifies the
    compiled `ContactBox` and its `On Component Begin Overlap` chain. Expected
-   once the box's non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 0
+   once the box's non-Pawn responses are `Ignore`: **45 PASS / 0 FAIL / 0
    PENDING**.
 2. **`BP_EnemyProjectile`** — add `SphereCollision` + `ProjectileMovement`;
    add `InitProjectile`, `BeginPlay`, `On Component Hit`. Compile + save the
@@ -1236,7 +1438,9 @@ instance for SCS components, and checks every §3.2 variable (type/default),
 §3.3 function signature, `Kill` event binding, the §4 event/helper graphs, and
 the `ContactBox` collision setup. `PENDING` means not built yet; `FAIL` means
 present but mis-wired. Expected baseline once `ContactBox` is compiled and its
-non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 0 PENDING**.
+non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
+`UpdateAggro` acquire/keep paste lands (`EnemyAI.md` §6.2), then **46 PASS /
+0 FAIL / 0 PENDING**.
 
 ---
 
@@ -1250,6 +1454,7 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 0 PENDING**.
 | Any walker | Player on platform above/below | no aggro; no chase |
 | Any walker | Player jumps over it on the same platform | walker turns, does not jump or step off |
 | Any walker | Player drops to a lower platform | walker stops at the edge; after `DeAggroTime` resumes patrol |
+| Any walker | Player runs along the same platform, past `AggroHalfWidth` | keeps chasing, `UnreachableTime` stays `0`; only leaving the platform starts the clock (`EnemyAI.md` §6.2) |
 | Any walker | Player returns to its platform | walker re-aggros and chases |
 | Any walker | Shoot it off the platform | lands on the lower broad platform and adopts it as home |
 | Any walker | Knock it into a stair step | `Stranded` idle; drops to nearest lower `BP_EnemyPlatform` if one exists; otherwise stays put |
@@ -1315,7 +1520,7 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 0 PENDING**.
   generate overlaps) and its `On Component Begin Overlap` is bound to the
   contact chain. `CollisionCylinder` is now `Pawn=Overlap` on all four classes,
   so the player falls through the enemy and cannot stand on it; `WorldStatic` /
-  `WorldDynamic` remain `Block`. The verifiers hold 44 PASS / 0 FAIL and
+  `WorldDynamic` remain `Block`. The verifiers hold 45 PASS / 0 FAIL and
   4 PASS / 0 FAIL. See `EnemyAI.md` §9.
 - **Player has no health.** Contact and projectiles call `Kill`; add health to
   `BP_Player` later if you want multi-hit damage. `ContactDamage` is `1.0`
