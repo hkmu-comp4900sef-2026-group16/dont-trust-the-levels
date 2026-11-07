@@ -1,7 +1,7 @@
 # Enemy AI — platforms, patrol, detection, aggro and stairs
 
-**Status (7 Nov 2026): shared base AI complete; both `Is Flying` guards are in;
-PIE pending for the flyers.**
+**Status (7 Nov 2026): shared base AI complete; both `Is Flying` guards are in and
+PIE-confirmed — in `L_Level_01` a flyer is no longer pulled back to a zone.**
 `BP_EnemyBase` has its shared health/damage/death graph, the `ContactBox`
 contact fix, and the full AI core. All **13/13** functions and **25/25**
 §4 variables exist with the documented defaults
@@ -786,7 +786,8 @@ the tile it was placed on (measured in `L_Level_01`).
 The agreed shape of the fix — **implemented in `BP_EnemyBase.uasset` on 7 Nov
 2026**. All six items are live: a walker has been rescued end to end in PIE
 (rock on a zone-less floor -> `Auto_00` -> pacing), and both flyer guards are in
-the asset (`52 PASS | 0 FAIL | 0 PENDING`), waiting on the flyer PIE pass:
+the asset (`52 PASS | 0 FAIL | 0 PENDING`) and confirmed in PIE — a flyer is no
+longer pulled back to a platform:
 
 1. `ResolveKnockback`: the `IsValid(HomePlatform) == false` branch goes **straight
    to the stranded chain** (`bStranded`, `bCanMove = false`, idle,
@@ -942,11 +943,11 @@ roster (it stops working at half height >= 120, e.g. a 240-uu-tall capsule). If 
 walker teleports onto a zone and then stands there with `bCanMove = false`, that
 is `drop <= 0` — no `Landed`, so no re-adopt — and the knob is that literal.
 Walkers were proven in PIE first, then the `Is Flying` guards of items 4 and 6
-went in — in that order, so a flyer guard can never hide a walker defect. The two
-guards are now structural PASSes; what is left is the flyer PIE pass (a
-`BP_Bat` / `BP_Ghost` / `BP_FloatingSkull` in `L_Level_01` must never move when
-it drifts near a zone, and `_run_probe_rescue.py` must print `flyer -> Is Flying
-gates the rescue` for it).
+went in — in that order, so a flyer guard can never hide a walker defect. Both
+guards are structural PASSes in the verifier and were confirmed in PIE on
+7 Nov 2026: `BP_Bat`, `BP_Ghost` and `BP_FloatingSkull` in `L_Level_01` are never
+sent back to a zone origin. `_run_probe_rescue.py` prints `flyer -> Is Flying
+gates the rescue` for them, which is the same statement made statically.
 
 `RescueRadius` is `2000` since 7 Nov 2026 (`500` before): `TryRescue` measures XZ
 distance from the actor origin, and the level is ~4000 uu wide, so 500 only ever
@@ -973,18 +974,18 @@ the enemy becomes `Stranded`, stops, and idles instead of pacing a 100 uu box.
 ```text
 Branch: bIsDead -> return
 Branch: Is Valid(HomePlatform) -> return   # §7.2 item 2
-Branch: Is Flying -> return     # <-- still to paste (7 Nov 2026): flyers never
-                                # adopt a HomePlatform, so they must never be
-                                # teleported (§7.2 item 4). The same guard is
-                                # still missing in FindHomePlatform (§7.2 item 6)
+Branch: Is Flying -> return     # §7.2 item 4 — in the asset since 7 Nov 2026:
+                                # flyers never adopt a HomePlatform, so they must
+                                # never be teleported. FindHomePlatform carries
+                                # the same guard (§7.2 item 6)
 Get All Actors of Class (BP_EnemyPlatform)
 ForEach:
   Branch: Platform.bEnabled
   Branch: 2D distance(Self, Platform) <= RescueRadius
   Branch: Delta.Z < 50           # Delta = Platform.Location - Self.Location
                                  # same as Platform.Z < Self.Z + 50
-  Set Candidate = Array Element  # <-- REQUIRED, still unwired 7 Nov 2026
-  Set BestDistance = Distance    # (unlinked Candidate = every rescue no-ops)
+  Set Candidate = Array Element  # §7.2 item 5 — wired 7 Nov 2026
+  Set BestDistance = Distance    # (before item 5 the unlinked pin made every rescue a no-op)
 Branch: Candidate valid
   True  -> SetActorLocation(Candidate.Location + (0,0,120),
                             bSweep=false, bTeleport=true)
@@ -1309,10 +1310,10 @@ and acquire/keep changes are in `UpdateAggro` (61 nodes, one connected piece;
 the `InitEnemy`/`AnyDamage`/`Die` FAILs quoted here until 7 Nov 2026 were a
 composite blind spot inside the verifier's own `exec_edges()`, and the
 `FindHomePlatform` PENDING that survived the guard was a display-name lookup in
-the same file (§7.2). The
-Snail's aggro CDO is set (`ChaseSpeed=250`, zero box, `bAggroOnHit=true`); its
-health/movement/flipbook defaults remain. The next task is PIE tests 1–9, the
-flyer pass, and the `M1 GREEN` line.
+the same file (§7.2). The Snail's aggro CDO is set (`ChaseSpeed=250`, zero box,
+`bAggroOnHit=true`); its health/movement/flipbook defaults remain. Both flyer
+guards are PIE-confirmed as well — no flyer is pulled back to a zone — so the
+next task is PIE tests 1–9 and the `M1 GREEN` line.
 Test 9a — the zone-less walker rescue — **passed on 7 Nov 2026**; the rest of 1–9
 still needs a run.
 Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
@@ -1367,7 +1368,7 @@ built in parallel because they do not read the walker AI. See
 | 8 | Knock an enemy into a stair step | it becomes stranded, idles, then drops to the nearest zone if one exists |
 | 9 | No zone below a stair step | it stays stranded; it never jumps into a pit |
 | 9a | Placed walker on a zone-less floor (`BP_Rock1` at `(-1180, 0, 356)` in `L_Level_01`) | **PASS 7 Nov 2026** — snapped to `Auto_00` (1766 uu) within 0.5 s, dropped 14 uu, re-adopted, pacing |
-| 9b | `BP_Bat` / `BP_Ghost` / `BP_FloatingSkull` near a zone (flyers) | verifier **PASS 7 Nov 2026** (`TryRescue` + `FindHomePlatform` gate on `Is Flying`); PIE run pending — it must never snap and never adopt a zone |
+| 9b | `BP_Bat` / `BP_Ghost` / `BP_FloatingSkull` near a zone (flyers) | **PASS 7 Nov 2026** — verifier: `TryRescue` + `FindHomePlatform` both gate on `Is Flying`; PIE: no flyer was ever sent back to a zone origin |
 | 10 | Spike Turtle | stationary, no detection, bullets do nothing; `KillVolume` kills |
 | 11 | Rock | patrols/chases, splits, pieces adopt their landing platform |
 | 12 | Ghost before trigger | invisible, no collision, no contact, no chase |
