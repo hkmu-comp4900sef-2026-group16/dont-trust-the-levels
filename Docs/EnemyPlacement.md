@@ -582,7 +582,11 @@ bases/spawned effects, not level actors.
 - [ ] The enemy’s feet are on the floor; capsule is not intersecting geometry.
 - [ ] The enemy starts inside the zone and at least `EffectiveInset` from an end.
 - [ ] The platform has no zone on a stair step or narrow trim.
-- [ ] A lower/level zone is within `500` uu if knockback can drop the enemy.
+- [ ] A lower/level zone is within `RescueRadius` (`2000`) if knockback can drop
+      the enemy; `TryRescue` also accepts a zone at the same height (`Delta.Z < 50`).
+- [ ] A surface meant to hold a walker has its own zone: a walker with no home
+      platform is teleported to the nearest zone at spawn by the 0.5 s `TryRescue`
+      timer (`EnemyAI.md` §7.2 item 4), so an off-zone placement visibly jumps.
 - [ ] A `BP_KillVolume` covers any pit below.
 - [ ] No two zones overlap; no zone is on a moving platform.
 - [ ] Rhino has two solid blocking walls with vertical normals.

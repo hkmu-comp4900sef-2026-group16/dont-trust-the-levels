@@ -1303,9 +1303,10 @@ turtle and snail shell.
 
 ## 10. Build order
 
-**Current position (7 Nov 2026): steps 0–2 are code-complete; step 2's remaining
-gate is PIE.** The base has all 13/13 AI functions and 25/25 §4 variables with
-the documented defaults (`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
+**Current position (8 Nov 2026): steps 0–2 are code-complete and step 2's gate is
+green — `M1 GREEN` is posted (`EnemyWorkPlan.md` §10).** The base has all 13/13
+AI functions and 25/25 §4 variables with the documented defaults
+(`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
 and acquire/keep changes are in `UpdateAggro` (61 nodes, one connected piece;
 `_run_aggro_keep_check.py` asserts all eleven links and the five
 `FunctionEntry` wires). `_verify_enemy_base.py` currently reports **52 PASS |
@@ -1315,12 +1316,13 @@ composite blind spot inside the verifier's own `exec_edges()`, and the
 `FindHomePlatform` PENDING that survived the guard was a display-name lookup in
 the same file (§7.2). The Snail's aggro CDO is set (`ChaseSpeed=250`, zero box,
 `bAggroOnHit=true`); its health/movement/flipbook defaults remain. Both flyer
-guards are PIE-confirmed as well — no flyer is pulled back to a zone — so the
-next task is PIE tests 1–9 and the `M1 GREEN` line.
-Test 9a — the zone-less walker rescue — **passed on 7 Nov 2026**; the rest of 1–9
-still needs a run.
-Do not start a **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
-`WoodLog` aggro) until that line exists. Stationary/flyer children (`SpikeTurtle`,
+guards are PIE-confirmed as well — no flyer is pulled back to a zone. Tests 1–9
+ran on 8 Nov 2026: 1–7 passed in `L_Level_01`, 8 through the spawn variant of the
+rescue, 9 is N/A there (§11); `M1 GREEN` is posted.
+Test 9a — the zone-less walker rescue — **passed on 7 Nov 2026** and again from
+the spawn path on 8 Nov 2026.
+A **walker** child (`Snail`, `Rocks`, `Slime`, `Rhino`, final
+`WoodLog` aggro) may start now. Stationary/flyer children (`SpikeTurtle`,
 `Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/shooter support may be
 built in parallel because they do not read the walker AI. See
 `Docs/EnemyWorkPlan.md` for the owner split and M1 gate.
@@ -1345,7 +1347,8 @@ built in parallel because they do not read the walker AI. See
    5. **DONE** — `BeginPlay` → `FindHomePlatform`, `Event On Landed` →
       `ResolveKnockback`, `Tick` → the state loop, and `bWasKnockedBack` is set
       in `AnyDamage` before `LaunchCharacter`.
-   **NEXT** — run PIE tests 1–9 and post `M1 GREEN`.
+   **NEXT** — the walker gate is green (8 Nov 2026); the next A1 card is `A1b`
+   (`BP_Snail`).
 3. **`BP_EnemyProjectile` → `BP_ToxicPuddle` → `BP_ShooterEnemyBase`** — the
    pending work from `Enemies.md` §7.1; projectile/puddle kill is independent of
    the AI rework.
@@ -1368,8 +1371,8 @@ built in parallel because they do not read the walker AI. See
 | 5 | Player drops to a lower platform | walker **halts where it is** and faces the player — it does **not** walk to the ledge (§6.3 `False → bAggro`) — then patrols again from that spot after `DeAggroTime` — **PASS 8 Nov 2026** |
 | 6 | Player returns to the walker's platform | walker re-aggros and chases — **PASS 8 Nov 2026** |
 | 7 | Shoot a walker off the platform | it lands on the lower broad platform and adopts it as home, patrolling there — **PASS 8 Nov 2026** |
-| 8 | Knock an enemy into a stair step | it becomes stranded, idles, then drops to the nearest zone if one exists |
-| 9 | No zone below a stair step | it stays stranded; it never jumps into a pit |
+| 8 | Knock an enemy into a stair step | it becomes stranded, idles, then drops to the nearest zone if one exists — **PASS 8 Nov 2026, spawn variant**: a walker placed on a zone-less surface takes the same `bStranded` → `TryRescue` hop through the 0.5 s `BeginPlay` timer (§7.2 item 4); `L_Level_01` has no stair step to knock one into; the check was a zone-less placement, not a knockback |
+| 9 | No zone below a stair step | it stays stranded; it never jumps into a pit — **N/A in `L_Level_01`**: `RescueRadius=2000` on a ~4000 uu level leaves no step without an eligible zone at or below it, so the state cannot be produced there; 9a covers the candidate path |
 | 9a | Placed walker on a zone-less floor (`BP_Rock1` at `(-1180, 0, 356)` in `L_Level_01`) | **PASS 7 Nov 2026** — snapped to `Auto_00` (1766 uu) within 0.5 s, dropped 14 uu, re-adopted, pacing |
 | 9b | `BP_Bat` / `BP_Ghost` / `BP_FloatingSkull` near a zone (flyers) | **PASS 7 Nov 2026** — verifier: `TryRescue` + `FindHomePlatform` both gate on `Is Flying`; PIE: no flyer was ever sent back to a zone origin |
 | 10 | Spike Turtle | stationary, no detection, bullets do nothing; `KillVolume` kills |

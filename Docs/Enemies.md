@@ -1367,8 +1367,9 @@ but not sufficient — it fixes the *cap*, not the movement mode.
 > **Parallel split (24 Oct 2026; A split 27 Oct 2026; B retired 4 Nov 2026):**
 > `Docs/EnemyWorkPlan.md` assigns this order to three slots (A1/A2/C); B's
 > stationary/flyers are A2's now. The "do not skip ahead" rule still applies to
-> **walkers**: they wait for the M1 `BP_EnemyBase` gate; A1/A2 may prep walker
-> defaults and A2 may stage static placement first. Stationary/flyer children
+> **walkers**: they waited for the M1 `BP_EnemyBase` gate, which went green on
+> 8 Nov 2026 (`EnemyWorkPlan.md` §10) — walker graphs and walker PIE are now
+> unblocked. Stationary/flyer children
 > (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/
 > shooter support may be built in parallel because they do not read the walker
 > AI.
