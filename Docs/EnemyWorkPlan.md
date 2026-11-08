@@ -115,9 +115,10 @@ If two documents disagree, **stop and post the conflict** in the status log.
   `ContactDamage=1`) and declared **zero** own variables, so none of them had
   started. **8 Nov 2026 correction:** the Skull is no longer in that list —
   `bb3627d` (B, 5 Nov) built it (`MoveSpeed=300`, `ChaseSpeed=0`, `MaxHealth=2`,
-  seven own variables; evidence in `A2e`). The Rocks, Wood Log, Rhino and Slime
-  still hold the base defaults. `BP_Snail` now overrides the aggro values
-  (`ChaseSpeed=250`, both
+  seven own variables; evidence in `A2e`). Wood Log, Rhino and Slime still hold
+  the base defaults — the Rocks are also no longer in that list: Jones built the
+  tier-1/2/3 split chain on 8 Nov 2026 (see `A2a`). `BP_Snail` now overrides the
+  aggro values (`ChaseSpeed=250`, both
   aggro halves `0`, `bAggroOnHit=true`; saved 5 Nov), but its health, movement
   and snail flipbooks are still on the base defaults (`MaxHealth=3`,
   `MoveSpeed=100`, `IdleFlipbook`/`HitFlipbook`/`DeathFlipbook` unset) — the
@@ -521,7 +522,7 @@ Cards are numbered by asset group, not grouped by owner, so use this index:
 | Owner | Cards | State |
 |---|---|---|
 | **A1** | `A1` (`BP_EnemyBase`), `A1b` (`BP_Snail`) | `A1` **DONE** — `M1 GREEN` 8 Nov 2026 (13/13 functions, 25/25 vars, 52 PASS, tests 1–9 closed). `A1b` **PARTIAL** — aggro CDO done (250 / 0 / 0, `bAggroOnHit=true`); shell graph, remaining Class Defaults and art open |
-| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat). `A2e` **BUILT 5 Nov 2026** (`bb3627d`, B's own commit) — seven variables + Class Defaults + `RefreshStateFlipbook` verified live 8 Nov; only its PIE gate is open. `A2a` (Rocks) not started — the `A2`/`C` rows are the 4 Nov 2026 snapshot, see §10 for later rows |
+| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat). `A2e` **BUILT 5 Nov 2026** (`bb3627d`, B's own commit) — seven variables + Class Defaults + `RefreshStateFlipbook` verified live 8 Nov; only its PIE gate is open. `A2a` **BUILT 8 Nov 2026** (`f37473b`, Jones, merged as `320f0de`) — static read only, Class Defaults + PIE still open. The `A2`/`C` rows are the 4 Nov 2026 snapshot, see §10 for later rows |
 | **C** | `C1`–`C6` | nothing started |
 
 Owner B has no cards; `A2b`–`A2e` are the transferred ones. A card owns its
@@ -987,14 +988,27 @@ platform edge; shell ignores bullets; contact `1`; destroys itself after `8 s`.
 **Read:** `EnemyAI.md` §8.2; `Enemies.md` §6.2; `EnemyPlacement.md` §4.2.
 **Depends:** M1.
 
-**Status: NOT STARTED (4 Nov 2026).** `BP_RockBase` and `BP_Rock1/2/3` still hold
-every base default (`ChaseSpeed=150`, `MoveSpeed=100`, `MaxHealth=3`,
-`ContactDamage=1`) and declare zero own variables. No split graph exists, so
-`BP_RockBase` in the export is an empty template. **Aggro-on-hit is done (5 Nov):**
-`bAggroOnHit=true` is live on all three CDOs; the rest of the card is still open.
+**Status: BUILT 8 Nov 2026 (Jones), PIE UNVERIFIED.** Commits `f37473b`
+(*"rock tiers split on death with an 8-piece global cap"*) on `branch/Jones`,
+merged into `branch/Dennis` as **`320f0de`**. Because the editor was closed for
+the merge, this status rests on a **static read of the merged `.uasset`
+strings**, not a live CDO probe: `BP_RockBase` now declares `RockTier`,
+`ChildRockClass`, `bCanSplit`, `SplitImpulse`, `SplitOffset` and a
+`BP_RockBase` object array (the live-piece list for the cap), and its graph
+contains `BeginDeferredActorSpawnFromClass` / `FinishSpawningActor` /
+`K2Node_SpawnActorFromClass`. The tier chain is wired child-to-child: `BP_Rock1`
+(38×34, tag `Enemy.Rock.Tier1`, `ChildRockClass=BP_Rock2_C`) → `BP_Rock2`
+(32×28, `Tier2`, child `BP_Rock3_C`) → `BP_Rock3` (22×18, `Tier3`, no child),
+each with its own `FLB_Rock<n>_Idle/Run/Hit` and a description string naming the
+split ("splits into 2 tier-2 rocks", "Final tier; dies without splitting").
 
-**Parallel prep:** `BP_RockBase`/Rock unique variables and Class Defaults may be
-prepared now; split/chase graphs wait for A1's `M1 GREEN`.
+**Still unverified:** the Class Defaults of the card (`MaxHealth` `3/2/1`,
+`MoveSpeed` `100/140/180`, `ChaseSpeed` `120/160/200`, `MaxPieces=8`,
+`bCanSplit` `true/true/false`), whether the split is a `Die` override or lives
+in the base `AnyDamage`, and the whole PIE list below. The 5 Nov
+`bAggroOnHit=true` on all three CDOs still stands from the earlier live check.
+The boxes below stay unticked until a live probe + PIE confirms them — the same
+trap `A2e` fell into (asset built, card left reading NOT STARTED).
 
 **Tasks**
 
@@ -1233,6 +1247,7 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 7 Nov 2026 | A1 | `BP_EnemyBase` flyer guards | DONE | `_verify_enemy_base.py` **52 PASS / 0 FAIL / 0 PENDING** — both `Is Flying` guards present; `_audit_enemy_base.py` 50 graphs / 23 composites / **11 unwired (0 suspicious)** / 0 orphans; walker rescue PIE-confirmed (9a) | 9a PASS (walker); 9b PASS (flyers — no flyer sent back to a zone) | `TryRescue` and `FindHomePlatform` now return immediately for `MOVE_Flying`, so a flyer is never snapped to a zone and never adopts one. Three checker bugs fixed in the same session, all the same `gnorm()` trap: `exec_edges()` looked a composite's `BoundGraph` up by raw name (3 false FAILs, 23 composite bodies invisible), `verify()` tested the T3D display name `"Find Home Platform"` (a built guard still read PENDING), and the audit counted `K2Node_ComponentBoundEvent` as an orphan. `_probe_rescue.py` no longer hard-codes `guard PENDING`: it reads `_verify_enemy_base_out.txt` (`guards_built()`), covered by `Scripts/_test_probe_guards.py` |
 | 8 Nov 2026 | A1 | **M1 gate — walker PIE tests 1–9** | **M1 GREEN** | `_check_aggro_keep.py` re-run 8 Nov 2026 on the post-guard export: 11/11 PASS — the five `FunctionEntry` wires of the row above are present (`FunctionEntry drives Tick, both player pins and the clock — 6 wires present`); `_verify_enemy_base.py` 52 PASS / 0 FAIL / 0 PENDING | 1–4, 6, 7 PASS with no deviation; 5 PASS — the walker halts where it is and faces the player instead of walking to the ledge, then patrols again after `DeAggroTime` (the `False → bAggro` branch); 8 PASS through the spawn variant — a walker placed on a zone-less surface is taken by the 0.5 s `BeginPlay` `TryRescue` timer to the nearest zone, the same function the knockback path calls (no stair step exists in `L_Level_01` to knock one into); 9 N/A there: `RescueRadius=2000` on a ~4000 uu level leaves every step with an eligible zone at or below it, so "stays stranded" cannot be produced — 9a covers the candidate path | closes the acquire/keep row above; `EnemyAI.md` §11 rows 1–9, §6.3, §12 |
 | 8 Nov 2026 | A2 (B's asset) | `BP_FloatingSkull` | **BUILT, PIE open** | `Scripts/_run_probe_skull.py` (read-only) on the live CDO: **0 of 22** probed properties missing — seven own variables (`BounceSpeed=300`, `bPoweredOn=true`, `bUseWallAlternate=false`, `OnIdleFlipbook=FLB_Skull_Idle01`, `OffIdleFlipbook=FLB_Skull_Idle02`, `HitWallFlipbookA/B`) and Class Defaults `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`, `ContactDamage=1`, `MoveSpeed=300`, `IdleFlipbook=FLB_Skull_Idle01`, `HitFlipbook`/`DeathFlipbook=FLB_Skull_Hit`; fresh `_check_child_overrides.py` export: own `RefreshStateFlipbook` traced (`Parent:` → Branch(`bPoweredOn`) → ON/OFF idle), capsule-bound `ComponentHitSignature`, `TogglePower` + `BackToSkullIdle` sub-graphs, `BreakHitResult`/`Normal`/`Abs` and `LaunchCharacter` reflect | not run | build came in `bb3627d` (**Lee Chung Hei**, 5 Nov 2026) with no doc update, which is why `A2e` still read NOT STARTED; `A2a` (Rocks) is now the only untouched A2 card; the asset also runs an enabled `ReceiveTick` sub-graph that `EnemyAI.md` §8.7 does not mention — decide keep or remove |
+| 8 Nov 2026 | A2 (Jones) | `BP_RockBase` + `BP_Rock1/2/3` | **BUILT, unverified** | merged `branch/Jones` `f37473b` into `branch/Dennis` as `320f0de`; static `.uasset` string read (editor closed, no live probe): `BP_RockBase` declares `RockTier`/`ChildRockClass`/`bCanSplit`/`SplitImpulse`/`SplitOffset` + a `BP_RockBase` array, with `BeginDeferredActorSpawnFromClass`/`FinishSpawningActor` in the graph; `Rock1` (38×34, `Enemy.Rock.Tier1`, child `BP_Rock2_C`) → `Rock2` (32×28, `Tier2`, child `BP_Rock3_C`) → `Rock3` (22×18, `Tier3`, no child); `FLB_Rock<n>_Idle/Run/Hit` referenced per tier | not run | same failure mode as `A2e`: the asset shipped without a card update. **Open:** live CDO probe of the defaults (`MaxHealth` `3/2/1`, `MoveSpeed` `100/140/180`, `ChaseSpeed` `120/160/200`, `MaxPieces=8`), where the split hangs off `Die` vs base `AnyDamage`, and PIE test 11 |
 
 **`M1 GREEN` — 8 Nov 2026.** Walker PIE tests 1–7 passed in `L_Level_01` on the
 staged `BP_Rock1`; verifier output: `_verify_enemy_base.py` **52 PASS | 0 FAIL |
