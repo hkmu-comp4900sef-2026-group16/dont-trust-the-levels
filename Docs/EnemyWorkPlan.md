@@ -235,7 +235,7 @@ All enemy Blueprints live in
 `Content/DontTrustTheLevels/Enemies/Blueprints/`. Lock the exact `.uasset`
 file, never a folder; use the paths below verbatim with `git lfs lock`.
 
-**Owner A1 — shared base + Snail**
+**Owner A1 — `A1` (shared base) + `A1b` (Snail)**
 
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_EnemyBase.uasset`
 - `Content/DontTrustTheLevels/Enemies/Blueprints/BP_EnemyPlatform.uasset`
@@ -512,13 +512,15 @@ invent a third source.
 
 Cards are numbered by asset group, not grouped by owner, so use this index:
 
-| Owner | Cards | State on 4 Nov 2026 |
+| Owner | Cards | State |
 |---|---|---|
-| **A1** | `A1` (`BP_EnemyBase`), `A1b` (`BP_Snail`) | base code complete and verified (13/13 functions, 25/25 vars, 45 PASS); `UpdateAggro` aggro-on-hit landed; Snail aggro CDO set (80 / 0 / 0, `bAggroOnHit=true`); next = PIE 1–9 + remaining Snail Class Defaults; M1 PIE not logged |
-| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat); Skull + Rocks open |
+| **A1** | `A1` (`BP_EnemyBase`), `A1b` (`BP_Snail`) | `A1` **DONE** — `M1 GREEN` 8 Nov 2026 (13/13 functions, 25/25 vars, 52 PASS, tests 1–9 closed). `A1b` **PARTIAL** — aggro CDO done (250 / 0 / 0, `bAggroOnHit=true`); shell graph, remaining Class Defaults and art open |
+| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat); Skull + Rocks open — the `A2`/`C` rows are the 4 Nov 2026 snapshot, see §10 for later rows |
 | **C** | `C1`–`C6` | nothing started |
 
-Owner B has no cards; `A2b`–`A2e` are the transferred ones.
+Owner B has no cards; `A2b`–`A2e` are the transferred ones. A card owns its
+**asset**: `A1` may not tick Snail work and `A1b` may not tick base work, even
+though one person owns both.
 
 ### A1 — `BP_EnemyBase` AI core (Owner A1)
 
@@ -526,8 +528,9 @@ Owner B has no cards; `A2b`–`A2e` are the transferred ones.
 
 **Depends:** none. **Blocks:** every walker.
 
-**Scope:** edit only `BP_EnemyBase`, `BP_EnemyPlatform`, `BP_Snail` and the
-contract docs. Never save `L_Level_01`; A2 stages/removes the M1 test actor.
+**Scope:** edit only `BP_EnemyBase`, `BP_EnemyPlatform` and the contract docs.
+Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
+`A1b` card — Snail work is ticked there, never here.
 
 **Tasks**
 
@@ -549,11 +552,13 @@ contract docs. Never save `L_Level_01`; A2 stages/removes the M1 test actor.
       **DONE 4 Nov 2026.**
 - [x] Wire `BeginPlay`, `Landed`, `Event Tick`, and the `AnyDamage`
       `bWasKnockedBack` flag. **`Event Tick` is a wired event node.**
-- [x] **DONE 5 Nov 2026 — aggro on hit** (`EnemyAI.md` §6.2/§6.3). `bAggroOnHit`
-      (Boolean, `false`) exists and `UpdateAggro` is 54 nodes; the hit term reuses
-      `DeAggroTime` and skips the same-platform/Z gate. Live CDO flips landed on
-      `BP_Rock1/2/3`, `BP_WoodLog` and `BP_Snail`. `BP_Bat` needs its own
-      `RefreshStateFlipbook` hit branch because it never runs the walker loop.
+- [x] **DONE 5 Nov 2026 — aggro on hit** (`EnemyAI.md` §6.2/§6.3). Base side only:
+      `bAggroOnHit` (Boolean, `false`) and the hit term in `UpdateAggro` (54 nodes
+      then, 61 after the 7 Nov acquire/keep split); it reuses `DeAggroTime` and
+      skips the same-platform/Z gate. The per-child CDO flips (`BP_Rock1/2/3`,
+      `BP_WoodLog`, `BP_Snail`) are child-card work and are ticked there — `A1b`
+      for the Snail, `A2a` for the Rocks, `C` for the Wood Log. `BP_Bat` needs its
+      own `RefreshStateFlipbook` hit branch because it never runs the walker loop.
 - [x] **DONE 7 Nov 2026 — `LaunchCharacter` Z override.** The `AnyDamage` launch
       now has `bZOverride = true`, so a zero `KnockbackForce` sends a zero vector
       and `HandlePendingLaunch()` returns early. `BP_Bat` (the only
@@ -864,16 +869,21 @@ horizontally, de-aggros after `2 s`, resumes patrol, no vertical aim.
 ### A1b — `BP_Snail` (Owner A1)
 
 **Read:** `EnemyAI.md` §8.3; `Enemies.md` §6.3; `EnemyPlacement.md` §4.3.
-**Depends:** M1. No detection.
+**Depends:** M1 — **green 8 Nov 2026** (`EnemyWorkPlan.md` §10), so the graph
+tasks below are unblocked. No detection.
 
-**Parallel prep:** unique variables, Class Defaults and art may be prepared now;
-the graph tasks below wait for `M1 GREEN`.
+**Parallel prep:** the unique variables, Class Defaults and art were prepped
+before `M1 GREEN`; the graph tasks are unblocked as of 8 Nov 2026. The `A1b` card
+owns `BP_Snail` the way `A1` owns `BP_EnemyBase`: base work is ticked in `A1`, and
+nothing here counts as `A1` work just because one person holds both cards.
 
-**Status: NOT STARTED (4 Nov 2026).** Live CDO still holds the base defaults
-(`ChaseSpeed=150`, `MoveSpeed=100`, `MaxHealth=3`, `ContactDamage=1`), the asset
-declares zero own variables, and the instance sits at `(-451, 9, 225)` off every
-auto marker. **The aggro part is fixed (5 Nov, retuned 7 Nov):** the Snail overrides
-`ChaseSpeed=250` (was `80`), `AggroHalfWidth=0`, `AggroHalfHeight=0` and
+**Status (8 Nov 2026): PARTIAL — the aggro defaults are done; the seven open tasks
+below are the shell graph, the remaining Class Defaults and the art.** The live
+CDO still carries the base `MoveSpeed=100`, `MaxHealth=3` and `ContactDamage=1`,
+the asset declares zero own variables, and the instance sits at `(-451, 9, 225)`
+off every auto marker. **The aggro part is fixed (5 Nov, retuned 7 Nov):** the
+Snail overrides `ChaseSpeed=250` (was `80`), `AggroHalfWidth=0`,
+`AggroHalfHeight=0` and
 `bAggroOnHit=true` — hit-only aggro, patrol otherwise. No proximity aggro is
 wanted: a player standing in front of a snail is ignored until it is shot. The
 remaining health, movement and flipbook defaults are still base values and are
@@ -884,10 +894,12 @@ tracked below. The CDO flip shipped in the same commit as the base change.
 - [ ] Add only the unique variables: `bShellPhase`, `ShellSpeed`,
       `ShellContactDamage`, `ShellLifetime`, `ShellIdleFlipbook`,
       `ShellWallHitFlipbook`, `ShellTopHitFlipbook`, `WithoutShellFlipbook`.
-- [x] **DONE 5 Nov 2026 — Class Defaults (aggro only):** `ChaseSpeed=80`
-      (raised to `250` on 7 Nov — §10),
-      `AggroHalfWidth=0`, `AggroHalfHeight=0`, `bAggroOnHit=true` (§13, locked
-      4 Nov). Saved on `BP_Snail` and re-read from the live CDO/spawned instance.
+- [x] **DONE 5 Nov 2026, retuned 7 Nov — Class Defaults (aggro only).**
+      `ChaseSpeed` `80` → `250` (§10), `AggroHalfWidth=0`, `AggroHalfHeight=0`,
+      `bAggroOnHit=true` (§13, locked 4 Nov). Saved on `BP_Snail` and re-read from
+      the live CDO/spawned instance. This is Snail work, so it is ticked here and
+      not in the `A1` card, which owns only the `bAggroOnHit` variable and the hit
+      term in `UpdateAggro`.
 - [ ] Class Defaults (remaining A1b): `MaxHealth=2`, `MoveSpeed=50`,
       `ContactDamage=1`, snail flipbooks. These still inherit the base values
       (`MaxHealth=3`, `MoveSpeed=100`, no `Idle`/`Hit`/`Death` flipbook
