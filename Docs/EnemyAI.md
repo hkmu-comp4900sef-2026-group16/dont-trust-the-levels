@@ -857,6 +857,20 @@ longer pulled back to a platform:
    actors 7 Nov 2026: `BP_Bat` `movement_mode = MOVE_FLYING`, `BP_Rock1` and
    `BP_SpikeTurtle` `MOVE_NONE`, so the test separates them even while the
    walkers are standing still.
+   **Correction 9 Nov 2026: `Is Flying` is *not* an exact flyer test.** It reads
+   `MovementMode == MOVE_Flying`, and `UCharacterMovementComponent::Launch` sets
+   the mode to `MOVE_Falling` for any character that is not already falling, so a
+   *launched* flyer stops being "flying" on its first launch. Measured in
+   Simulate (`Scripts/_run_sie_skull.py`, nothing saved): `BP_FloatingSkull`
+   reports `mode=MOVE_Falling isFlying=False` from `t = 1 s` onwards while it is
+   bouncing at `vel = (300, 0, 300)`, i.e. both guards (items 4 and 6) fail open
+   and the skull runs the walker path — `TryRescue` snaps it to
+   `platform + (0, 0, 120)` and `FindHomePlatform` hands it a `HomePlatform`.
+   `BP_Bat` and `BP_Ghost` are only safe today because nothing launches them; one
+   knockback or `Launch Character` call and they are walkers too.
+   Both guards must therefore OR in a **design-time** flag: `bIsFlyer` on
+   `BP_EnemyBase` (`false`), set `true` on the three flyers — see
+   `EnemyWorkPlan.md` A2e, 9 Nov 2026 defect block.
    Recipe (this is what the asset now has): in `FindHomePlatform`, drag
    `Character Movement` from the Components panel into the graph → **`Is Flying`**
    (bool) → `Branch`; `true` → the `Return Node` (returns `false`: "no home"),
@@ -865,6 +879,18 @@ longer pulled back to a platform:
    get, with or without the display space), so whichever drag you get is fine.
    **FIXED 7 Nov 2026 (22:34)**: `PASS FindHomePlatform: Is Flying returns before
    the zone search`.
+   **Applied 9 Nov 2026 (~02:30), confirmed from a fresh export.** `BP_EnemyBase`
+   carries `bIsFlyer` (Boolean, `false`); `FindHomePlatform` and `TryRescue` feed
+   `OR(bIsFlyer, Is Flying)` into their guard `Branch` (`true -> Return`);
+   `ResolveKnockback` has the new `Branch[bIsFlyer]` ahead of `Find Home Platform`;
+   and `BP_FloatingSkull` / `BP_Bat` / `BP_Ghost` read `bIsFlyer = true`
+   (`Scripts/_probe_flyer_flags.py`). Both verifier rules were re-pointed at the
+   OR shape (`is_or()` + `flyer_gate_source()`) and the labels gained `/bIsFlyer`,
+   so the quoted `PASS` lines above are historical: the suite reads
+   `52 PASS | 0 FAIL | 0 PENDING`. Measured in Simulate the same night:
+   `mode=MOVE_Falling`, `isFlying=False`, `HomePlatform=None`, no jump to
+   `(-1600, 0, 620)`. The separate "wedged between terrain" defect is a new A2e
+   item — see `Enemies.md` §6.7 *Stuck-bounce fallback*.
 
    Note for anyone re-running the verifier on this item: the first run after the
    guard was built *still* said `PENDING ... the FindHomePlatform function graph
