@@ -635,7 +635,60 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       override reads `Abs(Velocity.X) > 10`) and no walker may still show `Idle`
       while patrolling/chasing (tests 1–7 in `L_Level_01`); `PlayStateFlipbook`
       no-ops when nothing changed, so the four extra calls cost nothing.
-      **8 Nov 2026: not applied — the gate exists, the graph is untouched.**
+      **8 Nov 2026: APPLIED by the owner.** The live export is 18 / 30 nodes and
+      `Scripts/_check_step4_live.py --self-test` prints `10 PASS / 0 FAIL`; the
+      exec trace is exactly the table above. **Step 4b below is required before
+      PIE**: on its own the four calls freeze the sprite.
+
+- [ ] **Step 4b of the A2a fix plan — the four refreshes must be no-ops**
+      (regression, found in PIE on 8 Nov 2026: every enemy "stands still and
+      glides"). `BP_EnemyBase.RefreshStateFlipbook` plays `IdleFlipbook`, and
+      four of the five overrides start with `Parent: Refresh State Flipbook` and
+      then play their own sheet:
+
+      ```
+      Parent: Refresh State Flipbook  ->  SetFlipbook(IdleFlipbook)
+      Branch(|Velocity.X| > 10)       ->  SetFlipbook(RunFlipbook)
+      ```
+
+      `UPaperFlipbookComponent::SetFlipbook` (4.27,
+      `Engine/Plugins/2D/Paper2D/Source/Paper2D/Private/PaperFlipbookComponent.cpp`
+      line 379) does `AccumulatedTime = 0.0f` every time the asset differs. With a
+      refresh on every exit of `ChaseStep` / `PatrolStep` that is twice per frame,
+      so the sprite is pinned to frame 0 of the last sheet and slides across the
+      floor. `Play()` (line 434: `Activate(); bReversePlayback = false;
+      bPlaying = true;`) and `SetLooping()` (line 578: one bool, no restart) are
+      harmless per frame — `SetFlipbook()` is not.
+
+      | asset | state 8 Nov 2026 | fix |
+      | ----- | ---------------- | --- |
+      | `BP_RockBase` | `Entry -> Parent -> Branch -> Idle/Run` | delete the `Parent: Refresh State Flipbook` node, wire `Entry.then` -> the Branch's `execute` (its `else` already plays `IdleFlipbook`) |
+      | `BP_SpikeTurtle` | `Entry -> Parent -> Branch -> IdleFlipbookA/B` | same |
+      | `BP_FloatingSkull` | `Entry -> Parent -> Branch -> On/OffIdleFlipbook` | same |
+      | `BP_Bat` | the parent call sits only on the knocked-back path | leave it — a per-frame refresh never reaches it |
+      | `BP_Ghost` | `Entry -> Parent -> Branch` with the `Condition` pin **unwired** (default `true`), so `then` is empty and the parent's Idle is the only sheet | finish the branch (`bInvisible` -> return, else `PlayStateFlipbook(FLB_Ghost_Idle)`) first, then delete the parent call; tracked under `A2c` |
+
+      Gate (read-only, editor open):
+
+          py -3 Scripts/_check_refresh_reset.py --self-test
+          py -3 Scripts/_check_refresh_reset.py --reuse --self-test
+
+      It exports the six flipbook-selecting BPs to `Scripts/_child_refresh_export/`
+      and then, per BP: no `Parent: Refresh State Flipbook` in the unconditional
+      prologue (entry up to the first Branch), every Branch output reaches a
+      `PlayStateFlipbook` of its own, no reroute in the prologue. `--self-test`
+      injects a fake Parent node (rule 1 must catch it) and drops the parent call
+      from a broken copy (the failure must clear), so green is not a rubber stamp.
+      Today it prints `22 PASS / 5 FAIL` (`BP_RockBase`, `BP_SpikeTurtle`,
+      `BP_FloatingSkull` rule 1; `BP_Ghost` rules 1 + 2; `BP_Bat` and
+      `BP_EnemyBase` clean); `0 FAIL` is the target. Tooling note:
+      `Scripts/_children_export2/` holds 12 KB stub T3Ds from the 21:19 audit that
+      contain no function graphs at all — a "this BP has no `RefreshStateFlipbook`"
+      reading from it is wrong, export again before believing it.
+
+      PIE after the fix: walkers animate while they patrol, the rocks switch to
+      `FLB_Rock<n>_Run` (14 frames @ 14 fps) while they chase, and no
+      `Infinite loop` / `Runaway loop` line appears in the log.
 
 **Done when:** `_verify_enemy_base.py` = 52 PASS / 0 FAIL; tests 1–9 closed
 (1–7 and 8 pass — 8 via the spawn variant — and 9 is N/A in `L_Level_01`);
@@ -1197,10 +1250,18 @@ test 11.
 **Status 8 Nov 2026 (after the PIE recording):** steps **1–3 applied and step 3
 verified** — the reroute node was deleted, the live export is 14 nodes and
 `Scripts/_check_step3_live.py` prints `7 PASS / 0 FAIL`, and the `L_Level_01` PIE
-run after the delete logs no runaway loop (owner-confirmed); **steps 4–7 not
-applied**. Step 4 (the base's missing `RefreshStateFlipbook` calls, and the reason
-every walker plays `Idle` while it moves) has its node-level recipe and its gate
-in `A1` below. Steps 5–7 are the last of the list.
+run after the delete logs no runaway loop (owner-confirmed). **Step 4 applied**
+(18 / 30 nodes, `Scripts/_check_step4_live.py --self-test` = `10 PASS / 0 FAIL`)
+and it immediately exposed **step 4b**: the four per-frame refreshes call
+`RefreshStateFlipbook`, whose child overrides each begin with
+`Parent: Refresh State Flipbook`, so every frame runs `SetFlipbook(Idle)` ->
+`SetFlipbook(Run)` and `SetFlipbook` resets `AccumulatedTime` — every enemy
+stopped animating and slid across the floor ("stands still and glides"). Fix: drop
+the `Parent: Refresh State Flipbook` node from `BP_RockBase`,
+`BP_SpikeTurtle` and `BP_FloatingSkull` (see `A1`, step 4b; `BP_Ghost` needs its
+branch finished first, `BP_Bat` is clean), gate
+`py -3 Scripts/_check_refresh_reset.py --self-test`. **Steps 5–7 not applied**;
+they are the last of the list.
 
 **8 Nov 2026, step-3 corrections (two, and the second one is why PIE hung).**
 First: the earlier wire list named `CharacterMovement.Ignore Actor When Moving`,
