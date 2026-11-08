@@ -598,13 +598,15 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       Never drop the node onto the wire and never drag a wire end onto another
       wire: both splice a reroute node, which is how the `BP_RockBase` loopback
       survived two repairs (see `A2a` above). Current graph from
-      `Scripts/_bp_enemy_dump.txt` (8 Nov): `ChaseStep` 16 nodes —
-      `Entry → SetFacing → LedgeAhead → Branch `|then|`→ AddMovementInput
-      (then **open**), `|else|`→ StopMovementImmediately → FunctionResult_0`;
-      `PatrolStep` 28 nodes — `Entry → Branch(IsValid HomePlatform)` (its `else`
-      is open) `→ Branch` `|then|`→ `SetFacing(1.0)` / `|else|`→ `SetFacing(-1.0)`
-      both `→ LedgeAhead → Branch` `|then|`→ `AddMovementInput → FunctionResult_0`,
-      `|else|`→ `SetFacing(0.0) → FunctionResult_1`.
+      `Scripts/_bp_enemy_dump.txt` (8 Nov): `ChaseStep` 16 nodes — Entry →
+      SetFacing → LedgeAhead → Branch, whose **then** pin goes to
+      AddMovementInput (and that `then` is open) and whose **else** pin goes to
+      StopMovementImmediately → FunctionResult_0. `PatrolStep` 28 nodes — Entry →
+      Branch(IsValid HomePlatform) (its **else** is open) → Branch A (out of the
+      patrol range): **then** → SetFacing(1.0) → Branch B, **else** → Branch B;
+      Branch B: **then** → SetFacing(-1.0) → LedgeAhead, **else** → LedgeAhead;
+      LedgeAhead → Branch C, **then** → AddMovementInput → FunctionResult_0,
+      **else** → SetFacing(0.0) → FunctionResult_1.
 
       Gate (no PIE without it):
 
