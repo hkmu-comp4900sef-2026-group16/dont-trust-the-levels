@@ -110,10 +110,14 @@ If two documents disagree, **stop and post the conflict** in the status log.
   `A1b` (`BP_Snail`) is the next A1 card.
 - Every child-specific mechanic. Live CDO check on 4 Nov 2026:
   `BP_Rock1/2/3`, `BP_WoodLog`, `BP_Rhino`, `BP_ToxicSlime` and
-  `BP_FloatingSkull` all still hold the **base defaults** (`ChaseSpeed=150`,
+  `BP_FloatingSkull` all still held the **base defaults** (`ChaseSpeed=150`,
   `MoveSpeed=100`, `MaxHealth=3`, `AggroHalfWidth=600`, `AggroHalfHeight=500`,
-  `ContactDamage=1`) and declare **zero** own variables, so none of them has
-  started. `BP_Snail` now overrides the aggro values (`ChaseSpeed=250`, both
+  `ContactDamage=1`) and declared **zero** own variables, so none of them had
+  started. **8 Nov 2026 correction:** the Skull is no longer in that list —
+  `bb3627d` (B, 5 Nov) built it (`MoveSpeed=300`, `ChaseSpeed=0`, `MaxHealth=2`,
+  seven own variables; evidence in `A2e`). The Rocks, Wood Log, Rhino and Slime
+  still hold the base defaults. `BP_Snail` now overrides the aggro values
+  (`ChaseSpeed=250`, both
   aggro halves `0`, `bAggroOnHit=true`; saved 5 Nov), but its health, movement
   and snail flipbooks are still on the base defaults (`MaxHealth=3`,
   `MoveSpeed=100`, `IdleFlipbook`/`HitFlipbook`/`DeathFlipbook` unset) — the
@@ -425,16 +429,18 @@ P_04 `x=-1750, z=100, w=300` · P_05 `x=-1300, z=0, w=600` ·
 P_06 `x=550, z=0, w=2700`. Use these for the M1 smoke test; add more zones
 only in M4.
 
-### M2 — Independent specials (A2; only the Skull is left)
+### M2 — Independent specials (A2; only the Skull's PIE is left)
 
 Order: ~~`BP_SpikeTurtle` (warm-up) → `BP_Ghost` (highest risk) → `BP_Bat`~~
-(these three are **DONE**, see §10) → **`BP_FloatingSkull`** (remaining).
+(these three are **DONE**, see §10) → ~~`BP_FloatingSkull`~~ **build DONE 5 Nov
+2026** (`bb3627d`); only its PIE gate is open (see `A2e`).
 
 - None of these use `PatrolStep`, `LedgeAhead`, `IsPlayerOnHomePlatform` or the
   walker aggro loop.
 - Set `bCanMove=false` on all four. `ChaseSpeed=0` for Turtle/Ghost/Skull;
-  Bat keeps `ChaseSpeed=1000` for `MaxFlySpeed`. Turtle and Skull have no child
-  movement Tick; Ghost and Bat use their own Tick.
+  Bat keeps `ChaseSpeed=1000` for `MaxFlySpeed`. The Skull asset does carry an
+  enabled `ReceiveTick` sub-graph even though this line used to say it has none —
+  `A2e` has the open item to keep or remove it.
 - Compile + save after each graph; PIE each asset before moving to the next.
 - New to A2: do **not** rebuild the three DONE assets. Touching them is a
   regression risk with no upside; only open one if a PIE retest fails, and then
@@ -515,7 +521,7 @@ Cards are numbered by asset group, not grouped by owner, so use this index:
 | Owner | Cards | State |
 |---|---|---|
 | **A1** | `A1` (`BP_EnemyBase`), `A1b` (`BP_Snail`) | `A1` **DONE** — `M1 GREEN` 8 Nov 2026 (13/13 functions, 25/25 vars, 52 PASS, tests 1–9 closed). `A1b` **PARTIAL** — aggro CDO done (250 / 0 / 0, `bAggroOnHit=true`); shell graph, remaining Class Defaults and art open |
-| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat); Skull + Rocks open — the `A2`/`C` rows are the 4 Nov 2026 snapshot, see §10 for later rows |
+| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat). `A2e` **BUILT 5 Nov 2026** (`bb3627d`, B's own commit) — seven variables + Class Defaults + `RefreshStateFlipbook` verified live 8 Nov; only its PIE gate is open. `A2a` (Rocks) not started — the `A2`/`C` rows are the 4 Nov 2026 snapshot, see §10 for later rows |
 | **C** | `C1`–`C6` | nothing started |
 
 Owner B has no cards; `A2b`–`A2e` are the transferred ones. A card owns its
@@ -731,33 +737,73 @@ it collides with walls/floors and never de-aggros.
 
 ---
 
-### A2e — `BP_FloatingSkull` (Owner A2 — **NOT STARTED**, transferred from B)
+### A2e — `BP_FloatingSkull` (Owner A2 — **BUILT 5 Nov, PIE UNVERIFIED**, transferred from B)
 
 **Read:** `EnemyAI.md` §8.7; `Enemies.md` §6.7; `EnemyPlacement.md` §4.7.
 **Depends:** base health/contact only. **No base AI.**
 
-**Status: NOT STARTED (4 Nov 2026).** Live CDO still holds every base default
-(`ChaseSpeed=150`, `MoveSpeed=100`, `MaxHealth=3`, `ContactDamage=1`, 600×500
-aggro box) and the asset declares **zero** own variables — it is an empty
-template with `UserConstructionScript` → `Parent:`. This is the only A2 special
-left, and it is the first A2 task in M2.
+**Status: BUILT 5 Nov 2026 (Owner B), PIE UNVERIFIED (8 Nov 2026 audit).** The
+old "NOT STARTED / zero own variables / every base default" text below is
+superseded: `bb3627d` (*"fix(enemy): skull facing, ghost contact and turtle
+fixes"*, Lee Chung Hei, 5 Nov) already landed the whole build.
+`Scripts/_run_probe_skull.py` (read-only, 8 Nov) reads the seven variables back
+with the documented defaults (`BounceSpeed=300`, `bPoweredOn=true`,
+`bUseWallAlternate=false`, `OnIdleFlipbook=FLB_Skull_Idle01`,
+`OffIdleFlipbook=FLB_Skull_Idle02`, `HitWallFlipbookA=FLB_Skull_HitWall01`,
+`HitWallFlipbookB=FLB_Skull_HitWall02`) and the Class Defaults as
+`bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`, `ContactDamage=1`,
+`MoveSpeed=300`, `IdleFlipbook=FLB_Skull_Idle01`, `HitFlipbook`/`DeathFlipbook`
+`=FLB_Skull_Hit` — 0 of 22 probed properties missing. A fresh export the same day
+shows the `RefreshStateFlipbook` override traced node by node (`Parent:
+RefreshStateFlipbook` → Branch on `bPoweredOn` → `PlayStateFlipbook(OnIdleFlipbook)`
+else `OffIdleFlipbook`) plus a capsule-bound `ComponentHitSignature` event,
+`TogglePower` and `BackToSkullIdle` sub-graphs, `BreakHitResult`/`Normal`/`Abs`
+and `LaunchCharacter` — i.e. B's "sub-graph collapse" style with the bodies in
+`ExecuteUbergraph_BP_FloatingSkull`. **Nothing about it is in §10, so the PIE
+gate is still open.**
 
-**Tasks**
+**Tasks** (all six are in the asset; the boxes record *structure*, not proof)
 
-- [ ] Add only the unique variables: `bPoweredOn`, `OnIdleFlipbook`,
+- [x] Add only the unique variables: `bPoweredOn`, `OnIdleFlipbook`,
       `OffIdleFlipbook`, `HitWallFlipbookA`, `HitWallFlipbookB`,
-      `bUseWallAlternate`, `BounceSpeed`.
-- [ ] Class Defaults: `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`,
-      `ContactDamage=1`, `MoveSpeed=300`, skull flipbooks.
-- [ ] `BeginPlay`: `InitEnemy`; `bPoweredOn=true`; `bInvulnerable=true`;
+      `bUseWallAlternate`, `BounceSpeed`. **8 Nov 2026:** all seven read back
+      with the documented defaults.
+- [x] Class Defaults: `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`,
+      `ContactDamage=1`, `MoveSpeed=300`, skull flipbooks. **8 Nov 2026:** live
+      probe matches, including `IdleFlipbook=FLB_Skull_Idle01`.
+- [x] `BeginPlay`: `InitEnemy`; `bPoweredOn=true`; `bInvulnerable=true`;
       `bDealContactDamage=true`; play `OnIdleFlipbook`; launch
       `(Facing * BounceSpeed, 0, BounceSpeed * 0.5)` with XY/Z override.
-- [ ] Own `Event Hit`: ignore non-wall/floor normals; play alternating
+      **8 Nov 2026:** the BeginPlay sub-graph, `InitEnemy`, `MakeVector`,
+      `Multiply` and `LaunchCharacter` are all in the export; the body is in the
+      ubergraph, so wiring is not traced node by node.
+- [x] Own `Event Hit`: ignore non-wall/floor normals; play alternating
       `HitWallFlipbookA/B`; `TogglePower`; `BackToSkullIdle` (`0.35`);
-      reflect the X/Z velocity through `LaunchCharacter`.
-- [ ] `TogglePower`: flip `bPoweredOn`; `bInvulnerable=bPoweredOn`;
-      `bDealContactDamage=bPoweredOn`; `RefreshStateFlipbook`.
-- [ ] Override `RefreshStateFlipbook`: ON idle vs OFF idle.
+      reflect the X/Z velocity through `LaunchCharacter`. **8 Nov 2026:** the hit
+      is a capsule-bound `ComponentHitSignature` event that forwards `Hit` =
+      `BreakHitResult` to the ubergraph; `Normal`, `Abs`,
+      `GreaterEqual_FloatFloat`, `K2_SetTimer("BackToSkullIdle", 0.35)` and
+      `LaunchCharacter` are present.
+- [x] `TogglePower`: flip `bPoweredOn`; `bInvulnerable=bPoweredOn`;
+      `bDealContactDamage=bPoweredOn`; `RefreshStateFlipbook`. **8 Nov 2026:**
+      `TogglePower` is a collapsed sub-graph whose body sits in
+      `ExecuteUbergraph_BP_FloatingSkull`; `bPoweredOn` is read/written 12 times,
+      `bInvulnerable` and `bDealContactDamage` 4 times each.
+- [x] Override `RefreshStateFlipbook`: ON idle vs OFF idle. **8 Nov 2026:**
+      traced — `Parent: RefreshStateFlipbook` → Branch(`bPoweredOn`) →
+      `PlayStateFlipbook(OnIdleFlipbook, true)` / `OffIdleFlipbook`.
+- [ ] **PIE gate** (nothing in §10 yet): the **Done when** list below, i.e. ON
+      ignores bullets and kills on contact, OFF is harmless and shootable, a
+      wall/floor hit toggles the power state, no gravity, and the pit
+      `KillVolume` destroys it. Also confirm the launch direction after a bounce
+      and that the sprite faces the bounce direction (`bb3627d` claims the facing
+      fix).
+- [ ] **Decide the `ReceiveTick` sub-graph.** The asset runs an enabled
+      `ReceiveTick` (collapsed, body in the ubergraph, no `PatrolStep` /
+      `ChaseStep` in it). `EnemyAI.md` §8.7 says the `LaunchCharacter` bounce and
+      `Event Hit` are the Skull's *only* movement, so either the Tick is B's
+      bounce maintenance and §8.7 should say so, or it is dead code and should be
+      disconnected.
 
 **Done when:** ON ignores bullets and kills on contact; OFF is harmless and
 shootable; wall/floor hit toggles; no detection/chase; no gravity; pit
@@ -1186,6 +1232,7 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 7 Nov 2026 | A1 | `BP_EnemyBase` acquire/keep split | DONE (8 Nov row below) | whole-graph paste applied: live T3D `Update Aggro` is 61 nodes, **1 piece**, 10 of 11 checks PASS — the six new→old links landed. The editor renamed the pasted `FunctionEntry` (`K2Node_FunctionEntry_0` → `_4`), so the importer dropped **five** entry wires, not the three that were first noticed: `FunctionEntry.Player` → `IsPlayerInAggroBox.Player` `(592,-640)`, → `IsPlayerOnHomePlatform.Player` `(880,-640)`, → `K2_GetActorLocation.self` `(592,-288)` (the *player* location; the second `K2_GetActorLocation` at `(592,-432)` is the enemy's own and must stay unwired), → `ChaseStep.Player` `(4208,-960)`, and `FunctionEntry.Delta Seconds` → `Add.A` `(3440,-480)` (without it `UnreachableTime += dt` becomes `+= 0`, so a walker would never de-aggro). The `then` wire survived. The regenerated paste writes all five on both pins and `Scripts/_test_full_paste.py` PASSes 11/11 both as-is and with the entry renamed on purpose | drag those five wires (entry `(96,-752)`) or re-paste `Scripts/_bp_enemy_base_updateaggro_full_paste.txt` → compile → save → `_run_aggro_keep_check.py` = PASS → PIE | the box term is acquire-only now: `Chase = Detect OR (bAggro AND Keep)` where `Keep = OnHome AND |ΔZ| ≤ MaxChaseStepZ (+ hit window + AggroRadius > 0)`. A walker used to de-aggro after `DeAggroTime` whenever the player ran past `AggroHalfWidth` on the *same* platform, because acquire and keep shared one 600–1400 uu rectangle. Flyers are unaffected (they never call `UpdateAggro`) and the `AggroRadius > 0` term keeps that guarantee inside the shared rule | `Scripts/_bp_enemy_base_updateaggro_full_paste.txt`, `Scripts/_make_full_aggro_paste.py`, `Scripts/_test_full_paste.py`, `Scripts/_make_aggro_paste_graph.py`, `Scripts/_check_aggro_keep.py`, `Scripts/_run_aggro_keep_check.py`, `Scripts/_verify_enemy_base.py`, `EnemyAI.md` §1/§4/§6.2/§6.3/§6.4, `Enemies.md` §5.1/§7.3 |
 | 7 Nov 2026 | A1 | `BP_EnemyBase` flyer guards | DONE | `_verify_enemy_base.py` **52 PASS / 0 FAIL / 0 PENDING** — both `Is Flying` guards present; `_audit_enemy_base.py` 50 graphs / 23 composites / **11 unwired (0 suspicious)** / 0 orphans; walker rescue PIE-confirmed (9a) | 9a PASS (walker); 9b PASS (flyers — no flyer sent back to a zone) | `TryRescue` and `FindHomePlatform` now return immediately for `MOVE_Flying`, so a flyer is never snapped to a zone and never adopts one. Three checker bugs fixed in the same session, all the same `gnorm()` trap: `exec_edges()` looked a composite's `BoundGraph` up by raw name (3 false FAILs, 23 composite bodies invisible), `verify()` tested the T3D display name `"Find Home Platform"` (a built guard still read PENDING), and the audit counted `K2Node_ComponentBoundEvent` as an orphan. `_probe_rescue.py` no longer hard-codes `guard PENDING`: it reads `_verify_enemy_base_out.txt` (`guards_built()`), covered by `Scripts/_test_probe_guards.py` |
 | 8 Nov 2026 | A1 | **M1 gate — walker PIE tests 1–9** | **M1 GREEN** | `_check_aggro_keep.py` re-run 8 Nov 2026 on the post-guard export: 11/11 PASS — the five `FunctionEntry` wires of the row above are present (`FunctionEntry drives Tick, both player pins and the clock — 6 wires present`); `_verify_enemy_base.py` 52 PASS / 0 FAIL / 0 PENDING | 1–4, 6, 7 PASS with no deviation; 5 PASS — the walker halts where it is and faces the player instead of walking to the ledge, then patrols again after `DeAggroTime` (the `False → bAggro` branch); 8 PASS through the spawn variant — a walker placed on a zone-less surface is taken by the 0.5 s `BeginPlay` `TryRescue` timer to the nearest zone, the same function the knockback path calls (no stair step exists in `L_Level_01` to knock one into); 9 N/A there: `RescueRadius=2000` on a ~4000 uu level leaves every step with an eligible zone at or below it, so "stays stranded" cannot be produced — 9a covers the candidate path | closes the acquire/keep row above; `EnemyAI.md` §11 rows 1–9, §6.3, §12 |
+| 8 Nov 2026 | A2 (B's asset) | `BP_FloatingSkull` | **BUILT, PIE open** | `Scripts/_run_probe_skull.py` (read-only) on the live CDO: **0 of 22** probed properties missing — seven own variables (`BounceSpeed=300`, `bPoweredOn=true`, `bUseWallAlternate=false`, `OnIdleFlipbook=FLB_Skull_Idle01`, `OffIdleFlipbook=FLB_Skull_Idle02`, `HitWallFlipbookA/B`) and Class Defaults `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`, `ContactDamage=1`, `MoveSpeed=300`, `IdleFlipbook=FLB_Skull_Idle01`, `HitFlipbook`/`DeathFlipbook=FLB_Skull_Hit`; fresh `_check_child_overrides.py` export: own `RefreshStateFlipbook` traced (`Parent:` → Branch(`bPoweredOn`) → ON/OFF idle), capsule-bound `ComponentHitSignature`, `TogglePower` + `BackToSkullIdle` sub-graphs, `BreakHitResult`/`Normal`/`Abs` and `LaunchCharacter` reflect | not run | build came in `bb3627d` (**Lee Chung Hei**, 5 Nov 2026) with no doc update, which is why `A2e` still read NOT STARTED; `A2a` (Rocks) is now the only untouched A2 card; the asset also runs an enabled `ReceiveTick` sub-graph that `EnemyAI.md` §8.7 does not mention — decide keep or remove |
 
 **`M1 GREEN` — 8 Nov 2026.** Walker PIE tests 1–7 passed in `L_Level_01` on the
 staged `BP_Rock1`; verifier output: `_verify_enemy_base.py` **52 PASS | 0 FAIL |
