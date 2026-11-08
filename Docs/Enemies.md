@@ -1275,6 +1275,11 @@ current spawn) or point `Scripts/_apply_skull_respawn_fix.py` at a candidate
 with `X=.. Y=.. Z=..` — it traces all six directions and refuses to move anything
 unless each one has `>= 170` uu free. The watchdog cannot rescue a spawn: it is
 a recovery from *soft* wedges, not from geometry the capsule never fit in.
+Verify a placement with `Scripts/_probe_clearance_6.py` (read-only, traces the
+six axes and prints `VERDICT FITS`) before it is saved, and remember that the
+editor world is not the map file: run `Scripts/_save_level.py` or the placement
+dies with the session, which is how the embedding spawn at `(-1758.8, 13, 610)`
+outlived every "fixed" claim — it was committed to the map, not just in memory.
 
 **Extra variables** (own; the seven above are unchanged)
 
