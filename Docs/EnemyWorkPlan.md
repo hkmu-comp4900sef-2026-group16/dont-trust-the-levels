@@ -889,21 +889,32 @@ wanted: a player standing in front of a snail is ignored until it is shot. The
 remaining health, movement and flipbook defaults are still base values and are
 tracked below. The CDO flip shipped in the same commit as the base change.
 
+**Live probe 8 Nov 2026** (`Scripts/_run_probe_snail.py`, read-only):
+`ChaseSpeed=250`, `AggroHalfWidth=0`, `AggroHalfHeight=0`, `bAggroOnHit=true`,
+`ContactDamage=1`, `DeAggroTime=2`; still base `MoveSpeed=100` and `MaxHealth=3`;
+`IdleFlipbook`/`HitFlipbook`/`DeathFlipbook` unset; all eight shell variables
+report `MISSING` — 9 of the 22 probed properties do not exist on the class. The
+asset owns no function or event graph (4 Nov export: only
+`UserConstructionScript`), so `Die`, `Event Hit` and `RefreshStateFlipbook` are
+all still to be added.
+
 **Tasks**
 
 - [ ] Add only the unique variables: `bShellPhase`, `ShellSpeed`,
       `ShellContactDamage`, `ShellLifetime`, `ShellIdleFlipbook`,
       `ShellWallHitFlipbook`, `ShellTopHitFlipbook`, `WithoutShellFlipbook`.
+      Live probe 8 Nov 2026: all eight are `MISSING` on the generated class.
 - [x] **DONE 5 Nov 2026, retuned 7 Nov — Class Defaults (aggro only).**
       `ChaseSpeed` `80` → `250` (§10), `AggroHalfWidth=0`, `AggroHalfHeight=0`,
       `bAggroOnHit=true` (§13, locked 4 Nov). Saved on `BP_Snail` and re-read from
       the live CDO/spawned instance. This is Snail work, so it is ticked here and
       not in the `A1` card, which owns only the `bAggroOnHit` variable and the hit
       term in `UpdateAggro`.
-- [ ] Class Defaults (remaining A1b): `MaxHealth=2`, `MoveSpeed=50`,
-      `ContactDamage=1`, snail flipbooks. These still inherit the base values
-      (`MaxHealth=3`, `MoveSpeed=100`, no `Idle`/`Hit`/`Death` flipbook
-      overrides), so the Snail is not yet the full §6.3 asset.
+- [ ] Class Defaults (remaining A1b): `MaxHealth=2`, `MoveSpeed=50`, snail
+      flipbooks (`IdleFlipbook=FLB_Snail_Idle`, `HitFlipbook=FLB_Snail_Hit`,
+      `DeathFlipbook=FLB_Snail_Hit`). Live probe 8 Nov 2026: still `MaxHealth=3`,
+      `MoveSpeed=100`, all three flipbooks unset; `ContactDamage=1` is already
+      correct. Until these land the Snail is not yet the full §6.3 asset.
 - [ ] Normal state: use base `PatrolStep` / `LedgeAhead`; no child Tick.
 - [ ] `Die` override: if already `bShellPhase`, return; otherwise set shell
       flags (`bShellPhase=true`, `bIsDead=false`, `bInvulnerable=true`,
