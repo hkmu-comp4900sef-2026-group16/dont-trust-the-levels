@@ -580,6 +580,61 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       task. **DONE 8 Nov 2026 — 1–7 PASS in `L_Level_01`, 8 PASS via the spawn
       variant of the rescue, 9 N/A there. `M1 GREEN` posted in §10.**
 
+- [ ] **Step 4 of the A2a fix plan — refresh the flipbook from the movement
+      loops** (defect 3 there; this one blocks *every* walker, not just the
+      rocks). Four single-node inserts, two drags each, no re-paste. Right-click
+      an empty spot next to the target, type `Refresh State Flipbook`, Enter —
+      it is this blueprint's own function, so there is no cast and no `self` wire:
+
+      | graph | insert after | new node's `then` goes to |
+      | ----- | ------------ | ------------------------- |
+      | `ChaseStep` | `AddMovementInput` (walk branch; its `then` is open) | nothing — leave it open |
+      | `ChaseStep` | `StopMovementImmediately` | the existing `FunctionResult` |
+      | `PatrolStep` | `AddMovementInput` | `FunctionResult_0` |
+      | `PatrolStep` | the final `SetFacing` (`Direction 0.0`) | `FunctionResult_1` |
+
+      Wiring, per insert: drag `target.then` → the new `execute` (that *moves*
+      the wire), then drag the new `then` → the old consumer when there was one.
+      Never drop the node onto the wire and never drag a wire end onto another
+      wire: both splice a reroute node, which is how the `BP_RockBase` loopback
+      survived two repairs (see `A2a` above). Current graph from
+      `Scripts/_bp_enemy_dump.txt` (8 Nov): `ChaseStep` 16 nodes —
+      `Entry → SetFacing → LedgeAhead → Branch `|then|`→ AddMovementInput
+      (then **open**), `|else|`→ StopMovementImmediately → FunctionResult_0`;
+      `PatrolStep` 28 nodes — `Entry → Branch(IsValid HomePlatform)` (its `else`
+      is open) `→ Branch` `|then|`→ `SetFacing(1.0)` / `|else|`→ `SetFacing(-1.0)`
+      both `→ LedgeAhead → Branch` `|then|`→ `AddMovementInput → FunctionResult_0`,
+      `|else|`→ `SetFacing(0.0) → FunctionResult_1`.
+
+      Gate (no PIE without it):
+
+          py -3 Scripts/_export_bp_enemy.py                 # live T3D -> _bp_enemy_dump.txt
+          py -3 Scripts/_check_step4_live.py --self-test    # needs 10 PASS / 0 FAIL
+
+      `Scripts/_check_step4_live.py` requires two `Refresh State Flipbook` calls
+      per graph, each one *the very next* exec node after its insertion point and
+      each ending the function (open `then`, or straight into the
+      `FunctionResult`); no exec cycle; no reroute. `--self-test` splices the four
+      refreshes into a copy of the same graph and requires `10 PASS`, so green
+      means the wires are really there. On the asset as it stands it prints
+      `4 PASS / 6 FAIL`:
+
+          [FAIL] 1  ChaseStep: 0 Refresh State Flipbook calls, expected 2
+          [FAIL] 1  PatrolStep: 0 Refresh State Flipbook calls, expected 2
+          [FAIL] 2  ChaseStep after move: after fn AddMovementInput comes <nothing> ...
+          [FAIL] 2  ChaseStep after stop: after fn StopMovementImmediately comes
+                    K2Node_FunctionResult_0(fn ChaseStep) ...
+          [FAIL] 3  PatrolStep after move: after fn AddMovementInput comes
+                    K2Node_FunctionResult_0(fn PatrolStep) ...
+          [FAIL] 3  PatrolStep after final SetFacing: after fn SetFacing comes
+                    K2Node_FunctionResult_1(fn PatrolStep) ...
+
+      PIE: the rocks in A2a's test 11 must switch to `Run` while they chase (their
+      override reads `Abs(Velocity.X) > 10`) and no walker may still show `Idle`
+      while patrolling/chasing (tests 1–7 in `L_Level_01`); `PlayStateFlipbook`
+      no-ops when nothing changed, so the four extra calls cost nothing.
+      **8 Nov 2026: not applied — the gate exists, the graph is untouched.**
+
 **Done when:** `_verify_enemy_base.py` = 52 PASS / 0 FAIL; tests 1–9 closed
 (1–7 and 8 pass — 8 via the spawn variant — and 9 is N/A in `L_Level_01`);
 compile clean; committed; `M1 GREEN` posted.
@@ -760,8 +815,56 @@ RefreshStateFlipbook` → Branch on `bPoweredOn` → `PlayStateFlipbook(OnIdleFl
 else `OffIdleFlipbook`) plus a capsule-bound `ComponentHitSignature` event,
 `TogglePower` and `BackToSkullIdle` sub-graphs, `BreakHitResult`/`Normal`/`Abs`
 and `LaunchCharacter` — i.e. B's "sub-graph collapse" style with the bodies in
-`ExecuteUbergraph_BP_FloatingSkull`. **Nothing about it is in §10, so the PIE
-gate is still open.**
+`ExecuteUbergraph_BP_FloatingSkull`. **The §10 rows of 8 Nov 2026 carry this
+audit; the PIE gate is still open** (see the defect block below).
+
+**Defects seen in PIE 8 Nov 2026** (recording of `L_Level_Testing`, 21:29). In
+code the skull is not a hover enemy: it is launched **once** in `BeginPlay`
+(`LaunchCharacter((Facing*BounceSpeed, 0, BounceSpeed))`, XY override on, Z
+override off, so the Z term is *added* to gravity) and is only re-launched by its
+own hit event.
+
+> **Correction (pin-level re-read, same day).** An earlier note in this card said
+> the reflect pushes `Abs(normal)` into the velocity and therefore always throws
+> the skull up-right. That is **wrong**: `Abs` feeds only the `>= 0.5` gate — the
+> `Select` values are `Nx*BounceSpeed` / `Nz*BounceSpeed` off the *raw signed*
+> `BreakHitResult.Normal`, i.e. a correct axis-wise bounce. The bounce math is
+> not the problem; the five items below are.
+
+1. `ReceiveTick` runs `SetFacing(NegateFloat(Normal(GetVelocity()).X))` — the
+   sprite is asked to face **opposite** to its motion, and while the skull is
+   falling/rising `X ≈ 0`, `Normal()` returns `(0,0,0)`, `SetFacing(0)` resolves
+   to "right", so the facing snaps and flips on every bounce. Fix:
+   `SetFacing(BreakVector(Normal(GetVelocity())).X)` and only when
+   `Abs(Vx) > 10`.
+2. The hit event never inspects `OtherActor`, so contact with the **player** (or a
+   projectile) also reflects the skull, plays a wall-hit flipbook and runs
+   `TogglePower` — the skull powers itself off by touching the player. Fix: gate
+   the reflect/toggle chain on `OtherActor` not being a `Pawn`.
+3. The wall-hit flipbook `Select` (A vs B) is indexed by **`bPoweredOn`**, and
+   `bUseWallAlternate` is referenced **nowhere** in the asset. It happens to
+   alternate today only because the card's `TogglePower`-per-hit flips
+   `bPoweredOn` — i.e. the two features are coupled. Fix: index with
+   `bUseWallAlternate` and flip it after `PlayStateFlipbook`.
+4. There is **no re-hit cooldown**: `LaunchCharacter` starts from the contact
+   point, so a corner contact can re-trigger `Hit` on consecutive frames and
+   re-reset the velocity — the "vibrating/pinned in the corner" look. Fix: a
+   `HitCooldown` float (`0.08`) checked at the top of the hit event.
+5. The hit event's **else** pin is unconnected, so a contact whose normal has
+   both `|Nx|` and `|Nz|` below `0.5` (Y-facing or strongly oblique geometry)
+   does nothing at all — the skull keeps pushing into that surface. Fix: wire
+   the else to a plain `LaunchCharacter(Normal * BounceSpeed, XY, Z)` fallback.
+
+`TogglePower` **on every wall/floor hit is the card's design** ("a wall/floor hit
+toggles the power state"), so it stays — but it is why the skull alternates
+between lethal and harmless every bounce; check that against the recording before
+changing it.
+
+`BeginPlay` also sets `bInvulnerable=true` / `bDealContactDamage=true` at
+runtime, which overrides the `bInvulnerable=false` class default the probe reads.
+`RefreshStateFlipbook` (ON/OFF idle by `bPoweredOn`) is reached only from
+`TogglePower` and the `0.35 s` `BackToSkullIdle` timer, never per tick — the same
+base-timing gap as `A2a` defect 3, so its idle never updates during a bounce.
 
 **Tasks** (all six are in the asset; the boxes record *structure*, not proof)
 
@@ -774,17 +877,21 @@ gate is still open.**
       probe matches, including `IdleFlipbook=FLB_Skull_Idle01`.
 - [x] `BeginPlay`: `InitEnemy`; `bPoweredOn=true`; `bInvulnerable=true`;
       `bDealContactDamage=true`; play `OnIdleFlipbook`; launch
-      `(Facing * BounceSpeed, 0, BounceSpeed * 0.5)` with XY/Z override.
-      **8 Nov 2026:** the BeginPlay sub-graph, `InitEnemy`, `MakeVector`,
-      `Multiply` and `LaunchCharacter` are all in the export; the body is in the
-      ubergraph, so wiring is not traced node by node.
+      `(Facing * BounceSpeed, 0, 1.0 * BounceSpeed)` with XY override on and Z
+      override **off**.
+      **8 Nov 2026 (traced node by node):** `Multiply_IntFloat(Facing,
+      BounceSpeed)` → `MakeVector.X`, `Multiply_FloatFloat(1.0, BounceSpeed)` →
+      `MakeVector.Z`, then `LaunchCharacter`; `MoveSpeed=300` is unused by the
+      launch. The card's earlier `BounceSpeed * 0.5` was wrong.
 - [x] Own `Event Hit`: ignore non-wall/floor normals; play alternating
       `HitWallFlipbookA/B`; `TogglePower`; `BackToSkullIdle` (`0.35`);
       reflect the X/Z velocity through `LaunchCharacter`. **8 Nov 2026:** the hit
       is a capsule-bound `ComponentHitSignature` event that forwards `Hit` =
       `BreakHitResult` to the ubergraph; `Normal`, `Abs`,
       `GreaterEqual_FloatFloat`, `K2_SetTimer("BackToSkullIdle", 0.35)` and
-      `LaunchCharacter` are present.
+      `LaunchCharacter` are present. **Not a reflect, though:** the normal is
+      fed through `Abs()` before it is scaled by `BounceSpeed`, and the else pin
+      is unwired (defects 1–2 in the block above).
 - [x] `TogglePower`: flip `bPoweredOn`; `bInvulnerable=bPoweredOn`;
       `bDealContactDamage=bPoweredOn`; `RefreshStateFlipbook`. **8 Nov 2026:**
       `TogglePower` is a collapsed sub-graph whose body sits in
@@ -988,46 +1095,299 @@ platform edge; shell ignores bullets; contact `1`; destroys itself after `8 s`.
 **Read:** `EnemyAI.md` §8.2; `Enemies.md` §6.2; `EnemyPlacement.md` §4.2.
 **Depends:** M1.
 
-**Status: BUILT 8 Nov 2026 (Jones), PIE UNVERIFIED.** Commits `f37473b`
-(*"rock tiers split on death with an 8-piece global cap"*) on `branch/Jones`,
-merged into `branch/Dennis` as **`320f0de`**. Because the editor was closed for
-the merge, this status rests on a **static read of the merged `.uasset`
-strings**, not a live CDO probe: `BP_RockBase` now declares `RockTier`,
-`ChildRockClass`, `bCanSplit`, `SplitImpulse`, `SplitOffset` and a
-`BP_RockBase` object array (the live-piece list for the cap), and its graph
-contains `BeginDeferredActorSpawnFromClass` / `FinishSpawningActor` /
-`K2Node_SpawnActorFromClass`. The tier chain is wired child-to-child: `BP_Rock1`
-(38×34, tag `Enemy.Rock.Tier1`, `ChildRockClass=BP_Rock2_C`) → `BP_Rock2`
-(32×28, `Tier2`, child `BP_Rock3_C`) → `BP_Rock3` (22×18, `Tier3`, no child),
-each with its own `FLB_Rock<n>_Idle/Run/Hit` and a description string naming the
-split ("splits into 2 tier-2 rocks", "Final tier; dies without splitting").
+**Status: BUILT 8 Nov 2026 (Jones), PIE UNVERIFIED (split has 3 defects).**
+Commits `f37473b` (*"rock tiers split on death with an 8-piece global cap"*) on
+`branch/Jones`, merged into `branch/Dennis` as **`320f0de`**. The Class Defaults
+and the graph were then read for real on 8 Nov 2026 with a **headless
+`UE4Editor-Cmd.exe -run=pythonscript` commandlet** (`Scripts/_dump_rocks_assets.py`
+for the CDOs, `Scripts/_dump_graph.py` on the `.T3D` export): `RockTier`
+`1/2/3`, `MaxHealth` `3/2/1`, `MoveSpeed` `100/140/180`, `ChaseSpeed`
+`120/160/200`, `AggroHalfWidth=700`/`AggroHalfHeight=500`/`DeAggroTime=2`,
+`SplitOffset=30`, `SplitImpulse=250`, `MaxPieces=8`, `bCanSplit`
+`true/true/false`, `ChildRockClass` `BP_Rock2_C`/`BP_Rock3_C`/`None`,
+`IdleFlipbook`/`RunFlipbook`/`HitFlipbook` = `FLB_Rock<n>_Idle/_Run/_Hit`
+(`Hit` is also `DeathFlipbook`), `bAggroOnHit=true` — every number in the card
+below matches.
 
-**Still unverified:** the Class Defaults of the card (`MaxHealth` `3/2/1`,
-`MoveSpeed` `100/140/180`, `ChaseSpeed` `120/160/200`, `MaxPieces=8`,
-`bCanSplit` `true/true/false`), whether the split is a `Die` override or lives
-in the base `AnyDamage`, and the whole PIE list below. The 5 Nov
-`bAggroOnHit=true` on all three CDOs still stands from the earlier live check.
-The boxes below stay unticked until a live probe + PIE confirms them — the same
-trap `A2e` fell into (asset built, card left reading NOT STARTED).
+The tier chain is wired child-to-child: `BP_Rock1` (38×34, tag
+`Enemy.Rock.Tier1`, child `BP_Rock2_C`) → `BP_Rock2` (32×28, `Tier2`, child
+`BP_Rock3_C`) → `BP_Rock3` (22×18, `Tier3`, no child). The three children are
+**bare**: only `UserConstructionScript` + three `Disabled` template events, no
+graphs of their own — all logic is in `BP_RockBase`.
+
+`Die` override (13 of 42 nodes are the split; the live body is the graph named
+`Die`, **not** the base `AnyDamage`): `GetAllActorsOfClass(BP_RockBase_C)` →
+`Array_Length <= MaxPieces - 1` **and** `bCanSplit` **and**
+`IsValidClass(ChildRockClass)` → spawn piece A at `Loc + (+SplitOffset,0,0)`,
+cast to `Character`, `LaunchCharacter((+SplitImpulse, 0, SplitImpulse*0.5))` →
+spawn piece B at `Loc + (-SplitOffset,0,0)` (both offset and impulse negated),
+cast, `LaunchCharacter((-SplitImpulse, 0, SplitImpulse*0.5))` → `Parent: Die`;
+the
+else branch goes straight to `Parent: Die`. Both spawns use
+`SpawnActorFromClass` with `CollisionHandlingOverride=AdjustIfPossibleButAlwaysSpawn`.
+**Correction to the earlier static read:** `BeginDeferredActorSpawnFromClass` /
+`FinishSpawningActor` exist only in the orphaned `EdGraph_2` leftover (50
+nodes, not referenced by `FunctionGraphs`), i.e. an earlier iteration of the
+same code — the compiled path does not use them. Pin-level check: piece A takes
+`VariableGet_9 = SplitOffset` for its offset and `VariableGet_10 = SplitImpulse`
+for its launch, piece B negates both — so the impulses are **outward and
+correct**, the split does not fire the pieces into each other.
+
+**Geometry note (8 Nov, second pass).** `SplitOffset=30` while the tier sprites
+are `38×34` / `32×28` / `22×18`, so unless the capsule is far smaller than the
+sprite, the tier‑1 and tier‑2 siblings are **overlapping at spawn** (≈8 cm and
+≈2 cm) and only tier‑3 pieces (`22` wide, `30` apart) come out clear. That
+overlap is what `AdjustIfPossibleButAlwaysSpawn` was silently resolving by
+nudging a piece to the nearest free spot, and it is also the first frame of the
+sibling shoving — so fix-plan step 3 is not optional polish. Raising
+`SplitOffset` would be a card change (the card says `30`), not a fix.
+
+**Open defects (from the 8 Nov 21:29 PIE recording of `L_Level_Testing`).**
+The one placed rock (`BP_Rock1` at `(600, 0, 106.2)`, actor rotation all zero —
+so this is *not* a placement problem) was split in PIE and three things broke:
+
+1. **Split pieces spawn rotated.** Both `MakeTransform` nodes feed
+   `Rotation = Conv_VectorToRotator(GetActorLocation())` — the rock's *world
+   position vector* becomes its rotator, so a piece inherits
+   `Pitch = atan2(Z, X)` (≈10° for the level's own rock) and `Yaw = 180` for
+   any `X < 0`. Fix: use `GetActorRotation()` (pitch/roll zeroed) in both
+   `MakeTransform` nodes.
+2. **Pieces shove each other.** Not the impulses (they are outward, see above):
+   both pieces are Pawn-blocking `Character` capsules that aggro the same player
+   and converge on the same `X`, and nothing makes rock-versus-rock ignore, so
+   `AddMovementInput` drives them into each other every frame. The spawn also
+   still uses `AdjustIfPossibleButAlwaysSpawn`, so a piece whose capsule clips
+   the dying parent (or the tilted capsule from defect 1) gets displaced out of
+   its intended offset. Fix: spawn with `AlwaysSpawn`, and make the pieces
+   ignore each other (`IgnoreActorWhenMoving` between the pair, or a
+   `BP_RockBase`-wide ignore loop in `BeginPlay`).
+3. **`RefreshStateFlipbook` never runs while the rock walks.** The rock's own
+   override is correct (`Parent:` → Branch `|Velocity.X| > 10` → `Run` else
+   `Idle`), but `BP_EnemyBase.UpdateAggro` only reaches
+   `RefreshStateFlipbook` on the *give-up* branch, and `ChaseStep` /
+   `PatrolStep` return through their own `FunctionResult` **without**
+   refreshing. Result: the pieces keep `Idle` while they
+   chase, and pick up `Run` at the moment the chase is abandoned — the exact
+   inversion heard in the recording. Fix belongs in the base, and the four
+   insertion points are `ChaseStep` (after `AddMovementInput` and after
+   `StopMovementImmediately`) and `PatrolStep` (after `AddMovementInput` and
+   after the final `SetFacing`) — every exit of `UpdateAggro` then passes one
+   refresh. `PlayStateFlipbook` already no-ops when the flipbook is unchanged.
+
+**Still unverified:** the whole PIE list below (test 11).
+
+**Fix plan (apply in this order, compile + PIE-check after each step).**
+
+| # | Asset | Change | Kills defect |
+| - | ----- | ------ | ------------ |
+| 1 | `BP_RockBase.Die` | both `MakeTransform.Rotation` ← new `Get Actor Rotation` (pitch/roll zeroed) instead of `Conv_VectorToRotator(GetActorLocation())`; delete the two converters | A2a 1 |
+| 2 | `BP_RockBase.Die` | both `SpawnActorFromClass` → `CollisionHandlingOverride = AlwaysSpawn` | A2a 2 (displacement) |
+| 3 | `BP_RockBase` | pieces ignore each other: `IgnoreActorWhenMoving(pieceA, pieceB)` / `(pieceB, pieceA)` right after the two casts (or a `BP_RockBase`-wide ignore loop in `BeginPlay` for the 4× Rock3 case) | A2a 2 (shoving) |
+| 4 | `BP_EnemyBase` `ChaseStep` + `PatrolStep` | 4 × `RefreshStateFlipbook` insertions (see the insertion points in defect 3) | A2a 3 (and every walker) |
+| 5 | `BP_EnemyBase.SetFacing` | verify the else branch: the T3D carries `NewRotation` default `Pitch 180` while its split pins read `Roll/Pitch/Yaw 0,0,0`, so one of the two is stale. Target per `Docs/Enemies.md`: `Direction >= 0` → `Sprite0` relative **Yaw 180**; else → **Yaw 0 / Pitch 0 / Roll 0**. If the details panel really shows `Pitch 180`, every left-facing walker is upside-down | face/orientation on all walkers |
+| 6 | `BP_FloatingSkull.ReceiveTick` | `SetFacing` ← `BreakVector(Normal(GetVelocity())).X` (no `NegateFloat`), gated by `Abs(Vx) > 10` | A2e 1 |
+| 7 | `BP_FloatingSkull` hit event | gate on `OtherActor` not being a `Pawn`; `Select` index ← `bUseWallAlternate` and flip it after `PlayStateFlipbook`; add the `HitCooldown` guard; wire the else pin to `LaunchCharacter(Normal * BounceSpeed, XY, Z)` | A2e 2–5 |
+
+Steps 1–3 are the rock batch and need only `L_Level_Testing`; step 4 and 5 touch
+the shared base, so they need a walker run in `L_Level_01` (tests 1–7) as well as
+test 11.
+
+**Status 8 Nov 2026 (after the PIE recording):** steps **1–3 applied and step 3
+verified** — the reroute node was deleted, the live export is 14 nodes and
+`Scripts/_check_step3_live.py` prints `7 PASS / 0 FAIL`, and the `L_Level_01` PIE
+run after the delete logs no runaway loop (owner-confirmed); **steps 4–7 not
+applied**. Step 4 (the base's missing `RefreshStateFlipbook` calls, and the reason
+every walker plays `Idle` while it moves) has its node-level recipe and its gate
+in `A1` below. Steps 5–7 are the last of the list.
+
+**8 Nov 2026, step-3 corrections (two, and the second one is why PIE hung).**
+First: the earlier wire list named `CharacterMovement.Ignore Actor When Moving`,
+which does not exist in UE 4.27 — `IgnoreActorWhenMoving` is a
+`UPrimitiveComponent` function, i.e. it is called on the **Capsule Component**.
+That is why the node could not be found/connected and why `For Each Loop.Array
+Element` had nowhere sensible to go. Second: the first generated paste wired the
+loop body **back into `For Each Loop`'s `Exec` pin** (three wires:
+`Ignore.then`, `Branch.else`, `Cast.CastFailed`). A ForEach macro advances by
+itself as soon as a body chain simply *ends*; re-entering `Exec` restarts the
+macro from index 0, so the first element was processed for ever. The engine log
+proves it (`Saved/Logs/DontTrustTheLevels.log`):
+
+    LogScript: Warning: Runaway loop detected (over 1,000,000 iterations)
+    	BP_Rock1_C .../UEDPIE_0_L_Level_01.L_Level_01:PersistentLevel.BP_Rock1_2
+    	Function .../BP_RockBase.BP_RockBase_C:ExecuteUbergraph_BP_RockBase:0047
+    PIE: Error: Infinite loop detected. Blueprint: BP_RockBase
+    	Function: Get All Actors Of Class
+
+**Rule for every loop in this plan: never wire a ForEach body back into `Exec`.**
+Body chains just stop — `then`, `CastFailed` and `else` may all be left open; the
+macro steps to the next element on its own and `Completed` fires when the array
+runs out. (The project's own working loops, e.g. `BP_EnemyBase.TryRescue`, have
+exactly one wire into `Exec`.) `Scripts/_gen_step3.js` now rejects any graph
+whose exec path forms a cycle at all, so this cannot come back unnoticed.
+
+**8 Nov 2026, step-3 second pass: the loopback survived as a reroute node.**
+After the four edits, PIE was replayed and hung again — no longer at level start
+but *when the first rock died*:
+
+    LogScript: Warning: Runaway loop detected (over 1,000,000 iterations)
+    	BP_Rock2_C ...PersistentLevel.BP_Rock2_C_0
+    	Function ...BP_RockBase.BP_RockBase_C:ExecuteUbergraph_BP_RockBase:0198
+    PIE: Error: Infinite loop detected. Blueprint: BP_RockBase Function: Branch
+    	BP_Rock2_C ...PersistentLevel.BP_Rock2_C_1
+    PIE: Error: Infinite loop detected. Blueprint: BP_RockBase Function: Outputs
+
+Why it only bites *after* the kill: edits 2–3 left `Branch.else` and `CastFailed`
+open, so a rock that sees **no brother** ends the body at `else` and the macro
+advances on its own — with one rock in the level, `BeginPlay` looked healthy for
+13 s. As soon as `Die` spawns the two `BP_Rock2` pieces, each piece's `BeginPlay`
+sees two elements: element 0 is not itself → `then` → the two ignore calls →
+**back into `Exec`** → index 0 again, for ever. Two instances, two runaway loops
+0.7 s apart: exactly the two log lines above.
+
+Where the wire hid (`Scripts/_export_rock_check.py` →
+`Scripts/_rock_after_step3.txt`): edit 1 did not cut, it **spliced**. Dropping a
+wire end onto an existing wire makes UE insert a **reroute node**
+(`K2Node_Knot`), it does not break the old link, so `For Each Loop.Exec` ended up
+with two inputs — `Get All Actors Of Class.then` *and* `K2Node_Knot_7`, whose
+input is the right-hand `Ignore Actor When Moving.then`. Pin-level reasoning does
+not call that a cycle; the knot is a plain pass-through.
+
+Fix — one action, no re-paste: select the **reroute node** between the right-hand
+`Ignore Actor When Moving` and `For Each Loop` and press `Delete`. Deleting a
+reroute removes both of its segments, which leaves `Exec` with the single
+`Get All Actors Of Class.then` input. Equivalent alternative: `Alt+click` on
+`For Each Loop.Exec` (breaks *every* link into it) and drag
+`Get All Actors Of Class.then` → `Exec` again.
+
+Verify before PIE:
+
+    py -3 Scripts/_export_rock_check.py      # live T3D -> Scripts/_rock_after_step3.txt
+    py -3 Scripts/_check_step3_live.py       # needs 7 PASS / 0 FAIL
+    py -3 Scripts/_selftest_step3_live.py    # checker sanity, must end "selftest OK"
+
+`Scripts/_check_step3_live.py` reads that export and enforces: exactly one input
+into `For Each Loop.Exec`; **no exec cycle anywhere** (node level — a macro's
+`Exec -> LoopBody` edge is implicit, which is why this defect slipped through
+twice); `else`/`CastFailed` end the body; `Actor` = `Self` on the left call and
+`Array Element` on the right, each with the *opposite* capsule in `self`; and
+**no reroute nodes left** in the graph. On the asset as it stands it prints:
+
+    [FAIL] 1  For Each Loop.Exec has 2 inputs: ...GetAllActorsOfClass, ...K2Node_Knot_7
+    [FAIL] 2  exec cycle: MacroInstance_0 -> IfThenElse_0 -> DynamicCast_0 ->
+              CallFunction_2 -> CallFunction_3 -> Knot_7 -> MacroInstance_0
+    [FAIL] 5  reroute node K2Node_Knot_7 still in the graph (...) - delete it
+
+and after the delete it prints `7 PASS / 0 FAIL`. `Scripts/_selftest_step3_live.py`
+proves the checker is not a rubber stamp: it strips the reroute from a copy of
+the same export (what the delete does) and requires `0 FAIL` on that copy. Those
+commands are the gate before PIE — but note that a **stale** export passes just
+as happily as a fixed graph, so re-export after every edit.
+
+**Practical rule: after any wire drag in this graph, re-export and run the
+checker — a spliced wire looks connected and is not.**
+
+**How to implement step 3 (node level).** `Docs/step3_rock_ignore.txt` is the
+corrected clipboard graph: 11 nodes, **16** wires, every input already fed. A
+fresh install: paste it into `BP_RockBase`'s `EventGraph`, then drag the one
+missing wire, the (still disabled) `ReceiveBeginPlay` stub's `then` →
+`Parent: ReceiveBeginPlay.execute`; that drag also enables the stub. `Ctrl+Z`
+undoes a paste in one go.
+
+**If the old 19-wire paste is already in the graph, repair it in place** — four
+edits, no node moves, no re-paste:
+
+1. **Cut** the wire from the **right-hand** `Ignore Actor When Moving.then` →
+   `For Each Loop.Exec` (the left one's `then` feeds the right one's `execute`
+   and must stay). Do **not** drag that wire's end onto the existing
+   `Get All Actors Of Class.then → Exec` wire: UE *splices* it into a reroute
+   node and the loopback survives while looking connected (this is exactly what
+   happened on 8 Nov). Delete the wire, or delete the reroute node afterwards.
+2. **Cut** `Branch.else` → `For Each Loop.Exec`.
+3. **Cut** `Cast To BP_RockBase.CastFailed` → `For Each Loop.Exec`.
+4. Drag `Self` → the **left** `Ignore Actor When Moving`'s `Actor` pin (replaces
+   `Array Element`), and drag `For Each Loop.Array Element` → the **right**
+   `Ignore Actor When Moving`'s `Actor` pin (replaces `Self`). The old pins made
+   each capsule ignore *its own* actor, i.e. a no-op, so the graph did nothing
+   useful even before it hung.
+
+After that the graph must read exactly like the file; compile + save, then PIE.
+
+Flow: `ReceiveBeginPlay.then` → **`Parent: ReceiveBeginPlay`** → `Get All Actors
+Of Class (BP Rock Base)` → `For Each Loop` → `Branch (Array Element != Self)` →
+`Cast To BP_RockBase (Array Element)` → **`Get Capsule Component(other)`.
+`Ignore Actor When Moving (Actor = Self, true)`** and **`Get Capsule
+Component(self).Ignore Actor When Moving (Actor = Array Element, true)`**;
+`i2.then`, `Branch.else` and `Cast.CastFailed` **end the body** — nothing goes
+back into `For Each Loop.Exec`.
+
+**The call lives on the capsule, not on the movement component.** In 4.27
+`IgnoreActorWhenMoving(AActor*, bool)` is declared on `UPrimitiveComponent`
+(`Engine/Source/Runtime/Engine/Classes/Components/PrimitiveComponent.h:763`), so
+the node is `Capsule Component → Ignore Actor When Moving`; there is no
+`CharacterMovement.Ignore Actor When Moving` and that is why the original wire
+list could not be built. Each of the two calls therefore takes its own
+`Capsule Component` getter into `self` (`self` has no usable default — left empty
+the compiler says *This function requires a target*), and `Actor` is `Self` on
+the first call (the brother ignores me), `Array Element` on the second (I ignore
+the brother). Both directions are
+mandatory: the ignore list is `MoveIgnoreActors` on one component, so a one-way
+registration leaves the other rock still sweeping against it — the engine's own
+comment on that array says *"Components on the other Actor may also need to be
+told to do the same when they move."*
+
+Other traps the paste already handles: `Array Element` is an untyped wildcard
+until `Out Actors` is in `For Each Loop.Array` (the pasted text carries the type,
+so do not re-create the loop by hand), and `Cast.Object` ← `Array Element`.
+`CastFailed` is left **unconnected on purpose** — the cast can only fail for a
+non-rock actor, and that path simply ends the iteration.
+
+`Parent: ReceiveBeginPlay` must stay first, otherwise `InitEnemy`/`TryRescue`
+never run for any rock (the base's `BeginPlay` is `InitEnemy` plus a looping
+`SetTimer(TryRescue, 0.5)`). The later sibling registers both directions with its
+already-spawned brother, so the 4× `Rock3` crowd from two different `Rock2`
+parents ends up mutually ignored.
+**Do not** "fix" this by setting the capsule's `Pawn` response to `Ignore`: that
+also lets the player walk through the rock and kills the `ContactBox` push-out.
+Related nit in `Die`: `CastFailed` is unwired on both `Cast To Character` nodes,
+so a failed cast dead-ends the chain and the parent is never `Die`d.
+
+> The wired graph is `Docs/step3_rock_ignore.txt` (16 wires; it *is* the graph)
+> and the picture of the same 11 nodes is `Docs/rock_graph.html`. Both are
+> regenerated from `Scripts/_gen_step3.js`, which refuses any exec cycle.
+> `Scripts/_check_step3_live.py` checks the **live** asset against the same rules
+> (one input into `Exec`, no exec cycle, `else`/`CastFailed` open, both `Actor`
+> pins, no reroute); it must print `7 PASS / 0 FAIL` before any PIE run.
+
 
 **Tasks**
 
-- [ ] `BP_RockBase`: add `RockTier`, `ChildRockClass`, `bCanSplit`,
-      `SplitImpulse`, `SplitOffset`, `MaxPieces`.
-- [ ] Child Class Defaults: health `3/2/1`, `MoveSpeed` `100/140/180`, tier
+- [x] `BP_RockBase`: add `RockTier`, `ChildRockClass`, `bCanSplit`,
+      `SplitImpulse`, `SplitOffset`, `MaxPieces`. **8 Nov 2026:** all six read
+      back off the CDO.
+- [x] Child Class Defaults: health `3/2/1`, `MoveSpeed` `100/140/180`, tier
       `1/2/3`, `ChildRockClass` `Rock2/Rock3/None`, `bCanSplit` `true/true/false`,
       rock flipbooks, positive `ChaseSpeed` per tier (start `120/160/200`).
-- [ ] Use base `PatrolStep` / `ChaseStep` / `UpdateAggro`; no child movement
-      Tick. Aggro rectangle `700×500`, `DeAggroTime=2.0`.
+      **8 Nov 2026:** exactly those values; aggro box `700×500`,
+      `DeAggroTime=2`.
+- [x] Use base `PatrolStep` / `ChaseStep` / `UpdateAggro`; no child movement
+      Tick. **8 Nov 2026:** the children carry no graphs at all.
 - [ ] `Die` override: if `bCanSplit` and `ChildRockClass` is valid and the live
       `BP_RockBase` count is `<= MaxPieces - 1`, spawn two children at
       `±SplitOffset`, launch them with `SplitImpulse`; then `Parent: Die`.
+      **Wired as specified 8 Nov 2026, but defects 1–2 above (rotation,
+      sibling collision) must be fixed before the box can be ticked.**
 - [ ] Split pieces rely on `Landed` / `ResolveKnockback` to adopt the landing
-      platform; do not copy the parent's `HomePlatform`.
-- [ ] Override `RefreshStateFlipbook`: run when `Abs(Velocity.X) > 10`, else idle.
+      platform; do not copy the parent's `HomePlatform`. **Still PIE-only:**
+      the pieces inherit the base's `BeginPlay` `TryRescue` path, which is what
+      should place them.
+- [x] Override `RefreshStateFlipbook`: run when `Abs(Velocity.X) > 10`, else idle.
+      **8 Nov 2026:** the branch is exactly that — but defect 3 means the base
+      never calls it while the rock walks.
 
 **Done when:** test 11 passes; kill tier 1 → 2× tier 2; kill tier 2 → 4× tier 3;
 tier 3 does not split; live count stays ≤ 8; pieces adopt their landing platform.
+**8 Nov 2026:** split + launch + cap verified statically; the pieces come out
+rotated and shoving each other, so test 11 fails on presentation.
 
 **Do not:** copy the stationary turtle; add a second Tick; or assume the parent
 platform remains valid.
@@ -1248,6 +1608,7 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 8 Nov 2026 | A1 | **M1 gate — walker PIE tests 1–9** | **M1 GREEN** | `_check_aggro_keep.py` re-run 8 Nov 2026 on the post-guard export: 11/11 PASS — the five `FunctionEntry` wires of the row above are present (`FunctionEntry drives Tick, both player pins and the clock — 6 wires present`); `_verify_enemy_base.py` 52 PASS / 0 FAIL / 0 PENDING | 1–4, 6, 7 PASS with no deviation; 5 PASS — the walker halts where it is and faces the player instead of walking to the ledge, then patrols again after `DeAggroTime` (the `False → bAggro` branch); 8 PASS through the spawn variant — a walker placed on a zone-less surface is taken by the 0.5 s `BeginPlay` `TryRescue` timer to the nearest zone, the same function the knockback path calls (no stair step exists in `L_Level_01` to knock one into); 9 N/A there: `RescueRadius=2000` on a ~4000 uu level leaves every step with an eligible zone at or below it, so "stays stranded" cannot be produced — 9a covers the candidate path | closes the acquire/keep row above; `EnemyAI.md` §11 rows 1–9, §6.3, §12 |
 | 8 Nov 2026 | A2 (B's asset) | `BP_FloatingSkull` | **BUILT, PIE open** | `Scripts/_run_probe_skull.py` (read-only) on the live CDO: **0 of 22** probed properties missing — seven own variables (`BounceSpeed=300`, `bPoweredOn=true`, `bUseWallAlternate=false`, `OnIdleFlipbook=FLB_Skull_Idle01`, `OffIdleFlipbook=FLB_Skull_Idle02`, `HitWallFlipbookA/B`) and Class Defaults `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`, `ContactDamage=1`, `MoveSpeed=300`, `IdleFlipbook=FLB_Skull_Idle01`, `HitFlipbook`/`DeathFlipbook=FLB_Skull_Hit`; fresh `_check_child_overrides.py` export: own `RefreshStateFlipbook` traced (`Parent:` → Branch(`bPoweredOn`) → ON/OFF idle), capsule-bound `ComponentHitSignature`, `TogglePower` + `BackToSkullIdle` sub-graphs, `BreakHitResult`/`Normal`/`Abs` and `LaunchCharacter` reflect | not run | build came in `bb3627d` (**Lee Chung Hei**, 5 Nov 2026) with no doc update, which is why `A2e` still read NOT STARTED; `A2a` (Rocks) is now the only untouched A2 card; the asset also runs an enabled `ReceiveTick` sub-graph that `EnemyAI.md` §8.7 does not mention — decide keep or remove |
 | 8 Nov 2026 | A2 (Jones) | `BP_RockBase` + `BP_Rock1/2/3` | **BUILT, unverified** | merged `branch/Jones` `f37473b` into `branch/Dennis` as `320f0de`; static `.uasset` string read (editor closed, no live probe): `BP_RockBase` declares `RockTier`/`ChildRockClass`/`bCanSplit`/`SplitImpulse`/`SplitOffset` + a `BP_RockBase` array, with `BeginDeferredActorSpawnFromClass`/`FinishSpawningActor` in the graph; `Rock1` (38×34, `Enemy.Rock.Tier1`, child `BP_Rock2_C`) → `Rock2` (32×28, `Tier2`, child `BP_Rock3_C`) → `Rock3` (22×18, `Tier3`, no child); `FLB_Rock<n>_Idle/Run/Hit` referenced per tier | not run | same failure mode as `A2e`: the asset shipped without a card update. **Open:** live CDO probe of the defaults (`MaxHealth` `3/2/1`, `MoveSpeed` `100/140/180`, `ChaseSpeed` `120/160/200`, `MaxPieces=8`), where the split hangs off `Die` vs base `AnyDamage`, and PIE test 11 |
+| 8 Nov 2026 | A2 (Jones' rocks, B's skull) | `BP_RockBase`+`BP_Rock1/2/3`+`BP_FloatingSkull` in PIE | **PIE FAIL — 8 defects** | read without the editor via `UE4Editor-Cmd.exe -run=pythonscript` (`Scripts/_dump_rocks_assets.py`, `_dump_rocks_flipbooks.py`, `_dump_level_rocks.py`) + `Scripts/_dump_graph.py`: rock CDOs are exactly the card's `3/2/1`, `100/140/180`, `120/160/200`, `MaxPieces=8`, `bCanSplit` `true/true/false`; `L_Level_Testing` holds a single `BP_Rock1` at `(600,0,106.2)` with rotation `0,0,0`; flipbooks `Rock1` 14/14/1, `Rock2` 13/14/1, `Rock3` 11/14/5 frames at 10/14/12 fps | 21:29 recording: (a) split pieces spawn rotated — `MakeTransform` rotation is `Conv_VectorToRotator(GetActorLocation())`; (b) pieces shove each other — both pieces are Pawn-blocking Characters chasing one player and nothing makes rock-vs-rock ignore, and `AdjustIfPossibleButAlwaysSpawn` displaces the spawns (the impulses themselves are outward/correct); (c) rocks play `Idle` while chasing and `Run` once the chase is dropped — `ChaseStep`/`PatrolStep` never call `RefreshStateFlipbook`, only `UpdateAggro`'s give-up branch does; skull: (d) hit flipbook A/B selected by `bPoweredOn` (`bUseWallAlternate` is dead), (e) no `OtherActor` filter so it reflects and power-toggles off the player, no re-hit cooldown → corner jitter, else pin unwired, (f) `ReceiveTick` sets facing to `NegateFloat(Normal(Velocity).X)` and snaps to "right" when `Vx≈0`. The bounce math is a correct signed per-axis reflect; `TogglePower` per hit is the card's design | `Docs/EnemyWorkPlan.md` `A2a`/`A2e`; scratch: `Scripts/_rock_base_graph_dump.txt`, `_skull_graph_dump2.txt`, `_enemy_base_graph_dump.txt` |
 
 **`M1 GREEN` — 8 Nov 2026.** Walker PIE tests 1–7 passed in `L_Level_01` on the
 staged `BP_Rock1`; verifier output: `_verify_enemy_base.py` **52 PASS | 0 FAIL |
