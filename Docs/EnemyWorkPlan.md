@@ -77,7 +77,7 @@ If two documents disagree, **stop and post the conflict** in the status log.
 - All 20 Blueprint shells exist under
   `Content/DontTrustTheLevels/Enemies/Blueprints/`.
 - `BP_EnemyBase` has the shared health/damage/death/contact graph.
-  `py -3 Scripts\_verify_enemy_base.py` reports **45 PASS / 0 FAIL**.
+  `py -3 Scripts\_verify_enemy_base.py` reports **52 PASS / 0 FAIL**.
 - `BP_EnemyPlatform` exists and seven auto zones exist in `L_Level_01`.
 - `BPI_Killable` is implemented on `BP_EnemyBase`; traps are player-only.
 
@@ -170,7 +170,7 @@ If two documents disagree, **stop and post the conflict** in the status log.
    child usually means a missing parent member; do not hide it by duplicating
    the member in the child.
 7. **Walkers wait for M1.** Until A1 posts the base gate (variables, functions,
-   `PatrolStep`/`LedgeAhead`, compile clean, 45 PASS, tests 1–9), do not wire
+   `PatrolStep`/`LedgeAhead`, compile clean, 52 PASS, tests 1–9), do not wire
    `Snail`, `Rocks`, `Slime`, `Rhino` or the final `WoodLog` aggro wiring.
    A1 may prepare Snail unique variables/defaults; A2 may prepare Rock and Skull
    unique variables/defaults, art and static map/platform instances. No walker
@@ -407,7 +407,7 @@ not wire or PIE-test its aggro/patrol until M1 is green.
 **M1 acceptance gate**
 
 - Parent and every compiled child have no red errors.
-- `py -3 Scripts\_verify_enemy_base.py` holds **45 PASS / 0 FAIL**.
+- `py -3 Scripts\_verify_enemy_base.py` holds **52 PASS / 0 FAIL**.
 - PIE tests 1–9 from `EnemyAI.md` §11 pass on a temporary `BP_Rock1` placed on
   P_02 (z ≈ `506.25`) or `BP_Snail` on P_00 (z ≈ `875`). A2 stages, commits and
   pushes the test setup, then A1 pulls and runs PIE. A1 never saves the map; A2
@@ -494,7 +494,7 @@ platform; Rhino dies on the 4th wall hit.
   `MinPatrolWidth` and per-enemy speeds in Class Defaults, not in duplicated
   child variables. A1 owns base/platform/Snail defaults; A2 owns Rock + Skull
   defaults.
-- A1 re-runs `_verify_enemy_base.py`; hold **45 PASS / 0 FAIL**. A1 also owns
+- A1 re-runs `_verify_enemy_base.py`; hold **52 PASS / 0 FAIL**. A1 also owns
   the aggro-on-hit contract change (`bAggroOnHit`, with `DeAggroTime` reused as
   the post-hit window); it is landed in the base, so the
   Rock/WoodLog/Snail CDO flips can proceed.
@@ -559,14 +559,14 @@ contract docs. Never save `L_Level_01`; A2 stages/removes the M1 test actor.
       `KnockbackForce=0` child) keeps `MOVE_Flying` / `MaxFlySpeed` after a hit;
       grounded walkers are unchanged (`Vz ≈ 0`). Evidence: §10 row of 7 Nov,
       `Scripts/_check_bat_hit_knockback.py` → `PASS (A)`,
-      `_verify_enemy_base.py` 45 PASS / 0 FAIL.
+      `_verify_enemy_base.py` 52 PASS / 0 FAIL.
 - [ ] **Gate:** verify the Top gate
       (`bIsDead OR bStranded OR NOT bCanMove` → return; `bWasKnockedBack` →
       return; `ChaseSpeed <= 0` → `PatrolStep` → return) in PIE with tests 1–9.
       All three AI halves now exist, so this is a verification task, not a build
       task. Run it and post `M1 GREEN`.
 
-**Done when:** `_verify_enemy_base.py` = 45 PASS / 0 FAIL; tests 1–9 pass;
+**Done when:** `_verify_enemy_base.py` = 52 PASS / 0 FAIL; tests 1–9 pass;
 compile clean; committed; `M1 GREEN` posted.
 
 ---
@@ -1048,7 +1048,7 @@ Hard rules:
 - Contact damage goes through ContactBox, not the capsule.
 - Compile and save after every function or graph. Never leave a red error.
 - Run `py -3 Scripts\_verify_enemy_base.py` after any base-adjacent change;
-  the accepted result is 45 PASS / 0 FAIL.
+  the accepted result is 52 PASS / 0 FAIL.
 - A1/A2 may prepare unique child variables/defaults, art and static
   map/platform placement, but may not wire walker graphs or run walker PIE
   before A1 posts M1 GREEN.
@@ -1159,6 +1159,7 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 7 Nov 2026 | A1 | `BP_Snail` chase speed | DONE | `Scripts/_run_enemy_tuning.py` → live CDO `BP_Snail.ChaseSpeed` 80 → 250, saved and re-read; aggro box still `0/0`, `bAggroOnHit=true` | PIE pending | `UpdateAggro`'s chase branch writes `MaxWalkSpeed = ChaseSpeed` (patrol writes `MoveSpeed`), so the old `80` uu/s against the player's `1000` uu/s was indistinguishable from standing still. No proximity aggro was added: the zero aggro box plus `bAggroOnHit` is the locked §13 design (a snail ignores a player until it is shot) | `BP_Snail.uasset`, `Enemies.md` §6.3, `EnemyAI.md` §8.3/§10, `EnemyWorkPlan.md` |
 | 7 Nov 2026 | A1 | `BP_EnemyBase` acquire/keep split | IN PROGRESS | whole-graph paste applied: live T3D `Update Aggro` is 61 nodes, **1 piece**, 10 of 11 checks PASS — the six new→old links landed. The editor renamed the pasted `FunctionEntry` (`K2Node_FunctionEntry_0` → `_4`), so the importer dropped **five** entry wires, not the three that were first noticed: `FunctionEntry.Player` → `IsPlayerInAggroBox.Player` `(592,-640)`, → `IsPlayerOnHomePlatform.Player` `(880,-640)`, → `K2_GetActorLocation.self` `(592,-288)` (the *player* location; the second `K2_GetActorLocation` at `(592,-432)` is the enemy's own and must stay unwired), → `ChaseStep.Player` `(4208,-960)`, and `FunctionEntry.Delta Seconds` → `Add.A` `(3440,-480)` (without it `UnreachableTime += dt` becomes `+= 0`, so a walker would never de-aggro). The `then` wire survived. The regenerated paste writes all five on both pins and `Scripts/_test_full_paste.py` PASSes 11/11 both as-is and with the entry renamed on purpose | drag those five wires (entry `(96,-752)`) or re-paste `Scripts/_bp_enemy_base_updateaggro_full_paste.txt` → compile → save → `_run_aggro_keep_check.py` = PASS → PIE | the box term is acquire-only now: `Chase = Detect OR (bAggro AND Keep)` where `Keep = OnHome AND |ΔZ| ≤ MaxChaseStepZ (+ hit window + AggroRadius > 0)`. A walker used to de-aggro after `DeAggroTime` whenever the player ran past `AggroHalfWidth` on the *same* platform, because acquire and keep shared one 600–1400 uu rectangle. Flyers are unaffected (they never call `UpdateAggro`) and the `AggroRadius > 0` term keeps that guarantee inside the shared rule | `Scripts/_bp_enemy_base_updateaggro_full_paste.txt`, `Scripts/_make_full_aggro_paste.py`, `Scripts/_test_full_paste.py`, `Scripts/_make_aggro_paste_graph.py`, `Scripts/_check_aggro_keep.py`, `Scripts/_run_aggro_keep_check.py`, `Scripts/_verify_enemy_base.py`, `EnemyAI.md` §1/§4/§6.2/§6.3/§6.4, `Enemies.md` §5.1/§7.3 |
 | 7 Nov 2026 | A1 | `BP_EnemyBase` flyer guards | DONE | `_verify_enemy_base.py` **52 PASS / 0 FAIL / 0 PENDING** — both `Is Flying` guards present; `_audit_enemy_base.py` 50 graphs / 23 composites / **11 unwired (0 suspicious)** / 0 orphans; walker rescue PIE-confirmed (9a) | 9a PASS (walker); 9b PASS (flyers — no flyer sent back to a zone) | `TryRescue` and `FindHomePlatform` now return immediately for `MOVE_Flying`, so a flyer is never snapped to a zone and never adopts one. Three checker bugs fixed in the same session, all the same `gnorm()` trap: `exec_edges()` looked a composite's `BoundGraph` up by raw name (3 false FAILs, 23 composite bodies invisible), `verify()` tested the T3D display name `"Find Home Platform"` (a built guard still read PENDING), and the audit counted `K2Node_ComponentBoundEvent` as an orphan. `_probe_rescue.py` no longer hard-codes `guard PENDING`: it reads `_verify_enemy_base_out.txt` (`guards_built()`), covered by `Scripts/_test_probe_guards.py` |
+| 8 Nov 2026 | A1 | M1 PIE walker tests 1–7 | DONE (8–9 pending) | `_check_aggro_keep.py` re-run 8 Nov 2026 on the post-guard export: 11/11 PASS — the five `FunctionEntry` wires of the row above are present (`FunctionEntry drives Tick, both player pins and the clock — 6 wires present`); `_verify_enemy_base.py` 52 PASS / 0 FAIL / 0 PENDING | 1–4, 6, 7 PASS with no deviation; 5 PASS — the walker halts where it is and faces the player instead of walking to the ledge, then patrols again after `DeAggroTime` (the `False → bAggro` branch); 8–9 not run: no staircase located in `L_Level_01`, and 9's precondition (no zone within `RescueRadius`) cannot be met there | closes the acquire/keep row above; `EnemyAI.md` §11 rows 1–7, §6.3, §12 |
 
 
 

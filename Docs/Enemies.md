@@ -1385,7 +1385,7 @@ but not sufficient — it fixes the *cap*, not the movement mode.
     generate overlaps), its `On Component Begin Overlap` is bound to the
     contact chain, and `CollisionCylinder` is now `Pawn=Overlap` on all four
     classes so the player cannot stand on the enemy. The verifiers report
-    **45 PASS / 0 FAIL** and **4 PASS / 0 FAIL**. See `EnemyAI.md` §9.
+    **52 PASS / 0 FAIL** and **4 PASS / 0 FAIL**. See `EnemyAI.md` §9.
 0b. **DONE — `BP_EnemyPlatform`** — box marker (no collision, hidden in game);
     seven auto zones exist in `L_Level_01`. The boolean is `bEnabled=true`; the
     old `bEnable` name is gone (live check 24 Oct 2026: `Zone` extent
@@ -1401,7 +1401,7 @@ but not sufficient — it fixes the *cap*, not the movement mode.
    `py -3 Scripts\_verify_enemy_base.py` checks this whole block from a fresh
    T3D + live CDO + a transient spawned instance. It now also verifies the
    compiled `ContactBox` and its `On Component Begin Overlap` chain. Expected
-   once the box's non-Pawn responses are `Ignore`: **45 PASS / 0 FAIL / 0
+   once the box's non-Pawn responses are `Ignore`: **52 PASS / 0 FAIL / 0
    PENDING**.
 2. **`BP_EnemyProjectile`** — add `SphereCollision` + `ProjectileMovement`;
    add `InitProjectile`, `BeginPlay`, `On Component Hit`. Compile + save the
@@ -1531,7 +1531,7 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
   generate overlaps) and its `On Component Begin Overlap` is bound to the
   contact chain. `CollisionCylinder` is now `Pawn=Overlap` on all four classes,
   so the player falls through the enemy and cannot stand on it; `WorldStatic` /
-  `WorldDynamic` remain `Block`. The verifiers hold 45 PASS / 0 FAIL and
+  `WorldDynamic` remain `Block`. The verifiers hold 52 PASS / 0 FAIL and
   4 PASS / 0 FAIL. See `EnemyAI.md` §9.
 - **Player has no health.** Contact and projectiles call `Kill`; add health to
   `BP_Player` later if you want multi-hit damage. `ContactDamage` is `1.0`

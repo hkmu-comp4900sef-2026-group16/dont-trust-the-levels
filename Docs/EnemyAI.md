@@ -644,8 +644,11 @@ is **unreachable** — off the enemy's platform, or more than `MaxChaseStepZ`
 above/below it. Running along the platform, past the rectangle or not, keeps
 `bAggro` and resets `UnreachableTime` every frame. After `DeAggroTime` seconds
 unreachable, `bAggro=false` and the enemy resumes patrol from its current
-position. If the player returns to a reachable spot, the enemy re-aggros
-immediately (`Detect`, and `Keep` alone keeps it aggroed once it is chasing).
+position — the walker stands still where it lost the player and faces them; it
+does not walk to the ledge first (the `False → bAggro` branch above stops
+movement; only `ChaseStep` walks to an edge). If the player returns to a
+reachable spot, the enemy re-aggros immediately (`Detect`, and `Keep` alone
+keeps it aggroed once it is chasing).
 `UnreachableTime` also resets while the hit term is what keeps the enemy
 chasing, which is why the timer restarts after the window closes.
 
@@ -1242,7 +1245,7 @@ Branch: CurrentHealth <= 0
 **Fixed 24 Oct 2026:** option A is implemented — `ContactBox` is compiled with
 `QueryOnly`, `Pawn = Overlap`, all other channels `Ignore`, and the existing
 contact chain is bound to its component-overlap event. The base verifier reports
-**45 PASS / 0 FAIL**. The finding below is kept as the rationale.
+**52 PASS / 0 FAIL**. The finding below is kept as the rationale.
 
 **Fixed 25 Oct 2026 — capsule is now non-solid.** All four enemy classes compile
 with `CollisionCylinder → Pawn = Overlap`; `WorldStatic`/`WorldDynamic` remain
@@ -1323,7 +1326,7 @@ built in parallel because they do not read the walker AI. See
 `Docs/EnemyWorkPlan.md` for the owner split and M1 gate.
 
 0. **DONE — contact fix.** `ContactBox` is compiled and the
-   `On Component Begin Overlap` chain is verified: **45 PASS / 0 FAIL**.
+   `On Component Begin Overlap` chain is verified: **52 PASS / 0 FAIL**.
    Re-run `py -3 Scripts\_verify_enemy_base.py` if the base is edited.
 1. **DONE — `BP_EnemyPlatform` marker + auto-placement.** Seven auto zones
    exist in `L_Level_01`. `bEnable` was renamed to `bEnabled` on 24 Oct 2026;
@@ -1358,13 +1361,13 @@ built in parallel because they do not read the walker AI. See
 
 | # | Setup | Expected |
 |---|---|---|
-| 1 | Enemy touches player | player dies once; no enemy-vs-enemy kill |
-| 2 | Patrol on a floating platform | turns before the edge; never steps down |
-| 3 | Player stands on platform above | no aggro; no chase |
-| 4 | Player jumps over an aggroed walker on the same platform | walker turns, does not jump/step off |
-| 5 | Player drops to a lower platform | walker stops at edge; after `DeAggroTime` resumes patrol |
-| 6 | Player returns to the walker's platform | walker re-aggros and chases |
-| 7 | Shoot a walker off the platform | it lands on the lower broad platform and adopts it as home |
+| 1 | Enemy touches player | player dies once; no enemy-vs-enemy kill — **PASS 8 Nov 2026** |
+| 2 | Patrol on a floating platform | turns before the edge; never steps down — **PASS 8 Nov 2026** |
+| 3 | Player stands on platform above | no aggro; no chase — **PASS 8 Nov 2026** |
+| 4 | Player jumps over an aggroed walker on the same platform | walker turns, does not jump/step off — **PASS 8 Nov 2026** |
+| 5 | Player drops to a lower platform | walker **halts where it is** and faces the player — it does **not** walk to the ledge (§6.3 `False → bAggro`) — then patrols again from that spot after `DeAggroTime` — **PASS 8 Nov 2026** |
+| 6 | Player returns to the walker's platform | walker re-aggros and chases — **PASS 8 Nov 2026** |
+| 7 | Shoot a walker off the platform | it lands on the lower broad platform and adopts it as home, patrolling there — **PASS 8 Nov 2026** |
 | 8 | Knock an enemy into a stair step | it becomes stranded, idles, then drops to the nearest zone if one exists |
 | 9 | No zone below a stair step | it stays stranded; it never jumps into a pit |
 | 9a | Placed walker on a zone-less floor (`BP_Rock1` at `(-1180, 0, 356)` in `L_Level_01`) | **PASS 7 Nov 2026** — snapped to `Auto_00` (1766 uu) within 0.5 s, dropped 14 uu, re-adopted, pacing |
@@ -1389,10 +1392,14 @@ built in parallel because they do not read the walker AI. See
   treat it as invalid and will not patrol there.
 - **Stranded rescue can look like a teleport.** Hide it with a puff/VFX later,
   or place zones so the nearest lower zone is close.
+- **A de-aggroing walker halts in place.** When the player leaves the platform
+  the walker stops where it is and faces them for `DeAggroTime`, then patrols
+  from that spot. It does not walk to the ledge first: chasing a player it can
+  no longer reach would only park it on the edge (§6.2/§6.3).
 - **The player has no health.** Contact/projectile/puddle all call `Kill`.
 - **Contact overlap is fixed (24 Oct 2026).** `BP_EnemyBase` has a compiled
   `ContactBox` (`QueryOnly`, `Pawn = Overlap`, everything else `Ignore`) and the
-  component-overlap chain. `Scripts\_verify_enemy_base.py` reports **45 PASS /
+  component-overlap chain. `Scripts\_verify_enemy_base.py` reports **52 PASS /
   0 FAIL**; keep that chain intact while adding the AI nodes.
 - **All numbers are starting points.** PIE-tune after the first placement.
 
