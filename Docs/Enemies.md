@@ -1148,8 +1148,23 @@ a `BP_KillVolume`.
 **BeginPlay:** `InitEnemy`; `Set bPoweredOn=true`;
 `Set bInvulnerable=true`; `Set bDealContactDamage=true`;
 `PlayStateFlipbook(OnIdleFlipbook,true)`;
-`LaunchCharacter((Facing * BounceSpeed, 0, BounceSpeed * 0.5), true, true)`.
+`LaunchCharacter((Facing * BounceSpeed, 0, 1.0 * BounceSpeed), true, false)`
+— XY override on, Z override **off**, which is what the asset actually does; this
+sheet's earlier `BounceSpeed * 0.5` / `Z override true` was never built.
 The shell is already `MOVE_Flying`, gravity 0, `MaxFlySpeed=350`.
+
+> **9 Nov 2026 — the mode does not survive the launch.** `LaunchCharacter` calls
+> `UCharacterMovementComponent::Launch`, which does
+> `SetMovementMode(MOVE_Falling)` for any character that is not already falling.
+> From the first frame of `BeginPlay` the skull is therefore `MOVE_Falling`
+> (`Character Movement -> Is Flying` reads `false`), and every `Hit` reflect
+> re-enters `Falling` the same way. Only `gravity 0` and `MaxFlySpeed` survive as
+> tuning; the movement *mode* does not. Consequence: `BP_EnemyBase`'s flyer
+> guards (`TryRescue`, `FindHomePlatform`) do not apply to it, so it must carry
+> `bIsFlyer = true` once that flag exists — see `EnemyWorkPlan.md` A2e, 9 Nov
+> 2026. Do not "fix" this by switching back to `MOVE_Flying` on every bounce:
+> `PhysFlying` applies `BrakingDecelerationFlying` (default `2048`), which stops
+> a 300 uu/s skull in about 0.15 s and kills the bounce.
 
 **`Event Hit` — toggle + reflect**
 
@@ -1192,6 +1207,216 @@ guard still applies on OFF, so it takes multiple hits.
 Optional particles: `SPR_Skull_OrangeParticle` / `SPR_Skull_RedParticle`
 (16×16) can be a second `PaperSpriteComponent` toggled with the state. That
 component is hand-added; Python cannot add SCS components.
+
+**Stuck-bounce fallback — `UnstuckBounce` (9 Nov 2026, hand work)**
+
+A bounced skull has no movement intent, so nothing notices when it is wedged: a
+corner, the seam of two platforms, a V-shaped crevice between terrain pieces, or
+any contact whose normal is oblique enough for the `|Nx|, |Nz| >= 0.5` gate to
+reject. The hit event re-fires, `LaunchCharacter` rewrites the velocity from the
+contact normal, the capsule never leaves the contact point, and the `bLoop=false`
+wall book restarts every frame — the `0.35 s` `BackToSkullIdle` timer never gets to
+run, which is the "frozen on `FLB_Skull_HitWall02`" look. No rescue is involved:
+Simulate on 9 Nov 2026 reads the level-placed skull at `(-1758.8, 13.0, 610.0)` as
+`vel=(0,0,-0)`, `mode=MOVE_Falling`, power ON, sprite
+`FLB_Skull_HitWall01 pos=0.583 playing=False` — parked on its own spawn point and
+never moving again.
+
+**Do not test the velocity.** A pinned skull still reports `±300` uu/s, because
+the hit event recomputes it from `Normal * BounceSpeed` every frame. Test the
+**displacement**, in 2D: `VSize2D`, so a floor/ceiling wedge that only moves in
+`Z` still counts as stuck.
+
+**9 Nov 2026 — the level-placed skull was not wedged, it was *inside* the
+level.** Simulate reads it frozen at its spawn `(-1758.8, 13, 610)` with
+`mode=MOVE_Flying`, `vel=(0,0,0)` and the location unchanged to 0.1 uu for
+minutes, while `StuckTime` cycles `0 -> 1 s` and `StuckCount` climbs `1, 2, 3,
+…`: the watchdog fires every second and **every launch is swallowed**. Measure
+the clearance before touching the graph:
+
+- `Scripts/_probe_level_clearance.py` — the slot at that spawn is `90` uu above
+  the capsule centre and `120` below, while the capsule is `150 / 150`. The
+  capsule therefore starts the frame penetrating, and
+  `SafeMoveUpdatedComponent` performs **no move at all** (the launch is not
+  slowed down, it never runs).
+- `Scripts/_probe_hit_owner2.py` — switching `TM_Background`'s collision off
+  frees the traces, so the level's `PaperTileMapActor` is what it spawns inside,
+  not a platform seam.
+- `Scripts/_sample_skull_stuck.py` (`Scripts/_watch_pie_skull.py` polls it once
+  a second) — prints `mode / isFlying / StuckCount / StuckTime /
+  LastMoveLocation / HomeLocation` next to the capsule figures, which is the
+  whole diagnosis in one shot.
+
+Engine trail, UE 4.27 `CharacterMovementComponent.cpp`: `Launch()` only stores
+`PendingLaunchVelocity`; `HandlePendingLaunch()` copies it into `Velocity` and
+calls `SetMovementMode(MOVE_Falling)`; `PhysFalling` asks
+`SafeMoveUpdatedComponent` for the move; `SetPostLandedPhysics` returns the
+skull to `DefaultLandMovementMode = MOVE_Flying` as soon as it touches a floor,
+and `PhysFlying` applies fluid friction (`0.5 * MaxFlySpeed`) to the velocity
+*before* it moves. That is why the skull sits in `MOVE_Flying` with a velocity
+of exactly `0` although it is launched every second, and why the two launches
+are useless inside geometry while the `>= 3` reset is the only thing that can
+still save it — provided `HomeLocation` is a point the capsule fits in.
+
+Fix applied 9 Nov 2026: the instance moved to `(-1258.8, 13, 730)` in memory
+(`Scripts/_apply_skull_respawn_fix.py`, level **not** saved; the target is the
+nearest scanned point with `>= 500` uu free vertically and `>= 350` uu on every
+horizontal axis per `Scripts/_probe_skull_respawn_scan.py`). Simulate then reads
+`vel=(±300, 0, ±300)`, `mode=MOVE_Falling`, `StuckCount = 0`, and
+`Scripts/_pie_skull_wedge_test.py` — which teleports the skull back into the
+tile block — reproduces `StuckCount 1 -> 3 -> reset to HomeLocation -> flying
+again`.
+
+**Rule:** `HomeLocation` must be a spot the capsule fits in. The reset is the
+only escape from a pocket with no exit, so a spawn that embeds the capsule makes
+both halves of the fallback dead. Screen a placement with
+`Scripts/_probe_skull_respawn_scan.py` (grid of vertical clearances around the
+current spawn) or point `Scripts/_apply_skull_respawn_fix.py` at a candidate
+with `X=.. Y=.. Z=..` — it traces all six directions and refuses to move anything
+unless each one has `>= 170` uu free. The watchdog cannot rescue a spawn: it is
+a recovery from *soft* wedges, not from geometry the capsule never fit in.
+
+**Extra variables** (own; the seven above are unchanged)
+
+| Name | Type | Default | Purpose |
+|---|---|---|---|
+| `LastMoveLocation` | Vector | `0,0,0` | last position where the skull actually travelled |
+| `StuckTime` | Float | `0.0` | seconds since that position last changed |
+| `StuckCount` | Integer | `0` | escapes since then; escalation counter |
+| `HomeLocation` | Vector | `0,0,0` | spawn position, captured at `BeginPlay` |
+
+`BeginPlay`, appended after the `LaunchCharacter`: `Set HomeLocation =
+Get Actor Location`; `Set LastMoveLocation = HomeLocation` (read the variable
+back — do not call `Get Actor Location` twice).
+
+`Event Tick` - append after the existing `SetFacing` call, whose `then` pin is
+otherwise free. Node titles below are what the graph shows after you drop them
+from the palette (search text in the first column, quotes included where the
+search needs them); `->` is a wire:
+
+| # | Palette search | Node | Exec in from | Exec out to |
+|---|---|---|---|---|
+| 1 | `Branch` | Branch | `SetFacing`.`then` | `then` -> 3 |
+| 2 | `NOT Boolean` | NOT Boolean | (pure) | (see data below) |
+| 3 | `Branch` | Branch | 1.`then` | `else` -> 7 `execute`, `then` -> 11 `execute` |
+| 4 | `VSize2D` | VSize2D | (pure) | (data below) |
+| 5 | `vector - vector` | Vector - Vector | (pure) | (data below) |
+| 6 | `float < float` | Float < Float | (pure) | (data below) |
+| 7 | `Set LastMoveLocation` | Set LastMoveLocation | 3.`else` | `then` -> 8 |
+| 8 | `Set StuckTime` | Set StuckTime | 7.`then` | `then` -> 9 |
+| 9 | `Set StuckCount` | Set StuckCount | 8.`then` | - |
+| 10 | `float + float` | Float + Float | (pure) | (data below) |
+| 11 | `Set StuckTime` | Set StuckTime | 3.`then` | `then` -> 13 |
+| 12 | `float >= float` | Float >= Float | (pure) | (data below) |
+| 13 | `Branch` | Branch | 11.`then` | `then` -> 14 |
+| 14 | `Set StuckTime` | Set StuckTime | 13.`then` | `then` -> 15 |
+| 15 | `Set LastMoveLocation` | Set LastMoveLocation | 14.`then` | `then` -> 16 |
+| 16 | `UnstuckBounce` | UnstuckBounce | 15.`then` | - |
+
+Data wires and literal values:
+
+| Node | Pin <- / value |
+|---|---|
+| 2 NOT Boolean | `A` <- `Get bIsDead` |
+| 1 Branch | `Condition` <- 2.`ReturnValue` |
+| 5 Vector - Vector | `A` <- `Get Actor Location`.`ReturnValue`; `B` <- `Get LastMoveLocation` |
+| 4 VSize2D | `A` <- 5.`ReturnValue` |
+| 6 Float < Float | `A` <- 4.`ReturnValue`; `B` = `20.0` |
+| 3 Branch | `Condition` <- 6.`ReturnValue` |
+| 8 Set StuckTime | `StuckTime` = `0.0` (type the literal in the pin) |
+| 9 Set StuckCount | `StuckCount` = `0` |
+| 10 Float + Float | `A` <- `Get StuckTime`; `B` <- `ReceiveTick`.`DeltaSeconds` |
+| 11 Set StuckTime | `StuckTime` <- 10.`ReturnValue` |
+| 12 Float >= Float | `A` <- 10.`ReturnValue`; `B` = `1.0` |
+| 14 Set StuckTime | `StuckTime` = `0.0` |
+| 15 Set LastMoveLocation | `LastMoveLocation` <- `Get Actor Location`.`ReturnValue` |
+
+Feed 12 from 10's `ReturnValue`, not from a fresh `Get StuckTime`: the total is
+then unambiguous instead of depending on whether the setter has run yet.
+
+New function (`My Blueprint` -> `Functions` -> `+`, name it `UnstuckBounce`, no
+inputs, no return value). The entry node's `then` feeds step 1:
+
+| # | Palette search | Node | Exec in from | Data pins |
+|---|---|---|---|---|
+| 1 | `Set StuckCount` | Set StuckCount | entry `then` | `StuckCount` <- 2.`ReturnValue` |
+| 2 | `integer + integer` | Integer + Integer | (pure) | `A` <- `Get StuckCount`; `B` = `1` |
+| 3 | `integer >= integer` | Integer >= Integer | (pure) | `A` <- 1.`Output_Get`; `B` = `3` |
+| 4 | `Select` | Select | (pure) | `Index` <- 3.`ReturnValue`; `Option 0` <- `Get Actor Location`.`ReturnValue`; `Option 1` <- `Get HomeLocation` |
+| 5 | `SetActorLocation` | Set Actor Location | 1.`then` | `NewLocation` <- 4.`ReturnValue`; `bSweep` = `false`; `bTeleport` = `true` |
+| 6 | `integer * integer` | Integer * Integer | (pure) | `A` <- `Get Facing`; `B` = `-1` |
+| 7 | `Set Facing` | Set Facing | 5.`then` | `Facing` <- 6.`ReturnValue` |
+| 8 | `integer * float` | Integer * Float | (pure) | `A` <- `Get Facing`; `B` <- `Get BounceSpeed` |
+| 9 | `MakeVector` | MakeVector | (pure) | `X` <- 8.`ReturnValue`; `Y` = `0.0`; `Z` <- `Get BounceSpeed` |
+| 10 | `LaunchCharacter` | Launch Character | 7.`then` | `LaunchVelocity` <- 9.`ReturnValue`; `bXYOverride` = `true`; `bZOverride` = `true` (both ticked) |
+| 11 | `BackToSkullIdle` | BackToSkullIdle | 10.`then` | - |
+
+`Select` counts from zero and `Index` is a bool here: `Option 0` is returned when
+`Index` is false (stay put), `Option 1` when it is true (3rd escape -> `HomeLocation`).
+An `Index` that stays `int` behind a `Conv_BoolToInt` behaves the same way and the
+current asset does that — fine, no need to rewire it.
+Step 3 reads step 1's `Output_Get` pin (the setter's own output) so the comparison
+sees the incremented value, not a race with a fresh getter.
+
+Steps 8-10 are the same three nodes the spawn launch already uses; copying them
+from `BeginPlay` and reticking only `bZOverride` is quicker than placing new ones.
+
+Do **not** reset `Stuck Count` here. The tick's "moving" leg (step 9 above) owns
+that reset; zeroing it inside the function would make every escape look like the
+first one, and the `>= 3` branch could never fire.
+
+`UnstuckBounce` flips `Facing`, which is a true `±1` here: `BP_EnemyBase` defaults
+it to `1` and `InitEnemy` calls `SetFacing(1)`. If a future change ever left it at
+`0`, the escape would degenerate into a vertical relaunch — which is exactly why
+the third try resets to `HomeLocation` instead of trusting the flip again.
+
+Why these numbers: `20` uu is about 1/15 s of travel at `BounceSpeed = 300`, so an
+ordinary bounce clears the test on the first frame after it moves; `1.0` s is long
+enough that a slow bounce off a slope is not mistaken for a stuck one. Three
+consecutive escapes inside one "no real movement" window mean the pocket has no
+exit, hence the reset to the skull's **own** spawn — never `PlayerStart`, which is
+the A2e bug — because a reset the player can see beats a contact-lethal enemy
+vibrating invisibly inside terrain.
+
+The watchdog is a safety net, **not** a substitute for A2e defects 4–5
+(`HitCooldown`, and the hit event's unconnected oblique-normal `else` pin): those
+are the reasons it gets pinned. `BP_Bat` and `BP_Ghost` must not copy this
+function — their `Tick` moves them under AI control, so "no displacement for 1 s"
+is a normal state for them.
+
+Three wires in this recipe are easy to get wrong and the blueprint compiles
+anyway:
+
+- **the distance branch's `then`/`else`**: `then` is the *not-moving* leg (add
+  `DeltaSeconds`), `else` is the moving leg (reset). Swapped, the skull counts
+  while it travels and calls the escape every frame while it sits still.
+- **unlinked vector pins**: a fresh `Set LastMoveLocation` writes `(0,0,0)`, so
+  the distance check silently becomes "distance to the world origin".
+- **the `1.0` gate** must hang off the counting leg (the `Set StuckTime` that
+  reads `Float + Float`). Anywhere else and either the escape never fires or it
+  fires every tick. It also needs **exactly one** exec input: leaving the reset
+  row's `Set StuckCount` wired into it too looks harmless because `StuckTime` was
+  just zeroed, but `0 + DeltaSeconds >= 1.0` turns true on any frame longer than
+  a second and bounces a skull that was only walking.
+
+Check the hand work with `py -3 Scripts/_verify_skull_fallback.py`. It re-exports
+the asset and prints 14 PASS/FAIL/PENDING rules: the four variables; the
+`UnstuckBounce` graph plus its launch / idle / teleport / flip nodes; and eight
+watchdog rules — the `VSize2D(Location - LastMoveLocation)` displacement wiring,
+the two branch legs, the `1.0` gate behind the accumulated time, that gate
+having a single exec source, both watchdog resets reading `Get Actor Location`,
+the `NOT bIsDead` guard, and the `UnstuckBounce` call actually sitting on the
+exec path out of `ReceiveTick` rather than floating in the graph. It reads
+`EventGraph` (and the T3D variable table) because the T3D export in this build
+does not carry the compiler ubergraph, and a swapped `then`/`else` or an
+unlinked pin looks fine in a screenshot — which is why those have rules of their
+own.
+
+The pin names in those tables were read straight out of the asset with
+`py -3 Scripts/_t3d_node_pins.py <file.T3D> [--graph EventGraph] [regex]`. It
+prints every live node with its exact pin names, directions, types, defaults and
+links, which is the fastest way to settle "what is this pin called" — or to see
+why a wire was refused.
 
 ---
 

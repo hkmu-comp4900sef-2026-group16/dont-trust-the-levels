@@ -522,7 +522,7 @@ Cards are numbered by asset group, not grouped by owner, so use this index:
 | Owner | Cards | State |
 |---|---|---|
 | **A1** | `A1` (`BP_EnemyBase`), `A1b` (`BP_Snail`) | `A1` **DONE** — `M1 GREEN` 8 Nov 2026 (13/13 functions, 25/25 vars, 52 PASS, tests 1–9 closed). `A1b` **PARTIAL** — aggro CDO done (250 / 0 / 0, `bAggroOnHit=true`); shell graph, remaining Class Defaults and art open |
-| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat). `A2e` **BUILT 5 Nov 2026** (`bb3627d`, B's own commit) — seven variables + Class Defaults + `RefreshStateFlipbook` verified live 8 Nov; only its PIE gate is open. `A2a` **BUILT 8 Nov 2026** (`f37473b`, Jones, merged as `320f0de`) — static read only, Class Defaults + PIE still open. The `A2`/`C` rows are the 4 Nov 2026 snapshot, see §10 for later rows |
+| **A2** | `A2a` (Rocks), `A2b` (Turtle), `A2c` (Ghost), `A2d` (Bat), `A2e` (Skull) | 3 of 5 done (Turtle, Ghost, Bat). `A2e` **BUILT 5 Nov 2026** (`bb3627d`, B's own commit) — seven variables + Class Defaults + `RefreshStateFlipbook` verified live 8 Nov; only its PIE gate is open. `A2a` **BUILT 8 Nov 2026** (`f37473b`, Jones, merged as `320f0de`) — Class Defaults and logic verified; split defects 1–3 fixed and re-verified 9 Nov 2026 (static export + a Simulate kill), only PIE test 11 (a live player) is open. The `A2`/`C` rows are the 4 Nov 2026 snapshot, see §10 for later rows |
 | **C** | `C1`–`C6` | nothing started |
 
 Owner B has no cards; `A2b`–`A2e` are the transferred ones. A card owns its
@@ -580,7 +580,7 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       task. **DONE 8 Nov 2026 — 1–7 PASS in `L_Level_01`, 8 PASS via the spawn
       variant of the rescue, 9 N/A there. `M1 GREEN` posted in §10.**
 
-- [ ] **Step 4 of the A2a fix plan — refresh the flipbook from the movement
+- [x] **Step 4 of the A2a fix plan — refresh the flipbook from the movement
       loops** (defect 3 there; this one blocks *every* walker, not just the
       rocks). Four single-node inserts, two drags each, no re-paste. Right-click
       an empty spot next to the target, type `Refresh State Flipbook`, Enter —
@@ -714,9 +714,13 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       `PlayStateFlipbook` of its own, no reroute in the prologue. `--self-test`
       injects a fake Parent node (rule 1 must catch it) and drops the parent call
       from a broken copy (the failure must clear), so green is not a rubber stamp.
-      Today it prints `22 PASS / 5 FAIL` (`BP_RockBase`, `BP_SpikeTurtle`,
-      `BP_FloatingSkull` rule 1; `BP_Ghost` rules 1 + 2; `BP_Bat` and
-      `BP_EnemyBase` clean); `0 FAIL` is the target. Tooling note:
+      **9 Nov 2026: `BP_RockBase`, `BP_SpikeTurtle` and `BP_FloatingSkull` are
+      fixed** — the run prints `16 PASS / 2 FAIL` (`22 PASS / 2 FAIL` with
+      `--self-test`) and both failures are `BP_Ghost` rules 1 + 2: its override
+      still enters through `Parent: Refresh State Flipbook` and
+      `Branch.then` reaches no `PlayStateFlipbook` of its own. Every walker
+      (rocks included) is past this gate; `0 FAIL` is still the target, and the
+      Ghost's branch has to be finished before its parent call can go. Tooling note:
       `Scripts/_children_export2/` holds 12 KB stub T3Ds from the 21:19 audit that
       contain no function graphs at all — a "this BP has no `RefreshStateFlipbook`"
       reading from it is wrong, export again before believing it.
@@ -725,7 +729,7 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       `FLB_Rock<n>_Run` (14 frames @ 14 fps) while they chase, and no
       `Infinite loop` / `Runaway loop` line appears in the log.
 
-- [ ] **Step 4c of the A2a fix plan — the standing-still window must play `Idle`**
+- [x] **Step 4c of the A2a fix plan — the standing-still window must play `Idle`**
       (report, 8 Nov 2026: "the rock de-aggroes and stands still for a while, but
       it keeps playing `Run` instead of `Idle`"). `ChaseStep` and `PatrolStep`
       refresh on every exit (step 4), but `UpdateAggro` has a third way to stand
@@ -755,11 +759,12 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       `AccumulatedTime` is not reset.
 
       Gate (read-only): `py -3 Scripts/_check_idle_gap.py [--export]` must print
-      `2 PASS / 0 FAIL`. Today it prints `1 PASS / 1 FAIL` and names the gap:
-      `K2Node_CallFunction_17` (`SetFacing`) is fed by `StopMovementImmediately`
-      and nothing follows it. Its built-in self-test splices the wire into a copy
-      of the graph and requires rule 1 to flip (`2 PASS`), so green is not a
-      rubber stamp.
+      `2 PASS / 0 FAIL`. **9 Nov 2026: APPLIED and green** — `2 PASS / 0 FAIL`,
+      and its built-in self-test is `2 PASS / 0 FAIL` too (it splices the wire into
+      a copy of the graph and requires rule 1 to flip, so green is not a rubber
+      stamp). Before the fix the same run printed `1 PASS / 1 FAIL` and named the
+      gap: `K2Node_CallFunction_17` (`SetFacing`) was fed by
+      `StopMovementImmediately` with nothing after it.
 
 - [ ] **Step 4d — `BP_Ghost` contact is dead while it chases** (report, 8 Nov
       2026: "the ghost is just chasing me but not killing the player"). The base
@@ -806,13 +811,62 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       Gate (read-only): `py -3 Scripts/_check_ghost_phases.py` must print
       `16 PASS / 0 FAIL`. Today it prints `11 PASS / 5 FAIL`: no capsule call in
       `StartAggro`/`StartAppear`, no `ContactBox` off in `BecomeInvisible`, and
-      both `bInvulnerable` literals inverted. Its built-in self-test injects each
-      fix into a copy of the parsed graphs and requires the rule to flip
-      (`6 PASS`).
+      both `bInvulnerable` literals inverted. Its built-in self-test injects one
+      **defect** per rule into a copy of the parsed graphs and requires that rule
+      to fail (`6 PASS`), so it still proves detection now that the asset is
+      correct — injecting the fix into an already-fixed graph moves nothing.
 
       PIE: walk into the sphere, stay in the open; while visible, touching the
       ghost must kill the player, bullets must pass through it while it is
       hidden, and 2 hits must still kill it after several visible/hidden cycles.
+
+
+- [ ] **Step 4e — the actual reason the ghost never damages the player: it flies on
+      a different Y plane** (confirmed live, 8 Nov 2026, *after* step 4d was
+      applied). Correction to 4d: the capsule was **not** the blocker. With 4d in
+      place the live ghost is correct while visible (`bInvisible=false`,
+      `bDealContactDamage=true`, `ContactBox=QueryOnly`) yet
+      `get_overlapping_actors()` stays empty and the 3D distance to the player
+      never drops below **~291** while it flies at `MaxFlySpeed=250`.
+
+      `Aggro Trigger Logic` drops Y on purpose (`MakeVector(X = dX, Y = 0,
+      Z = dZ)` → `Normal` → `AddMovementInput`), and `BP_Ghost` is placed at
+      **Y = 280** in `L_Level_01` while `PlayerStart`, `BP_Bat` and
+      `BP_SpikeTurtle` are on **Y = 0** (`BP_Rock1` is at 10). In an orthographic
+      side view Y is depth, so the ghost looks like it is on the player while it
+      is 280 uu away in depth — more than `ContactBox`'s world Y half-extent
+      (44 × 2.34 ≈ 103) plus the player capsule. No overlap is possible, so the
+      base kill can never fire.
+
+      Proof: setting the live ghost's Y to 0 mid-chase made its box report
+      `overlaps=['BP_Player_C_0']` on the next call, and the level instantly
+      reloaded (`Kill` → `OpenLevel`) with the player back at `PlayerStart`.
+
+      Fix (one field, no graph change): select `BP_Ghost` in `L_Level_01` and set
+      `Location Y = 0`, then save the level. Keep the 4d edits — they are
+      required too (before them the box was `NoCollision` in the visible phase).
+
+      Gate (read-only, editor open): `py -3 Scripts/_run_py.py
+      Scripts/_check_enemy_plane.py` must print `4 PASS / 0 FAIL`. It compares
+      every placed enemy's Y with `PlayerStart` and fails when the offset exceeds
+      that enemy's `ContactBox` world Y half-extent; on the unfixed level it
+      prints `3 PASS | 1 FAIL` (`BP_Ghost Y=280 dY=280 boxY±75 tol=80`).
+
+      Robustness (optional, A1 ruling): a ghost placed off-plane in a future level
+      reproduces this silently. Either keep every enemy on `Y = 0` (level rule) or
+      change `MakeVector` in `Aggro Trigger Logic` to pass `Y = dY`, so the chase
+      closes depth as well.
+
+      **9 Nov 2026: the level was fixed in place, but not to `Y = 0`.** The saved
+      `L_Level_01` has `BP_Ghost` at **`Y = -70`**, and the gate now reads
+      `4 PASS / 0 FAIL` (`BP_Ghost Y=-70 dY=70 boxY±75 tol=80`) — the ghost is
+      back on the player's plane and kills on contact (owner-confirmed "works").
+      That is only **5 uu** of `ContactBox` depth inside the 75 uu half-extent, so
+      it is one drag away from silently going dead again. `_check_enemy_plane.py`
+      now prints a `WARN <label>: only N uu of ContactBox depth left ... set its Y
+      to <plane>` line whenever a PASS has under `SAFE_OVERLAP = 10` uu to spare;
+      it fires for this ghost today. Recommend setting it to `Y = 0` (what the fix
+      above asks for); leaving `-70` works but is the fragile configuration.
 
 
 **Done when:** `_verify_enemy_base.py` = 52 PASS / 0 FAIL; tests 1–9 closed
@@ -973,7 +1027,7 @@ it collides with walls/floors and never de-aggros.
 
 ---
 
-### A2e — `BP_FloatingSkull` (Owner A2 — **BUILT 5 Nov, PIE UNVERIFIED**, transferred from B)
+### A2e — `BP_FloatingSkull` (Owner A2 — **BUILT 5 Nov; 9 Nov flyer-mode defect FIXED; stuck-bounce fallback open**, transferred from B)
 
 **Read:** `EnemyAI.md` §8.7; `Enemies.md` §6.7; `EnemyPlacement.md` §4.7.
 **Depends:** base health/contact only. **No base AI.**
@@ -1092,6 +1146,185 @@ base-timing gap as `A2a` defect 3, so its idle never updates during a bounce.
       `Event Hit` are the Skull's *only* movement, so either the Tick is B's
       bounce maintenance and §8.7 should say so, or it is dead code and should be
       disconnected.
+
+**Defect reported in PIE 9 Nov 2026 — "the skull teleports into the spawn point
+the player is standing in, then freezes".** Not the terrain: the skull stops
+being a *flyer* at runtime, so `BP_EnemyBase` runs its walker-only rescue on it.
+`LaunchCharacter` ends in `UCharacterMovementComponent::Launch`, which does
+`SetMovementMode(MOVE_Falling)` whenever the mode is not already `MOVE_Falling`;
+the Class Defaults `MOVE_Flying` / `gravity 0` / `MaxFlySpeed 350` therefore hold
+only up to `BeginPlay`, and every `Hit` reflect re-enters `Falling` the same way.
+Measured live (Simulate, `Scripts/_run_sie_skull.py`, nothing saved):
+`mode=MOVE_Falling isFlying=False` at every sample from `t = 1 s` to `t = 5 s`
+while the skull bounces at `+-300` uu/s on each axis.
+
+That makes both 7 Nov flyer guards dead code for this enemy (`TryRescue`,
+`FindHomePlatform`), and the chain then runs like this.
+
+1. A bounce that ends with `Velocity.Z == 0` is a *landing*: `OnLanded` ->
+   `ResolveKnockback` -> `FindHomePlatform` (guard dead) answers with a real zone
+   when the skull's XZ happens to sit inside one — `HomePlatform =
+   BP_EnemyPlatform_Auto_04_10` was observed at `t = 4 s`.
+2. When the landing is outside every zone the function returns nothing and the
+   stranded chain runs (`PlayStateFlipbook(IdleFlipbook, true)` plus
+   `SetTimer("TryRescue", 0.5)`), i.e. the branch documented in `EnemyAI.md`
+   under the 7 Nov rescue rules.
+3. `TryRescue` (guard dead) teleports to `Candidate.Location + (0, 0, 120)` with
+   `bTeleport = true`, then calls `SetMovementMode(MOVE_Falling)`. `Candidate` is
+   the nearest `bEnabled` platform whose pivot is at most `50` above the skull.
+   The placed skull reads `RescueRadius = 2000` and all six platforms read
+   `bEnabled = true` (`Scripts/_probe_level_platforms.py`); beside the spawn that
+   is `BP_EnemyPlatform_Auto_01` at `(-1600, 0, 500)`, so the snap lands on
+   **`(-1600, 0, 620)` — ~104 uu from `PlayerStart` `(-1500, 0, 592)`**, which is
+   exactly "the spawn point the player is standing in".
+   (The compiled `TryRescue` also exposes its scratch locals as UFunction
+   parameters — `candidate`, `best_distance`, `temp_int_loop_counter_variable`, …
+   — so the timer calls it with all-zero arguments. Harmless, but it is why the
+   function reads as if it took inputs.)
+4. `gravity 0` means the snapped skull has no velocity and never lands again, so
+   `IsFlying()` stays false and `HomePlatform` stays invalid: every later rescue
+   attempt re-teleports it to the same point. That is the "it went there and then
+   does nothing". `BeginPlay -> InitEnemy -> SetTimer("TryRescue", 0.5, looping)`
+   is unconditional, so that timer is the thing that keeps firing.
+5. The frozen sprite is the `bLoop = false` hit book: `Event Hit` plays
+   `HitWallFlipbookA/B` once and the live read is
+   `FLB_Skull_HitWall02 pos=0.583 playing=False` (stopped on its last frame).
+   Pinned against geometry the hit event re-fires each frame and restarts that
+   one-shot, so it reads as "stuck mid-transition".
+
+**Fix (hand work; Python cannot author K2 nodes in this build).** Test a
+design-time flag, not the physics result:
+
+- [x] `BP_EnemyBase`: add `bIsFlyer` (Boolean, `false`, instance editable).
+      **9 Nov 2026:** on the CDO; `Scripts/_probe_flyer_flags.py` reads `true` for
+      `BP_FloatingSkull` / `BP_Bat` / `BP_Ghost`, `false` for `BP_RockBase` /
+      `BP_SpikeTurtle`.
+- [x] `TryRescue`: swap its `Branch[Is Flying]` condition for
+      `OR(bIsFlyer, CharacterMovement Is Flying)`; keep `true -> Return`.
+- [x] `FindHomePlatform`: the same swap on its `Is Flying` guard
+      (`true -> Return`).
+- [x] `ResolveKnockback`: add `Branch[bIsFlyer]` between `Set UnreachableTime = 0`
+      and `Find Home Platform`, `true -> Return`, `false -> Find Home Platform`.
+      Do **not** fold the flag into the existing `bIs Dead` entry branch: that
+      would skip `bWasKnockedBack = false` above it, and `Aggro Update` returns
+      early while `bWasKnockedBack` is true. The `true` leg must skip everything
+      below, because the other leg sets `bCanMove = false` and `bStranded = true`
+      before `SetTimer("TryRescue")` — those two flags are what actually freeze
+      the skull's AI.
+- [x] `bIsFlyer = true` on `BP_FloatingSkull`, `BP_Bat` and `BP_Ghost`.
+- [x] Re-point the two verifier rules in `Scripts/_verify_enemy_base.py`
+      (`TryRescue` / `FindHomePlatform` "Is Flying returns before ...") at the
+      new condition and keep `52 PASS | 0 FAIL`.
+- [x] Re-run `Scripts/_run_sie_skull.py`: the skull must keep bouncing with
+      `HomePlatform=None` and must **not** jump to `(-1600, 0, 620)`.
+
+**Applied 9 Nov 2026 (~02:30), re-read from a fresh export — all six landed.**
+
+- `FindHomePlatform`: `OR(bIsFlyer, Is Flying)` → `IfThenElse_3.Condition`
+  (`true` → `Return`).
+- `TryRescue`: the same OR feeds its guard `Branch` (`true` → `Return`).
+- `ResolveKnockback`: `IfThenElse_2[Condition = bIsFlyer]` sits between
+  `Set UnreachableTime = 0` and `Find Home Platform`, `true` → `Return`, `false` →
+  `Find Home Platform`, so `bWasKnockedBack = false` is still reached.
+- Verifier re-pointed (`is_or()` + `flyer_gate_source()`); the labels now read
+  `... Is Flying/bIsFlyer ...` and the suite is **`52 PASS | 0 FAIL | 0 PENDING`**
+  (it read `50 PASS | 2 FAIL` between the BP edit and the verifier edit).
+- Simulate (`Scripts/_run_sie_skull.py`, nothing saved): `mode=MOVE_Falling`,
+  `isFlying=False`, `HomePlatform=None`, `bStranded=False`, `bCanMove=False`, and
+  the skull travels `Z 780 → 1180.7 → 1581.1` with **no** jump to
+  `(-1600, 0, 620)`. PIE with a live player the same night: the snap is gone.
+
+**Stuck-bounce fallback (9 Nov 2026 — new, hand work).** Independent of the
+rescue bug: a skull wedged in a corner, a platform seam or a terrain crevice
+never moves again, and its `bLoop=false` hit book freezes on its last frame. The
+level-placed skull reproduces it with nobody playing — Simulate reads it at its
+own spawn `(-1758.8, 13.0, 610.0)` as `vel=(0,0,-0)`,
+`FLB_Skull_HitWall01 pos=0.583 playing=False`, power ON. Full recipe in
+`Enemies.md` §6.7 (`Stuck-bounce fallback`); the tasks are:
+
+- [x] `BP_FloatingSkull` variables: `LastMoveLocation` (Vector), `StuckTime`
+      (Float `0`), `StuckCount` (Integer `0`), `HomeLocation` (Vector) — exported
+      9 Nov 2026, `NewVariables(7)`..`(10)`.
+- [x] `BeginPlay`: `Set HomeLocation = Get Actor Location`, then
+      `Set LastMoveLocation = HomeLocation` (no `Facing` change needed — the base
+      defaults it to `1` and `InitEnemy` calls `SetFacing(1)`). Both sit at the
+      end of the chain that `InitEnemy` starts, so the EventGraph reads
+      `InitEnemy -> bPoweredOn -> bInvulnerable -> bDealContactDamage ->
+      PlayStateFlipbook -> LaunchCharacter -> Set HomeLocation ->
+      Set LastMoveLocation`.
+- [x] Append the tick watchdog after the existing `SetFacing` call: 16 nodes
+      (`Branch`, `NOT Boolean`, `VSize2D`, `Vector - Vector`, `Float < Float`,
+      `Float + Float`, `Float >= Float`, three `Set StuckTime`,
+      two `Set LastMoveLocation`, `Set StuckCount`, three `Branch`, plus the
+      `UnstuckBounce` call) — node-by-node table with exact pin names in
+      `Docs/Enemies.md` section 6.7. **Wired and verified 9 Nov**
+      (`14 PASS | 0 FAIL | 0 PENDING`). Graph order, walked backwards from
+      `UnstuckBounce`:
+      `UnstuckBounce <- Set LastMoveLocation <- Set StuckTime = 0 <- Branch
+      (Condition = Float >= Float, B = 1.0) <- Set StuckTime (StuckTime +
+      DeltaSeconds) <- Branch (Condition = Vector Length 2D < 20) <- Branch
+      (Condition = NOT bIsDead) <- SetFacing <- ReceiveTick`; the moving leg is
+      `Branch.False (True/False = the < 20 branch) -> Set LastMoveLocation ->
+      Set StuckTime = 0 -> Set StuckCount = 0` and stops there. The four wires
+      that had to be re-cut during wiring were the `< 20` polarity, the counting
+      `Set StuckTime` -> gate link (a `Set StuckCount` wire had to be removed
+      from the gate's exec input), the gate's `Condition`, and both
+      `Set LastMoveLocation` value pins.
+- [x] New function `UnstuckBounce` (20 nodes, same table): `StuckCount += 1`;
+      `SetActorLocation(Select(Conv_BoolToInt(StuckCount >= 3), HomeLocation,
+      Get Actor Location), bSweep=false, bTeleport=true)`; `Facing *= -1` (via
+      `SetFacing`); `LaunchCharacter((Facing * BounceSpeed, 0, BounceSpeed),
+      true, true)` (both overrides on: the escape must not inherit the downward
+      velocity that pinned it); `BackToSkullIdle`. No `StuckCount` reset inside —
+      the tick's moving leg owns it, otherwise `>= 3` can never fire.
+- [x] PIE 9 Nov 2026: the watchdog itself is fine, but the level-placed skull
+      could never move at all. `Scripts/_watch_pie_skull.py` +
+      `Scripts/_sample_skull_stuck.py` read it at `(-1758.8, 13, 610)` for
+      minutes as `mode=MOVE_Flying`, `vel=(0,0,0)`, location frozen to 0.1 uu
+      while `StuckTime` ramped `0 -> 1` and `StuckCount` climbed `1..49` — the
+      escape fired every second and produced **zero** displacement.
+      Cause, measured rather than guessed: the skull **spawns inside
+      `TM_Background`**, the level's `PaperTileMapActor`.
+      `Scripts/_probe_level_clearance.py` reads only `90` uu of free space above
+      its centre and `120` below, while its capsule is `150` up / `150` down,
+      and `Scripts/_probe_hit_owner2.py` frees all four traces the moment that
+      actor's collision is switched off. A capsule that starts the frame
+      penetrating performs no swept move at all, so the escape queues
+      `PendingLaunchVelocity`, `HandlePendingLaunch` sets `MOVE_Falling`,
+      `PhysFalling` slides 0 uu, `SetPostLandedPhysics` drops it back to
+      `MOVE_Flying` (its `DefaultLandMovementMode`) and `PhysFlying` brakes the
+      300 uu/s away. UE 4.27 `CharacterMovementComponent.cpp` agrees line for
+      line: `Launch()` only stores the pending vector, `HandlePendingLaunch()`
+      applies it and switches to `MOVE_Falling`, `PhysFlying` applies fluid
+      friction before `SafeMoveUpdatedComponent`. The `>= 3` reset was equally
+      dead, because `HomeLocation` is that same embedded point.
+- [x] Level fix (in-memory; the level is **not** saved):
+      `py -3 Scripts/_run_py.py Scripts/_apply_skull_respawn_fix.py` moves the
+      instance to `(-1258.8, 13, 730)` — the nearest point
+      (`Scripts/_probe_skull_respawn_scan.py`) with `>= 500` uu free up and down
+      and `>= 350` uu on every horizontal axis, 278 uu from `PlayerStart`.
+      Re-verified in Simulate: the skull flies at `+-300 uu/s`, `StuckCount`
+      stays `0`, `HomeLocation` reads the new point.
+- [x] Escape chain verified against a real wedge 9 Nov 2026
+      (`Scripts/_pie_skull_wedge_test.py` teleports the live skull back into the
+      tile block): `StuckCount 1` while the launches are swallowed, then the
+      third escape at `StuckCount 3` **resets to its own `HomeLocation`
+      `(-1258.8, 13, 730)`** — never `PlayerStart` — and the skull travels again
+      with `StuckCount 0` on the next sample. `BackToSkullIdle` restores
+      `FLB_Skull_Idle01/02`.
+- [ ] Reconcile the skull capsule: the live CDO carries `r=150 / halfZ=150`
+      while `Scripts/_make_enemies.py` ships `capsule=(85.0, 168.75)`, so the
+      capsule rule in `Scripts/_verify_enemies.py` no longer describes the
+      asset. Whichever number wins, **neither fits the old 210 uu slot** — that
+      is why the spawn moved instead of the capsule shrinking.
+- [x] `py -3 Scripts/_verify_skull_fallback.py` → `14 PASS | 0 FAIL | 0 PENDING`
+      (14 rules since 9 Nov; it re-exports the asset and reads `EventGraph` plus
+      the T3D variable table, including branch polarity, single-exec-source and
+      unlinked-pin checks that the old 8-rule version could not see).
+
+Stop-gap only (kills the snap, not the walker logic):
+`BP_FloatingSkull -> RescueRadius = 0`, because `BestDistance` then rejects
+every platform.
 
 **Done when:** ON ignores bullets and kills on contact; OFF is harmless and
 shootable; wall/floor hit toggles; no detection/chase; no gravity; pit
@@ -1275,7 +1508,8 @@ platform edge; shell ignores bullets; contact `1`; destroys itself after `8 s`.
 **Read:** `EnemyAI.md` §8.2; `Enemies.md` §6.2; `EnemyPlacement.md` §4.2.
 **Depends:** M1.
 
-**Status: BUILT 8 Nov 2026 (Jones), PIE UNVERIFIED (split has 3 defects).**
+**Status: BUILT 8 Nov 2026 (Jones); split defects 1–3 fixed and re-verified
+9 Nov 2026 (static export + Simulate kill), PIE test 11 still open.**
 Commits `f37473b` (*"rock tiers split on death with an 8-piece global cap"*) on
 `branch/Jones`, merged into `branch/Dennis` as **`320f0de`**. The Class Defaults
 and the graph were then read for real on 8 Nov 2026 with a **headless
@@ -1322,7 +1556,8 @@ nudging a piece to the nearest free spot, and it is also the first frame of the
 sibling shoving — so fix-plan step 3 is not optional polish. Raising
 `SplitOffset` would be a card change (the card says `30`), not a fix.
 
-**Open defects (from the 8 Nov 21:29 PIE recording of `L_Level_Testing`).**
+**Defects from the 8 Nov 21:29 PIE recording of `L_Level_Testing` — all three
+fixed and re-verified 9 Nov 2026 (see the 9 Nov block below).**
 The one placed rock (`BP_Rock1` at `(600, 0, 106.2)`, actor rotation all zero —
 so this is *not* a placement problem) was split in PIE and three things broke:
 
@@ -1387,6 +1622,44 @@ the `Parent: Refresh State Flipbook` node from `BP_RockBase`,
 branch finished first, `BP_Bat` is clean), gate
 `py -3 Scripts/_check_refresh_reset.py --self-test`. **Steps 5–7 not applied**;
 they are the last of the list.
+
+**9 Nov 2026 re-read + live re-test (defects 1–3 closed, step 5 closed, test 11
+open).** A fresh `Scripts/_export_rock_check.py` export of the live graph
+(`Scripts/_rock_after_step3.txt`) shows both `MakeTransform.Rotation` pins as a
+literal `0,0,0` (the two `Conv_VectorToRotator` nodes are gone), both
+`SpawnActorFromClass` nodes at `CollisionHandlingOverride = AlwaysSpawn`, and
+both `IgnoreActorWhenMoving` calls present — steps 1–3 really are in the asset.
+Gates: `_check_step3_live.py` `7 PASS / 0 FAIL`, `_check_step4_live.py`
+`10 PASS / 0 FAIL`, `_check_idle_gap.py` `2 PASS / 0 FAIL` (step 4c), and
+`_check_refresh_reset.py` no longer fails on `BP_RockBase` (step 4b; only
+`BP_Ghost` remains).
+
+The split was then triggered for real without PIE, in Simulate
+(`Scripts/_run_sie_rock_split.py` → `_sie_rock_damage.py` +
+`_sie_rock_sample.py`): `ApplyDamage(99)` on the placed `BP_Rock1`
+(`MaxHealth 3`) spawned **two `BP_Rock2_C`** pieces, both with
+`actorRot = (0,0,0)`, both at `Y = 10` (the parent's plane) and both at the same
+`Z = 89.6` — defect 1 is gone, and the pieces inherit the parent's plane.
+Sibling collision is off in the graph (`IgnoreActorWhenMoving` both ways) and
+the separation seen in the samples matches the outward `SplitImpulse`, not a
+shove.
+
+**Step 5 is closed: no bug.** The left-facing `SetRelativeRotation` carries a
+stale *summary* string (`DefaultValue="0,180.000000, 0"`) while its split pins
+are all `0.0`; the right-facing node reads `"180.000000, 0, 0"` with
+`NewRotation_Yaw = 180`. Live samples settle which one compiles — `Facing = 1`
+→ sprite `(r0, p0, y-180)`, `Facing = -1` → sprite `(r0, p0, y0)`, i.e. right =
+**Yaw 180**, left = **Yaw 0 / Pitch 0 / Roll 0**, exactly `Enemies.md`
+§`SetFacing`. No walker is upside down; do not "fix" the struct text — UE writes
+it as a summary and the split pins win. Evidence:
+`Scripts/_run_sie_facing.py`, `_sie_rock_force_left.py`,
+`_run_sie_left_branch.py` (the placed rock's `PatrolMinX/-MaxX` are `-799 /
+1810`, so the left branch was reached by teleporting it past `PatrolMaxX`;
+`PatrolMaxX` is not editable on an instance).
+
+**Still open on this card:** PIE test 11 with a live player — the chase sheet
+(`FLB_Rock<n>_Run` while it moves) and the split under the player's feet. Steps
+6–7 (skull) are untouched.
 
 **8 Nov 2026, step-3 corrections (two, and the second one is why PIE hung).**
 First: the earlier wire list named `CharacterMovement.Ignore Actor When Moving`,
@@ -1799,6 +2072,10 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 8 Nov 2026 | A2 (Jones' rocks, B's skull) | `BP_RockBase`+`BP_Rock1/2/3`+`BP_FloatingSkull` in PIE | **PIE FAIL — 8 defects** | read without the editor via `UE4Editor-Cmd.exe -run=pythonscript` (`Scripts/_dump_rocks_assets.py`, `_dump_rocks_flipbooks.py`, `_dump_level_rocks.py`) + `Scripts/_dump_graph.py`: rock CDOs are exactly the card's `3/2/1`, `100/140/180`, `120/160/200`, `MaxPieces=8`, `bCanSplit` `true/true/false`; `L_Level_Testing` holds a single `BP_Rock1` at `(600,0,106.2)` with rotation `0,0,0`; flipbooks `Rock1` 14/14/1, `Rock2` 13/14/1, `Rock3` 11/14/5 frames at 10/14/12 fps | 21:29 recording: (a) split pieces spawn rotated — `MakeTransform` rotation is `Conv_VectorToRotator(GetActorLocation())`; (b) pieces shove each other — both pieces are Pawn-blocking Characters chasing one player and nothing makes rock-vs-rock ignore, and `AdjustIfPossibleButAlwaysSpawn` displaces the spawns (the impulses themselves are outward/correct); (c) rocks play `Idle` while chasing and `Run` once the chase is dropped — `ChaseStep`/`PatrolStep` never call `RefreshStateFlipbook`, only `UpdateAggro`'s give-up branch does; skull: (d) hit flipbook A/B selected by `bPoweredOn` (`bUseWallAlternate` is dead), (e) no `OtherActor` filter so it reflects and power-toggles off the player, no re-hit cooldown → corner jitter, else pin unwired, (f) `ReceiveTick` sets facing to `NegateFloat(Normal(Velocity).X)` and snaps to "right" when `Vx≈0`. The bounce math is a correct signed per-axis reflect; `TogglePower` per hit is the card's design | `Docs/EnemyWorkPlan.md` `A2a`/`A2e`; scratch: `Scripts/_rock_base_graph_dump.txt`, `_skull_graph_dump2.txt`, `_enemy_base_graph_dump.txt` |
 
 | 8 Nov 2026 | A1 | `BP_Ghost` contact + `UpdateAggro` idle gap | **DIAGNOSED, fix spec'd** | `_verify_enemy_base.py` = 52 PASS / 0 FAIL, so the base contact chain ("ContactBox overlap kills the player after the player-only gate") is intact; live CDO/component probe (`Scripts/_run_probe_ghost_contact.py`) shows the Ghost `ContactBox` itself is correct (`Custom`, QueryOnly, `Pawn=Overlap`, overlap events on) while its `CollisionCylinder` is the only enemy capsule left at `NoCollision`; `Scripts/_check_ghost_phases.py` = 11 PASS / 5 FAIL (no capsule enable in `StartAggro`/`StartAppear`, no `ContactBox` off in `BecomeInvisible`, `bInvulnerable` inverted in `Init` and `StartAppear`); `Scripts/_check_idle_gap.py` = 1 PASS / 1 FAIL (`UpdateAggro` `StopMovementImmediately -> SetFacing` wait branch has no `RefreshStateFlipbook`, so the rock holds `Run` for `DeAggroTime`) | 8 Nov PIE reports: "the rock keeps playing walk while it stands still after de-aggro" and "the ghost chases me but never kills me". Fixes: base `SetFacing.then -> Refresh State Flipbook` (step 4c) and five Ghost edits (step 4d) | `Docs/EnemyWorkPlan.md` step 4c/4d; `Scripts/_check_idle_gap.py`, `Scripts/_check_ghost_phases.py`, `Scripts/_dump_varsets.py`, `Scripts/_find_member.py`, `Scripts/_grep_members.py`, `Scripts/_probe_ghost_contact.py` |
+| 8 Nov 2026 | A1 | `BP_Ghost` contact — **root cause: Y plane** | **ROOT-CAUSED, level fix pending save** | re-export after the 4d edits: `_check_ghost_phases.py` **16 PASS / 0 FAIL**, every phase node on the **exec** chain (`Sprite.SetVisibility` → `ContactBox.QueryOnly` → `Capsule.QueryOnly` → `bInvulnerable=false` → `bDealContactDamage=true`); live PIE capture (`Scripts/_watch_pie_ghost.py` → `_snapshot_pie_ghost.py`) shows the visible phase correct (`bInvisible=false`, `bDealContactDamage=true`, `ContactBox=QueryOnly`) but `overlaps=[]`, `dist=292`, ghost pinned at **Y=280**; `Scripts/_check_enemy_plane.py` = **3 PASS | 1 FAIL** (`BP_Ghost Y=280 dY=280 boxY±75 tol=80`) | moving the live ghost to `Y=0` mid-chase gave `overlaps=['BP_Player_C_0']` and an immediate level reload (`Kill` → `OpenLevel`) — contact damage works once the planes match | `Aggro Trigger Logic` drops Y on purpose (`MakeVector(X = dX, Y = 0, Z = dZ)` → `Normal` → `AddMovementInput`), so a Ghost placed off the player's plane can never overlap it although it looks adjacent in the orthographic side view; the 4d "capsule gate" theory was wrong for this symptom (child primitives update their own overlaps). Fix = `BP_Ghost` `Location Y = 0` in `L_Level_01`, save; optional hardening = pass `Y = dY` in `Aggro Trigger Logic`. Also: `AggroRadius` lives in a variable named `AggroRadius` + **trailing tab** (`550.0`); plain `AggroRadius` reads `0.0`, so probes must use the tab name. Step 4e | `Docs/EnemyWorkPlan.md` step 4e; `Scripts/_check_enemy_plane.py`, `Scripts/_apply_ghost_plane_fix.py`, `Scripts/_watch_pie_ghost.py`, `Scripts/_snapshot_pie_ghost.py`, `Scripts/_pie_ghost_y_fix.py`, `Scripts/_probe_ghost_tuning.py`, `Scripts/_probe_ghost_aggro.py`, `Scripts/_probe_player_geom.py`, `Scripts/_probe_player_collision.py`, `Scripts/_probe_mobility.py` |
+| 9 Nov 2026 | A2 | `BP_RockBase` split + `SetFacing` (A2a fix plan 1–5) | **DONE (PIE test 11 still open)** | fresh `_export_rock_check.py` export: both `MakeTransform.Rotation` literal `0,0,0` (no `Conv_VectorToRotator`), both spawns `AlwaysSpawn`, both `IgnoreActorWhenMoving` present; gates `_check_step3_live.py` `7 PASS / 0 FAIL`, `_check_step4_live.py` `10 PASS / 0 FAIL`, `_check_idle_gap.py` `2 PASS / 0 FAIL` (step 4c applied), `_check_refresh_reset.py` `16 PASS / 2 FAIL` with **both fails on `BP_Ghost`** (rocks/turtle/skull clean); Simulate kill (`_run_sie_rock_split.py`): `ApplyDamage(99)` on the placed `BP_Rock1` (`MaxHealth 3`) spawned two `BP_Rock2_C`, `actorRot=(0,0,0)`, both `Y=10`, same `Z=89.6`; facing samples: `Facing=1` → sprite `(0,0,y-180)`, `Facing=-1` → `(0,0,0)` | PIE test 11 with a player (chase sheet + split underfoot); `BP_Ghost` rules 1+2 of step 4b | defects 1–3 are gone from the asset — pieces spawn unrotated, inherit the rock's plane (`Y=10`, dY 10 vs player `Y=0`, box ±75) and the shove seen in the samples is the outward `SplitImpulse`; **step 5 needed no edit**: the "Pitch 180" worry was a stale T3D *summary* string (`DefaultValue="0,180.000000, 0"`) on the left branch while its split pins are `0.0` — the split pins are what compile, and the live sprite is Yaw 180 / Yaw 0 exactly as `Enemies.md` §`SetFacing` says; `PatrolMinX/-MaxX` are `-799/1810` and `PatrolMaxX` cannot be set on an instance, so the left branch was reached by teleporting the rock past the bound | `BP_RockBase.uasset`, `Docs/EnemyWorkPlan.md` `A2a`; scratch: `Scripts/_rock_after_step3.txt`, `_enemy_after_step5.txt`, `_run_sie_rock_split.py`, `_run_sie_facing.py`, `_run_sie_left_branch.py`, `_probe_setfacing_rot.py`, `_probe_level_rocks.py` |
+
+
 
 **`M1 GREEN` — 8 Nov 2026.** Walker PIE tests 1–7 passed in `L_Level_01` on the
 staged `BP_Rock1`; verifier output: `_verify_enemy_base.py` **52 PASS | 0 FAIL |
