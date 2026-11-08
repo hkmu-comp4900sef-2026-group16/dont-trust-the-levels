@@ -725,6 +725,96 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       `FLB_Rock<n>_Run` (14 frames @ 14 fps) while they chase, and no
       `Infinite loop` / `Runaway loop` line appears in the log.
 
+- [ ] **Step 4c of the A2a fix plan — the standing-still window must play `Idle`**
+      (report, 8 Nov 2026: "the rock de-aggroes and stands still for a while, but
+      it keeps playing `Run` instead of `Idle`"). `ChaseStep` and `PatrolStep`
+      refresh on every exit (step 4), but `UpdateAggro` has a third way to stand
+      still that neither function sees — the `DeAggroTime` wait:
+
+      ```
+      Branch_2 (bAggro).then -> Set MaxWalkSpeed = MoveSpeed -> Branch_3
+          Branch_3.then  (player unreachable >= DeAggroTime)
+              -> Set bAggro=false -> Set_5 -> Set_6 -> Refresh State Flipbook -> Return
+          Branch_3.else  (still waiting, < DeAggroTime)
+              -> StopMovementImmediately -> SetFacing(0.0) -> function ends   <- no refresh
+      ```
+
+      The rock is motionless for up to `DeAggroTime` (2 s) holding the sheet it
+      chased with (`FLB_Rock<n>_Run`), and only after the countdown expires does
+      `Idle` appear. Motion is already zero (`StopMovementImmediately`), so this
+      is the "stand still and keep walking" the report describes. Fix is a
+      **base** change, so it covers every walker (rocks, snail, wood log, rhino):
+
+      ```
+      UpdateAggro:  SetFacing.then -> Refresh State Flipbook     (then left open)
+      ```
+
+      Per-frame is safe for the same reason as step 4b: the velocity is zero
+      before the call, so the child override's `Abs(Velocity.X) > 10` is false and
+      it re-selects the sheet it already plays — `SetFlipbook` is never called,
+      `AccumulatedTime` is not reset.
+
+      Gate (read-only): `py -3 Scripts/_check_idle_gap.py [--export]` must print
+      `2 PASS / 0 FAIL`. Today it prints `1 PASS / 1 FAIL` and names the gap:
+      `K2Node_CallFunction_17` (`SetFacing`) is fed by `StopMovementImmediately`
+      and nothing follows it. Its built-in self-test splices the wire into a copy
+      of the graph and requires rule 1 to flip (`2 PASS`), so green is not a
+      rubber stamp.
+
+- [ ] **Step 4d — `BP_Ghost` contact is dead while it chases** (report, 8 Nov
+      2026: "the ghost is just chasing me but not killing the player"). The base
+      contact chain is **not** the problem: `_verify_enemy_base.py` is
+      `52 PASS / 0 FAIL`, including "ContactBox overlap kills the player after the
+      player-only gate". The kill is a `ContactBox` `On Component Begin Overlap`
+      (`EnemyAI.md` §9), so it only happens while the ghost's own overlaps are
+      updated — and `BP_Ghost` is the only enemy whose `CollisionCylinder` is
+      `NoCollision`, with no phase enabling it again:
+
+      | graph | capsule | `ContactBox` | `bInvulnerable` | `bDealContactDamage` |
+      |---|---|---|---|---|
+      | `Init Ghost Hidden Logic` | NoCollision | NoCollision | **false** (spec: true) | false |
+      | `StartAggro Logic` | **never touched** | QueryOnly | false | true |
+      | `StartAppear Logic` | **never touched** | QueryOnly | **true** (spec: false) | true |
+      | `BecomeInvisible Logic` | NoCollision | **never touched** (spec: off) | true | false |
+
+      That is the opposite of `EnemyAI.md` §8.4 and `Enemies.md` §6.4 ("visible =
+      capsule and `ContactBox` on with `WorldStatic=Ignore`; hidden = both off").
+      A `Character` whose root capsule has no collision does not update its child
+      overlaps, so the box never sees the player and the base kill never fires.
+      The `BecomeVisible` `IsOverlappingActor -> Kill(player)` hack only covers
+      the single frame the ghost reappears on top of the player, which is why
+      test 13 passed while normal contact stayed dead. The two inverted
+      `bInvulnerable` literals are the same class of bug: shotable while
+      invisible, immortal once it reappears.
+
+      Fix (five edits in the editor):
+
+      1. Class Defaults → `CollisionCylinder`: preset `Custom`, `Pawn = Overlap`,
+         `WorldStatic = Ignore`, `WorldDynamic = Ignore`, `Visibility = Ignore`,
+         `Collision Enabled = No Collision` (the graphs switch it on/off).
+      2. `StartAggro Logic`: add `CollisionCylinder → Set Collision Enabled
+         (QueryOnly)` between `Sprite.SetVisibility(true)` and
+         `Set bInvulnerable = false`.
+      3. `StartAppear Logic`: the same node in the same place.
+      4. `BecomeInvisible Logic`: after `CollisionCylinder → Set Collision Enabled
+         (NoCollision)` add `ContactBox → Set Collision Enabled (NoCollision)`, so
+         the hidden phase is fully intangible as specified.
+      5. Literals: `Init Ghost Hidden Logic` `bInvulnerable` → **true** (it is
+         `false` today); `StartAppear Logic` `bInvulnerable` → **false** (it is
+         `true` today).
+
+      Gate (read-only): `py -3 Scripts/_check_ghost_phases.py` must print
+      `16 PASS / 0 FAIL`. Today it prints `11 PASS / 5 FAIL`: no capsule call in
+      `StartAggro`/`StartAppear`, no `ContactBox` off in `BecomeInvisible`, and
+      both `bInvulnerable` literals inverted. Its built-in self-test injects each
+      fix into a copy of the parsed graphs and requires the rule to flip
+      (`6 PASS`).
+
+      PIE: walk into the sphere, stay in the open; while visible, touching the
+      ghost must kill the player, bullets must pass through it while it is
+      hidden, and 2 hits must still kill it after several visible/hidden cycles.
+
+
 **Done when:** `_verify_enemy_base.py` = 52 PASS / 0 FAIL; tests 1–9 closed
 (1–7 and 8 pass — 8 via the spawn variant — and 9 is N/A in `L_Level_01`);
 compile clean; committed; `M1 GREEN` posted.
@@ -1707,6 +1797,8 @@ sorted by date. Use `PASS`, `FAIL`, `BLOCKED` or `DONE` explicitly.
 | 8 Nov 2026 | A2 (B's asset) | `BP_FloatingSkull` | **BUILT, PIE open** | `Scripts/_run_probe_skull.py` (read-only) on the live CDO: **0 of 22** probed properties missing — seven own variables (`BounceSpeed=300`, `bPoweredOn=true`, `bUseWallAlternate=false`, `OnIdleFlipbook=FLB_Skull_Idle01`, `OffIdleFlipbook=FLB_Skull_Idle02`, `HitWallFlipbookA/B`) and Class Defaults `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`, `ContactDamage=1`, `MoveSpeed=300`, `IdleFlipbook=FLB_Skull_Idle01`, `HitFlipbook`/`DeathFlipbook=FLB_Skull_Hit`; fresh `_check_child_overrides.py` export: own `RefreshStateFlipbook` traced (`Parent:` → Branch(`bPoweredOn`) → ON/OFF idle), capsule-bound `ComponentHitSignature`, `TogglePower` + `BackToSkullIdle` sub-graphs, `BreakHitResult`/`Normal`/`Abs` and `LaunchCharacter` reflect | not run | build came in `bb3627d` (**Lee Chung Hei**, 5 Nov 2026) with no doc update, which is why `A2e` still read NOT STARTED; `A2a` (Rocks) is now the only untouched A2 card; the asset also runs an enabled `ReceiveTick` sub-graph that `EnemyAI.md` §8.7 does not mention — decide keep or remove |
 | 8 Nov 2026 | A2 (Jones) | `BP_RockBase` + `BP_Rock1/2/3` | **BUILT, unverified** | merged `branch/Jones` `f37473b` into `branch/Dennis` as `320f0de`; static `.uasset` string read (editor closed, no live probe): `BP_RockBase` declares `RockTier`/`ChildRockClass`/`bCanSplit`/`SplitImpulse`/`SplitOffset` + a `BP_RockBase` array, with `BeginDeferredActorSpawnFromClass`/`FinishSpawningActor` in the graph; `Rock1` (38×34, `Enemy.Rock.Tier1`, child `BP_Rock2_C`) → `Rock2` (32×28, `Tier2`, child `BP_Rock3_C`) → `Rock3` (22×18, `Tier3`, no child); `FLB_Rock<n>_Idle/Run/Hit` referenced per tier | not run | same failure mode as `A2e`: the asset shipped without a card update. **Open:** live CDO probe of the defaults (`MaxHealth` `3/2/1`, `MoveSpeed` `100/140/180`, `ChaseSpeed` `120/160/200`, `MaxPieces=8`), where the split hangs off `Die` vs base `AnyDamage`, and PIE test 11 |
 | 8 Nov 2026 | A2 (Jones' rocks, B's skull) | `BP_RockBase`+`BP_Rock1/2/3`+`BP_FloatingSkull` in PIE | **PIE FAIL — 8 defects** | read without the editor via `UE4Editor-Cmd.exe -run=pythonscript` (`Scripts/_dump_rocks_assets.py`, `_dump_rocks_flipbooks.py`, `_dump_level_rocks.py`) + `Scripts/_dump_graph.py`: rock CDOs are exactly the card's `3/2/1`, `100/140/180`, `120/160/200`, `MaxPieces=8`, `bCanSplit` `true/true/false`; `L_Level_Testing` holds a single `BP_Rock1` at `(600,0,106.2)` with rotation `0,0,0`; flipbooks `Rock1` 14/14/1, `Rock2` 13/14/1, `Rock3` 11/14/5 frames at 10/14/12 fps | 21:29 recording: (a) split pieces spawn rotated — `MakeTransform` rotation is `Conv_VectorToRotator(GetActorLocation())`; (b) pieces shove each other — both pieces are Pawn-blocking Characters chasing one player and nothing makes rock-vs-rock ignore, and `AdjustIfPossibleButAlwaysSpawn` displaces the spawns (the impulses themselves are outward/correct); (c) rocks play `Idle` while chasing and `Run` once the chase is dropped — `ChaseStep`/`PatrolStep` never call `RefreshStateFlipbook`, only `UpdateAggro`'s give-up branch does; skull: (d) hit flipbook A/B selected by `bPoweredOn` (`bUseWallAlternate` is dead), (e) no `OtherActor` filter so it reflects and power-toggles off the player, no re-hit cooldown → corner jitter, else pin unwired, (f) `ReceiveTick` sets facing to `NegateFloat(Normal(Velocity).X)` and snaps to "right" when `Vx≈0`. The bounce math is a correct signed per-axis reflect; `TogglePower` per hit is the card's design | `Docs/EnemyWorkPlan.md` `A2a`/`A2e`; scratch: `Scripts/_rock_base_graph_dump.txt`, `_skull_graph_dump2.txt`, `_enemy_base_graph_dump.txt` |
+
+| 8 Nov 2026 | A1 | `BP_Ghost` contact + `UpdateAggro` idle gap | **DIAGNOSED, fix spec'd** | `_verify_enemy_base.py` = 52 PASS / 0 FAIL, so the base contact chain ("ContactBox overlap kills the player after the player-only gate") is intact; live CDO/component probe (`Scripts/_run_probe_ghost_contact.py`) shows the Ghost `ContactBox` itself is correct (`Custom`, QueryOnly, `Pawn=Overlap`, overlap events on) while its `CollisionCylinder` is the only enemy capsule left at `NoCollision`; `Scripts/_check_ghost_phases.py` = 11 PASS / 5 FAIL (no capsule enable in `StartAggro`/`StartAppear`, no `ContactBox` off in `BecomeInvisible`, `bInvulnerable` inverted in `Init` and `StartAppear`); `Scripts/_check_idle_gap.py` = 1 PASS / 1 FAIL (`UpdateAggro` `StopMovementImmediately -> SetFacing` wait branch has no `RefreshStateFlipbook`, so the rock holds `Run` for `DeAggroTime`) | 8 Nov PIE reports: "the rock keeps playing walk while it stands still after de-aggro" and "the ghost chases me but never kills me". Fixes: base `SetFacing.then -> Refresh State Flipbook` (step 4c) and five Ghost edits (step 4d) | `Docs/EnemyWorkPlan.md` step 4c/4d; `Scripts/_check_idle_gap.py`, `Scripts/_check_ghost_phases.py`, `Scripts/_dump_varsets.py`, `Scripts/_find_member.py`, `Scripts/_grep_members.py`, `Scripts/_probe_ghost_contact.py` |
 
 **`M1 GREEN` — 8 Nov 2026.** Walker PIE tests 1–7 passed in `L_Level_01` on the
 staged `BP_Rock1`; verifier output: `_verify_enemy_base.py` **52 PASS | 0 FAIL |
