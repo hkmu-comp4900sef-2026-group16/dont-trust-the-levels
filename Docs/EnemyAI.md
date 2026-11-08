@@ -1,11 +1,12 @@
 # Enemy AI — platforms, patrol, detection, aggro and stairs
 
-**Status (7 Nov 2026): shared base AI complete; both `Is Flying` guards are in and
-PIE-confirmed — in `L_Level_01` a flyer is no longer pulled back to a zone.**
-`BP_EnemyBase` has its shared health/damage/death graph, the `ContactBox`
-contact fix, and the full AI core. All **13/13** functions and **25/25**
-§4 variables exist with the documented defaults
-(`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit change is landed: the box
+**Status (8 Nov 2026): `M1 GREEN` — the shared base AI is complete, both `Is Flying`
+guards are in and PIE-confirmed, and walker PIE tests 1–9 are closed
+(`EnemyWorkPlan.md` §10).** `BP_EnemyBase` has its shared health/damage/death graph,
+the `ContactBox` contact fix, and the full AI core. All **13/13** functions and
+**25/25** §4 variables exist with the documented defaults (`_check_enemy_ai_vars.py`:
+25 PASS; the 7 Nov retune's `RescueRadius=2000` is asserted by
+`_verify_enemy_base.py`). The aggro-on-hit change is landed: the box
 term and the post-hit term feed one `BooleanOR` before the aggro branch, and
 `_verify_enemy_base.py` now fails if any of the three old links returns. The
 seven **acquire/keep** nodes are in the asset too (`UpdateAggro` is **61 nodes,
@@ -1305,10 +1306,10 @@ turtle and snail shell.
 
 **Current position (8 Nov 2026): steps 0–2 are code-complete and step 2's gate is
 green — `M1 GREEN` is posted (`EnemyWorkPlan.md` §10).** The base has all 13/13
-AI functions and 25/25 §4 variables with the documented defaults
-(`_check_enemy_ai_vars.py`: 25 PASS). The aggro-on-hit
-and acquire/keep changes are in `UpdateAggro` (61 nodes, one connected piece;
-`_run_aggro_keep_check.py` asserts all eleven links and the five
+AI functions and 25/25 §4 variables with the documented defaults (§4 — the 7 Nov
+retune moved `RescueRadius` to `2000`; `_verify_enemy_base.py` asserts that value).
+The aggro-on-hit and acquire/keep changes are in `UpdateAggro` (61 nodes, one
+connected piece; `_run_aggro_keep_check.py` asserts all eleven links and the five
 `FunctionEntry` wires). `_verify_enemy_base.py` currently reports **52 PASS |
 0 FAIL | 0 PENDING**, the two `Is Flying` guards of §7.2 items 4 and 6 included;
 the `InitEnemy`/`AnyDamage`/`Die` FAILs quoted here until 7 Nov 2026 were a
