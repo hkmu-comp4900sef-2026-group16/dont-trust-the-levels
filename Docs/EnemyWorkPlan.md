@@ -665,8 +665,43 @@ Never save `L_Level_01`; A2 stages/removes the M1 test actor. `BP_Snail` is the
       | `BP_RockBase` | `Entry -> Parent -> Branch -> Idle/Run` | delete the `Parent: Refresh State Flipbook` node, wire `Entry.then` -> the Branch's `execute` (its `else` already plays `IdleFlipbook`) |
       | `BP_SpikeTurtle` | `Entry -> Parent -> Branch -> IdleFlipbookA/B` | same |
       | `BP_FloatingSkull` | `Entry -> Parent -> Branch -> On/OffIdleFlipbook` | same |
-      | `BP_Bat` | the parent call sits only on the knocked-back path | leave it — a per-frame refresh never reaches it |
+      | `BP_Bat` | `Entry -> Branch(bWasKnockedBack) -> 5 x Set -> Parent -> Branch(bChasing) -> Flying/Hanging` — the parent call is on **both** paths, but no per-frame refresh reaches it (events only), so it costs one reset per hit and not a freeze | optional: delete it, then wire `Set MaxFlySpeed.then` and `Branch(bWasKnockedBack).else` to `Branch(bChasing).execute` |
       | `BP_Ghost` | `Entry -> Parent -> Branch` with the `Condition` pin **unwired** (default `true`), so `then` is empty and the parent's Idle is the only sheet | finish the branch (`bInvisible` -> return, else `PlayStateFlipbook(FLB_Ghost_Idle)`) first, then delete the parent call; tracked under `A2c` |
+
+      Exact wires as exported on 8 Nov 2026 (`py -3
+      Scripts/_dump_refresh_graphs.py <BP>` prints this straight from the asset):
+
+          BP_RockBase       Entry.then -> Parent.execute, Parent.then -> Branch.execute
+                            Branch.then -> PlayStateFlipbook(RunFlipbook)   @(1024,-160)
+                            Branch.else -> PlayStateFlipbook(IdleFlipbook)  @(1024, 128)
+                            Branch.Condition <- Greater_FloatFloat(Abs(BreakVector(GetVelocity).X) > 10)
+
+          BP_SpikeTurtle    Entry.then -> Parent.execute, Parent.then -> Branch.execute
+                            Branch.Condition <- Get bSpikesOut
+                            Branch.then -> PlayStateFlipbook(IdleFlipbookA)
+                            Branch.else -> PlayStateFlipbook(IdleFlipbookB)
+
+          BP_FloatingSkull  Entry.then -> Parent.execute, Parent.then -> Branch.execute
+                            Branch.Condition <- Get bPoweredOn
+                            Branch.then -> PlayStateFlipbook(OnIdleFlipbook)
+                            Branch.else -> PlayStateFlipbook(OffIdleFlipbook)
+
+          BP_Bat            Entry.then -> Branch(bWasKnockedBack).execute
+                            ...then -> Set bWasKnockedBack/bTriggered/bChasing/bDealContactDamage
+                                       -> Set MaxFlySpeed -> Parent.execute
+                            ...else -> Parent.execute
+                            Parent.then -> Branch(bChasing).execute
+                            Branch(bChasing).then -> PlayStateFlipbook(FlyingFlipbook)
+                            Branch(bChasing).else -> PlayStateFlipbook(HangingFlipbook)
+
+          BP_Ghost          Entry.then -> Parent.execute, Parent.then -> Branch.execute
+                            Branch.Condition OPEN, Branch.then OPEN,
+                            Branch.else -> PlayStateFlipbook(NewFlipbook OPEN)
+
+      So in all three fixable assets the edit is the same two steps: **delete the
+      `Parent: Refresh State Flipbook` node**, then **drag `Entry.then` onto the
+      `Branch.execute` pin**. The two `PlayStateFlipbook` calls, their `Get
+      *Flipbook` feeds and the Branch `Condition` do not change.
 
       Gate (read-only, editor open):
 
