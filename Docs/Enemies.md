@@ -441,7 +441,6 @@ literal `0.0` clears the lifespan timer, so the corpse never auto-destroys.
 > delay` box. Build card: `Docs/EffectSwitchOnKill.md` §4 (planned, nothing
 > built yet).
 
-
 `Clear Timer ("RecoverFromHit")` is **required**. `AnyDamage` schedules that
 timer just before calling `Die` on a lethal hit; if it is left pending it fires
 0.2 s later, `RefreshStateFlipbook` plays `IdleFlipbook`, and the death art
