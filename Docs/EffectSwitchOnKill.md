@@ -1,9 +1,14 @@
 # EffectSwitchOnKill.md — a kill re-rolls the gun's effect
 
-**Status: card, nothing built yet.** Python in this build cannot author
-Blueprint nodes or variables (`unreal.BlueprintEditorLibrary` and
-`KismetEditorUtilities` are absent — `Structure.md` §11), so §1-§4 are editor
-work; §6 is the scripted half.
+**Status: §1-§4 BUILT and verified (9 Nov 2026).** The interface, the
+`Effect Classes` pool, the 12-node roll **and the `Die` hook** all exist;
+`py -3 Scripts/_verify_effect_on_kill.py` gives `15 PASS / 0 FAIL / 0 PENDING /
+0 WARN` (`Die: Clear Timer → RandomizeEffectClass message → Destory box`,
+`Get Player Character(0)`). Remaining: the §5 in-game pass, then the doc goes
+to DONE.
+Python in this build cannot author Blueprint nodes or variables
+(`unreal.BlueprintEditorLibrary` and `KismetEditorUtilities` are absent —
+`Structure.md` §11), so §1-§4 are editor work; §6 is the scripted half.
 
 **Before editing:** `git lfs lock` the three assets you are about to touch —
 `Content/DontTrustTheLevels/Core/Interfaces/BPI_EffectUser.uasset`,
@@ -36,7 +41,7 @@ visible on the next LMB, `Jammed` included (that shot then does nothing, §7).
 | | |
 |---|---|
 | Trigger | `BP_EnemyBase::Die`, between `Clear Timer ("RecoverFromHit")` and the `Destory Actor after delay` box |
-| Pool | `BP_Effect_Basic` · `BP_Effect_Ricochet` · `BP_Effect_Heavy` · `BP_Effect_Jammed` |
+| Pool | `BP_Effect_Basic` · `BP_Effect_Ricochet` · `BP_Effect_Heavy` · `BP_Effect_Jammed` — **built with the first three** (Jammed dropped, §3 note) |
 | Port | `BP_Player::Set Effect Class` — still the only writer of `Effect Class` |
 | Transport | new `BPI_EffectUser` interface (`Structure.md` §9: no cross-pillar casts) |
 | Roll | uniform over the pool, **minus** the effect that is live right now |
@@ -79,7 +84,7 @@ Open `/Game/DontTrustTheLevels/Player/Blueprints/BP_Player`.
 
 | Variable | Type | Instance Editable | Default |
 |---|---|---|---|
-| `Effect Classes` | **Array** of **Class Reference** → `BP_EffectBase` | ✓ | Basic, Ricochet, Heavy, Jammed |
+| `Effect Classes` | **Array** of **Class Reference** → `BP_EffectBase` | ✓ | Basic, Ricochet, Heavy, Jammed — **built: Basic, Ricochet, Heavy** |
 
 | Step | Action |
 |---|---|
@@ -87,20 +92,50 @@ Open `/Game/DontTrustTheLevels/Player/Blueprints/BP_Player`.
 | 2 | Variable type dropdown → **Class Reference** → parent class `BP_EffectBase` |
 | 3 | Next to the type, tick the **array** grid icon (a `TArray<Class>` — the icon stays on) |
 | 4 | Details → tick **Instance Editable** |
-| 5 | **Compile**, then **Class Defaults** → Details → `Effect Classes` → `+` four times, pick `BP_Effect_Basic`, `BP_Effect_Ricochet`, `BP_Effect_Heavy`, `BP_Effect_Jammed` |
+| 5 | **Compile**, then **Class Defaults** → Details → `Effect Classes` → `+` four times, pick `BP_Effect_Basic`, `BP_Effect_Ricochet`, `BP_Effect_Heavy`, `BP_Effect_Jammed` (**built: three `+` — Jammed left out, note below**) |
 | 6 | **Compile + Save** |
 
 The pool is data: drop `BP_Effect_Jammed` from the list if a kill should never
 take the gun away, add a fifth effect later and §3 picks it up with no rewiring.
 Do **not** leave the array empty (§7).
 
+**Built as 3 entries (9 Nov 2026).** The live CDO holds `BP_Effect_Basic`,
+`BP_Effect_Ricochet`, `BP_Effect_Heavy` — Jammed was dropped, so a kill can
+never leave the gun silent. With three entries and the §3 rule that the roll
+must skip the live class, each kill is a **1-in-2** shot at `Heavy`; `Heavy`
+does `Damage=5` (`ProjectileShooting.md` Part 3), so half the kills turn the
+next shot into a one-hit kill on a 2 HP enemy such as `BP_Bat`
+(`Enemies.md` §6.8 — this is the in-game answer to "why did that bat die in
+one hit"). Add `BP_Effect_Jammed` back for the card's four-class pool →
+1-in-3 for every class, Jammed included.
+
+**`Effect Class` already exists — do not touch it.** The singular is the class
+that is live *now*; `Set Effect Class` is its only writer, and the four debug
+keys plus the fire path read it as a single class. Ticking the array icon on it
+breaks all of them. `Effect Classes` (plural) is a **new, separate** variable —
+the menu to roll from — and nothing writes it at runtime. Also mind the type:
+`Gun Effect` is an Object Reference (the spawned instance), both of these are
+**Class** References.
+
 ---
 
 ## 3. `BP_Player` — `Event Randomize Effect Class`
 
 `Class Settings → Interfaces → Add → BPI_EffectUser` (the function must already
-exist, §1). The void message shows up in **My Blueprint → Interfaces**; drag
-**Event Randomize Effect Class** into the Event Graph.
+exist, §1). Then **right-click an empty spot in the Event Graph** → search
+`randomize` → pick **Event Randomize Effect Class** under the `BPI Effect User`
+heading.
+
+The node must read **Event** and have **no `Target` pin**, only `then`. A node
+with `Target` is the interface *message* — a call into nothing — and dragging the
+row out of *My Blueprint* is what produces it. Delete it and use the right-click
+search instead.
+
+Export note: **every** event appears twice in the T3D — a `K2Node_Event` inside
+`EventGraph`, and a `GRAPH: <Name>` stub whose only nodes are
+`FunctionEntry -> ExecuteUbergraph_BP_Player`. That stub is normal boilerplate
+(`ReceiveBeginPlay`, `OnJumped`, `Kill`, … are all shaped the same); never read it
+as a stray user function and never try to delete it.
 
 | # | Node | Pins |
 |---|---|---|
@@ -118,6 +153,18 @@ exist, §1). The void message shows up in **My Blueprint → Interfaces**; drag
 | 12 | **Set Effect Class** — the **function**, the one whose pin is `New Effect Class` (not the variable setter of the same name, `ProjectileShooting.md` 6.4) | **New Effect Class** ← step 11 |
 
 Exec: `Event then → step 12 execute`. **Compile + Save.**
+
+Built-state note (checked live): step 10 shows up in the T3D as a `K2Node_Select`
+with `Option 0`/`Option 1` + an int `Index`, fed by a `Conv Bool To Int` from the
+`Equal` — UE4's plain **Select** node is index-based, so the graph carries one
+extra converter node. Same truth table (`true → Option 1 = r+1`, `false →
+Option 0 = r`); the 12 boxes above are the *logical* nodes, not a node count.
+
+**Picture of the same 12 nodes:** open `Docs/kill_effect_graph.html` in a
+browser (self-contained, no editor). Hover (or click) a node to light up only
+its wires; `←`/`→` walk the nodes one at a time at reading zoom, `Fit` shows the
+whole graph. It is hand-authored from the table above (not a T3D export), so if
+the two ever disagree, the table wins.
 
 **Why this arithmetic.** `r` is uniform on `0..N-1`. If it lands on the effect
 that is live right now, `+1` with a wrap (`Percent`) moves to the next one;
@@ -182,7 +229,7 @@ shell pops — and it is already `bIsDead`-gated.
 |---|---|---|
 | 1 | Kill a Slime/Bat with bullets | the gun's behaviour changes on the next LMB (see table below) |
 | 2 | Press `2` (Ricochet), kill one enemy | the result is never Ricochet — the roll excludes the live effect |
-| 3 | Kill eight enemies | all four effects turn up; no kill leaves the gun on the same class |
+| 3 | Kill eight enemies | every class in the pool turns up (three today — §3 note); no kill leaves the gun on the same class |
 | 4 | Shoot a Snail | first hit pops the shell — **no switch** (`Die` is not called, `Enemies.md` §6.3); the next lethal hit switches |
 | 5 | Kill a `BP_Rock1`/`BP_Rock2` | the split spawns children, then `Parent: Die` switches — once, not once per rock |
 | 6 | Two bullets, one kill | one switch (the `bIsDead` gate at the top of `Die`) |
@@ -227,6 +274,13 @@ T3D exports in `Scripts/_kill_effect_export/`:
 Regressions it also re-checks: the four `Effect_*` debug keys still call
 `SetEffectClass` (the 18 Oct bug, `ProjectileShooting.md` 6.4). Unbuilt parts
 report `PENDING`; a broken wire reports `FAIL`. Exit code 1 only on `FAIL`.
+
+The dump parser is guarded too: a pin line it cannot read is a `FAIL` ("every pin
+line parsed"), never a silent drop. That guard exists because the first run
+reported `Random Integer in Range missing` on a *correct* graph — the pin regex
+gave up on names with a space (`Dimension 1`, the only data link into the roll)
+and on struct defaults with commas (`=0, 0,88.000000`), which quietly cut those
+wires out of every chain check.
 
 ---
 

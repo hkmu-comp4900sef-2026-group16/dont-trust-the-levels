@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<!--
+  kill_effect_graph.html - the picture behind Docs/EffectSwitchOnKill.md section 3
+  (BP_Player :: Event Randomize Effect Class -> Set Effect Class).
+
+  HAND-AUTHORED, NOT GENERATED. Unlike the Scripts/*_graph.html pages there is no
+  T3D input: the node/wire spec is the JS data block at the bottom of this file,
+  authored from the doc's step table, so keep the two in sync by hand.
+  (Lives in Docs/ because Scripts/ is gitignored; this one is meant to be
+  committed next to the doc, like Docs/rock_graph.html.)
+  Open in a browser (no editor needed); it is self-contained.
+
+  Controls: hover a node = only its wires light up (click pins it)
+            arrows = walk the nodes, scroll = zoom, drag = pan, Fit = whole graph.
+  Wires are routed orthogonally through free channels: they never cross behind a
+  node box, and wires that share a corridor get parallel lanes.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kill &rarr; random effect switch &mdash; BP_Player graph</title>
+<style>
+  :root {
+    --bg: #16171b;
+    --panel: #1d1f25;
+    --ink: #e8e8ea;
+    --dim: #9aa0aa;
+    --exec: #ededed;
+    --int: #3ec63e;
+    --bool: #b03030;
+    --class: #b472ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-columns: 1fr 380px;
+    grid-template-rows: auto 1fr; height: 100vh; overflow: hidden;
+  }
+  header {
+    grid-column: 1 / -1; padding: 10px 16px; background: #101115;
+    border-bottom: 1px solid #2a2d35; display: flex; gap: 16px;
+    align-items: baseline; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header p { margin: 0; color: var(--dim); font-size: 12px; }
+  header code { color: #cfd3da; }
+  #stage { position: relative; overflow: hidden; cursor: grab; }
+  #stage.dragging { cursor: grabbing; }
+  #viewport { width: 100%; height: 100%; display: block; }
+  #toolbar {
+    position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px;
+    background: #1d1f25cc; border: 1px solid #2f333c; border-radius: 6px;
+    padding: 6px;
+  }
+  #toolbar button {
+    background: #262a33; color: var(--ink); border: 1px solid #343945;
+    border-radius: 4px; padding: 3px 9px; font: inherit; font-size: 12px;
+    cursor: pointer;
+  }
+  #toolbar button:hover { background: #2f353f; }
+  #toolbar .sep { width: 1px; background: #343945; margin: 2px 4px; }
+  #stepno {
+    color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums;
+    padding: 3px 2px; min-width: 42px; text-align: center;
+  }
+  #stepcard {
+    position: absolute; right: 12px; bottom: 12px; max-width: 520px;
+    background: #1d1f25f2; border: 1px solid #3a3f4a; border-left: 3px solid #7cc4ff;
+    border-radius: 6px; padding: 8px 12px; font-size: 12.5px; line-height: 1.45;
+    pointer-events: none;
+  }
+  #stepcard b { color: #fff; }
+  aside {
+    background: var(--panel); border-left: 1px solid #2a2d35;
+    padding: 14px 16px; overflow-y: auto;
+  }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--dim); margin: 18px 0 8px; font-weight: 600; }
+  aside h2:first-child { margin-top: 0; }
+  aside p { margin: 0 0 10px; }
+  aside code { background: #262a33; padding: 1px 4px; border-radius: 3px;
+    font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #2a2d35; }
+  th { color: var(--dim); font-weight: 600; }
+  td.n { font-variant-numeric: tabular-nums; color: #a8e6a8; }
+  ol { padding-left: 20px; margin: 0; }
+  ol li { margin-bottom: 4px; }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+    margin-right: 5px; vertical-align: baseline; }
+  .legend { font-size: 12px; }
+  .legend div { margin-bottom: 3px; }
+  details { border-top: 1px solid #2a2d35; padding-top: 8px; margin-top: 8px; }
+  summary { cursor: pointer; color: #cfd3da; }
+  a { color: #7cc4ff; }
+  .hint { color: var(--dim); font-size: 11.5px; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kill &rarr; random effect switch</h1>
+  <p><code>BP_Player</code> &middot; <code>Event Randomize Effect Class</code> &middot; docs: <a href="EffectSwitchOnKill.md">&sect;3 of EffectSwitchOnKill.md</a></p>
+</header>
+
+<div id="stage">
+  <svg id="viewport" xmlns="http://www.w3.org/2000/svg">
+    <g id="root">
+      <g id="wires"></g>
+      <g id="nodes"></g>
+    </g>
+  </svg>
+  <div id="toolbar">
+    <button data-act="fit">Fit</button>
+    <button data-act="in">&minus;</button>
+    <button data-act="out">+</button>
+    <button data-act="reset">100%</button>
+    <span class="sep"></span>
+    <button data-act="prev" title="previous node (left arrow)">&larr;</button>
+    <span id="stepno">1&ndash;13</span>
+    <button data-act="next" title="next node (right arrow)">&rarr;</button>
+  </div>
+  <div id="stepcard" hidden></div>
+</div>
+
+<aside>
+  <h2>The whole idea</h2>
+  <p>Pick a class from <code>Effect Classes</code> that is <b>not</b> the one on the gun right now, then hand it to <code>Set Effect Class</code>.</p>
+  <p class="hint">Hover a node to light up only the wires that touch it (click pins it there). Scroll to zoom, drag to pan.</p>
+
+  <h2>Worked example</h2>
+  <p>Pool <code>[Basic, Ricochet, Heavy, Jammed]</code>, live = <b>Basic</b>, roll <code>r</code> in <code>0..3</code>:</p>
+  <table>
+    <tr><th>r</th><th>live?</th><th>index used</th><th>result</th></tr>
+    <tr><td class="n">0</td><td>yes</td><td class="n">(0+1)%4 = 1</td><td>Ricochet</td></tr>
+    <tr><td class="n">1</td><td>no</td><td class="n">1</td><td>Ricochet</td></tr>
+    <tr><td class="n">2</td><td>no</td><td class="n">2</td><td>Heavy</td></tr>
+    <tr><td class="n">3</td><td>no</td><td class="n">3</td><td>Jammed</td></tr>
+  </table>
+  <p class="hint">Plain <code>Random Integer in Range(0..3)</code> would keep the same effect 1 kill in 4 &mdash; the player reads that as &ldquo;the feature is broken&rdquo;. That is the only reason for the <code>Find / Equal / Add / Percent / Select</code> detour.</p>
+
+  <h2>Pin colours</h2>
+  <div class="legend">
+    <div><span class="swatch" style="background:var(--exec)"></span>exec &mdash; the only real flow</div>
+    <div><span class="swatch" style="background:var(--int)"></span>integer</div>
+    <div><span class="swatch" style="background:var(--bool)"></span>boolean</div>
+    <div><span class="swatch" style="background:var(--class)"></span>class reference (<code>[]</code> = array)</div>
+  </div>
+  <p class="hint">Everything except the event and <code>Set Effect Class</code> is <b>pure</b>: a value goes in, a value comes out, no exec pin. You never wire exec into them.</p>
+
+  <h2>Why each node</h2>
+  <table id="why">
+    <tr><th>node</th><th>answers</th></tr>
+  </table>
+
+
+  <details>
+    <summary>Build order (11 steps)</summary>
+    <ol>
+      <li>Drag <code>Effect Classes</code> into the graph &rarr; <b>Get Effect Classes</b>.</li>
+      <li>From its array output &rarr; <code>Length</code>.</li>
+      <li>From <code>Length</code> &rarr; <code>Subtract</code>, set <b>B = 1</b>.</li>
+      <li>From <code>Subtract</code> &rarr; <code>Random Integer in Range</code> (lands on <b>Max</b>), leave <b>Min = 0</b>.</li>
+      <li>From the array output again &rarr; <code>Find Item</code>; wire <code>Effect Class</code> (singular) into <b>Item To Find</b>.</li>
+      <li>From the roll &rarr; <code>Equal (int)</code>; wire <code>Find</code>'s <b>Index</b> into the other pin.</li>
+      <li>From the roll &rarr; <code>Add (int)</code>, <b>B = 1</b> &rarr; into <code>Percent</code>; wire <code>Length</code> into <b>B</b>.</li>
+      <li>From the <b>Equal</b> bool output &rarr; <code>Select</code> (it then arrives as <b>Condition / True / False</b>).</li>
+      <li>Roll &rarr; <b>False</b>; <code>Percent</code> &rarr; <b>True</b>.</li>
+      <li>Array output &rarr; <code>Get (a copy)</code>; <code>Select</code> &rarr; its <b>Index</b>.</li>
+      <li><code>Get (a copy)</code> class output &rarr; <code>Set Effect Class</code>'s <b>New Effect Class</b>.</li>
+    </ol>
+    <p class="hint">Step 8 is the one that bites: connect the bool <em>first</em>, or you get an <code>Index / Option 0 / Option 1</code> node and have to fight the pin type.</p>
+  </details>
+</aside>
+
+<script>
+/* ---- pin palette (UE 4.27-ish) ---------------------------------------- */
+const C = { exec:'#ededed', int:'#3ec63e', bool:'#b03030', class:'#b472ff' };
+
+/* ---- nodes: n = badge number, p = pin name, t = type, d = in|out -------- */
+const NODES = [
+  { id:'event', n:1, x:40, y:60, w:300, kind:'event', title:'Event Randomize Effect Class',
+    note:'The only entry point. Its then feeds Set Effect Class - one exec chain, nothing branches.',
+    pins:[ {p:'then', t:'exec', d:'out'} ] },
+
+  { id:'pool', n:2, x:40, y:300, w:260, kind:'get', title:'Get Effect Classes',
+    note:'The menu of 4 effects (Instance Editable, filled on the CDO). Nothing ever writes it.',
+    pins:[ {p:'Effect Classes[]', t:'class', d:'out'} ] },
+
+  { id:'cur', n:'\u00b7', x:40, y:620, w:260, kind:'get', title:'Get Effect Class  (SINGULAR)',
+    note:'The effect that is live on the gun right now. Only read here - never an array.',
+    pins:[ {p:'Effect Class', t:'class', d:'out'} ] },
+
+  { id:'len', n:3, x:380, y:210, w:180, kind:'pure', title:'Length',
+    note:'How many effects do I have?   N = 4',
+    pins:[ {p:'Array', t:'class', d:'in'}, {p:'Return Value', t:'int', d:'out'} ] },
+
+  { id:'find', n:6, x:380, y:520, w:290, kind:'pure', title:'Find Item',
+    note:'At which position is the live effect?   Basic -> 0',
+    pins:[ {p:'Target Array', t:'class', d:'in'}, {p:'Item To Find', t:'class', d:'in'},
+           {p:'Index', t:'int', d:'out'}, {p:'Found', t:'bool', d:'out'} ] },
+
+  { id:'sub', n:4, x:670, y:210, w:170, kind:'pure', title:'Subtract (int)',
+    note:'Highest valid position: N-1. The dice includes its Max, hence the -1.',
+    pins:[ {p:'A', t:'int', d:'in'}, {p:'B = 1', t:'int', d:'in'}, {p:'Return Value', t:'int', d:'out'} ] },
+
+  { id:'rand', n:5, x:880, y:200, w:300, kind:'pure', title:'Random Integer in Range',
+    note:'Which position did I roll?   r = 0..3',
+    pins:[ {p:'Min = 0', t:'int', d:'in'}, {p:'Max', t:'int', d:'in'}, {p:'r', t:'int', d:'out'} ] },
+
+  { id:'eq', n:7, x:1220, y:520, w:190, kind:'pure', title:'Equal (int)',
+    note:'Did I roll the position that is already live?',
+    pins:[ {p:'A = r', t:'int', d:'in'}, {p:'B = Find.Index', t:'int', d:'in'}, {p:'Return Value', t:'bool', d:'out'} ] },
+
+  { id:'add', n:8, x:1220, y:200, w:160, kind:'pure', title:'Add (int)',
+    note:'The position just after the live one.',
+    pins:[ {p:'A = r', t:'int', d:'in'}, {p:'B = 1', t:'int', d:'in'}, {p:'Return Value', t:'int', d:'out'} ] },
+
+  { id:'pct', n:9, x:1440, y:200, w:180, kind:'pure', title:'Percent (int)',
+    note:'...wrapping N back to 0, so the last slot can step to the first.',
+    pins:[ {p:'A = r + 1', t:'int', d:'in'}, {p:'B = N', t:'int', d:'in'}, {p:'Return Value', t:'int', d:'out'} ] },
+
+  { id:'sel', n:10, x:1660, y:460, w:210, kind:'pure', title:'Select',
+    note:'Rolled the live one? take r+1 : otherwise take r.',
+    pins:[ {p:'Condition', t:'bool', d:'in'}, {p:'True', t:'int', d:'in'}, {p:'False', t:'int', d:'in'}, {p:'Return Value', t:'int', d:'out'} ] },
+
+  { id:'item', n:11, x:1900, y:460, w:260, kind:'pure', title:'Get (a copy)',
+    note:'Which class sits at that position?',
+    pins:[ {p:'Array', t:'class', d:'in'}, {p:'Index = i', t:'int', d:'in'}, {p:'Return Value', t:'class', d:'out'} ] },
+
+  { id:'set', n:12, x:2230, y:60, w:330, kind:'fn', title:'Set Effect Class',
+    note:'Puts it on the gun (and refreshes Gun Effect). This is the FUNCTION, not the same-named variable setter.',
+    pins:[ {p:'execute', t:'exec', d:'in'}, {p:'New Effect Class', t:'class', d:'in'}, {p:'then', t:'exec', d:'out'} ] }
+];
+
+const WIRES = [
+  ['event','then','set','execute'],
+  ['pool','Effect Classes[]','len','Array'],
+  ['pool','Effect Classes[]','find','Target Array'],
+  ['pool','Effect Classes[]','item','Array'],
+  ['cur','Effect Class','find','Item To Find'],
+  ['len','Return Value','sub','A'],
+  ['sub','Return Value','rand','Max'],
+  ['rand','r','eq','A = r'],
+  ['rand','r','add','A = r'],
+  ['rand','r','sel','False'],
+  ['find','Index','eq','B = Find.Index'],
+  ['eq','Return Value','sel','Condition'],
+  ['add','Return Value','pct','A = r + 1'],
+  ['len','Return Value','pct','B = N'],
+  ['pct','Return Value','sel','True'],
+  ['sel','Return Value','item','Index = i'],
+  ['item','Return Value','set','New Effect Class']
+];
+
+/* ---- layout ----------------------------------------------------------- */
+const NS = 'http://www.w3.org/2000/svg';
+const svg  = document.getElementById('viewport');
+const root = document.getElementById('root');
+const gW   = document.getElementById('wires');
+const gN   = document.getElementById('nodes');
+
+const HEAD = 34, ROW = 26, PAD = 14;
+const KIND = {
+  event: { fill:'#39151a', head:'#5a1b22', stroke:'#c0393f' },
+  fn:    { fill:'#111f2b', head:'#123950', stroke:'#2f6f9e' },
+  get:   { fill:'#0f2418', head:'#12371f', stroke:'#2f7a45' },
+  pure:  { fill:'#1b1d22', head:'#24272e', stroke:'#3a3f4a' }
+};
+const L = {};  /* id -> {x,y,w,h,pins:{name:{x,y,t}}} */
+
+NODES.forEach(nd => {
+  const ins  = nd.pins.filter(p => p.d === 'in');
+  const outs = nd.pins.filter(p => p.d === 'out');
+  const h = HEAD + PAD + Math.max(ins.length, outs.length) * ROW + PAD;
+  const pins = {};
+  ins.forEach((p, i)  => pins[p.p] = { x: nd.x,           y: nd.y + HEAD + PAD + i * ROW + ROW / 2, t: p.t, d: 'in'  });
+  outs.forEach((p, i) => pins[p.p] = { x: nd.x + nd.w,    y: nd.y + HEAD + PAD + i * ROW + ROW / 2, t: p.t, d: 'out' });
+  L[nd.id] = { x: nd.x, y: nd.y, w: nd.w, h, pins };
+});
+
+/* ---- wire routing: orthogonal, always clear of the node boxes --------- */
+/* Out of the pin, into a channel that no box occupies, along it, then into
+   the input pin. A channel is never re-used by a wire coming from a different
+   pin, so wires that share a corridor get parallel lanes instead of one line
+   drawn on top of another.                                                  */
+const CLEAR = 7;                      /* keep this far away from any box      */
+const LANE = 16;                      /* two channels closer than this clash  */
+const BOX = NODES.map(nd => {
+  const b = L[nd.id];
+  return { id: nd.id, x: b.x - CLEAR, y: b.y - CLEAR,
+           w: b.w + 2 * CLEAR, h: b.h + 2 * CLEAR };
+});
+const TOPY = Math.min(...NODES.map(n => n.y));
+const BOTY = Math.max(...NODES.map(n => L[n.id].y + L[n.id].h));
+const lanes = [];                     /* long horizontal runs already used    */
+const risers = [];                    /* vertical runs already used           */
+const span = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
+
+function hHit(y, xa, xb, skip) {
+  const x0 = Math.min(xa, xb), x1 = Math.max(xa, xb);
+  for (const o of BOX)
+    if (!skip.has(o.id) && y > o.y && y < o.y + o.h && x1 > o.x && x0 < o.x + o.w) return true;
+  return false;
+}
+function vHit(x, ya, yb, skip) {
+  const y0 = Math.min(ya, yb), y1 = Math.max(ya, yb);
+  for (const o of BOX)
+    if (!skip.has(o.id) && x > o.x && x < o.x + o.w && y1 > o.y && y0 < o.y + o.h) return true;
+  return false;
+}
+function laneBusy(y, xa, xb, key) {
+  const x0 = Math.min(xa, xb), x1 = Math.max(xa, xb);
+  return lanes.some(l => l.key !== key && Math.abs(l.y - y) < LANE &&
+                         Math.min(x1, l.x1) - Math.max(x0, l.x0) > 60);
+}
+function riserBusy(x, ya, yb, key) {
+  const y0 = Math.min(ya, yb), y1 = Math.max(ya, yb);
+  return risers.some(r => r.key !== key && Math.abs(r.x - x) < 6 &&
+                          Math.min(y1, r.y1) - Math.max(y0, r.y0) > 12);
+}
+function walk(pts, skip, key) {
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    if (Math.abs(y0 - y1) < 0.5) {
+      if (hHit(y0, x0, x1, skip)) return false;
+      if (Math.abs(x1 - x0) > 60 && laneBusy(y0, x0, x1, key)) return false;
+    } else if (Math.abs(x0 - x1) < 0.5) {
+      if (vHit(x0, y0, y1, skip)) return false;
+      if (Math.abs(y1 - y0) > 16 && riserBusy(x0, y0, y1, key)) return false;
+    } else return false;              /* diagonal = not allowed               */
+  }
+  return true;
+}
+function remember(pts, key) {
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    if (Math.abs(y0 - y1) < 0.5 && Math.abs(x1 - x0) > 60)
+      lanes.push({ y: y0, x0: Math.min(x0, x1), x1: Math.max(x0, x1), key });
+    else if (Math.abs(x0 - x1) < 0.5 && Math.abs(y1 - y0) > 16)
+      risers.push({ x: x0, y0: Math.min(y0, y1), y1: Math.max(y0, y1), key });
+  }
+}
+function plen(pts) {
+  let s = 0;
+  for (let i = 1; i < pts.length; i++)
+    s += Math.abs(pts[i][0] - pts[i - 1][0]) + Math.abs(pts[i][1] - pts[i - 1][1]);
+  return s;
+}
+
+function route(a, b, skip, key) {
+  const cands = [];
+
+  /* 1. same height and nothing in the way: one straight line */
+  if (Math.abs(a.y - b.y) < 0.5) cands.push({ pts: [[a.x, a.y], [b.x, b.y]], kind: 'straight' });
+
+  /* 2. step over in a vertical channel, as close to the target pin as possible */
+  for (let x = Math.round(b.x) - 4; x >= a.x + 4; x -= 3) {
+    const pts = [[a.x, a.y], [x, a.y], [x, b.y], [b.x, b.y]];
+    if (walk(pts, skip, key)) { cands.push({ pts, kind: 'step' }); break; }
+  }
+
+  /* 3. out, along the nearest free horizontal lane, back in */
+  const mid = (a.y + b.y) / 2;
+  let lane = null;
+  for (let d = 0; d <= 440 && !lane; d += 6) {
+    for (const cy of d ? [mid - d, mid + d] : [mid]) {
+      if (cy < TOPY - 46 || cy > BOTY + 46) continue;
+      for (const s of [20, 12, 30, 46]) {
+        if (b.x - a.x < 2 * s + 10) continue;
+        const pts = [[a.x, a.y], [a.x + s, a.y], [a.x + s, cy],
+                     [b.x - s, cy], [b.x - s, b.y], [b.x, b.y]];
+        if (walk(pts, skip, key)) { lane = { pts, kind: 'lane' }; break; }
+      }
+      if (lane) break;
+    }
+  }
+  if (lane) cands.push(lane);
+
+  cands.sort((p, q) => plen(p.pts) - plen(q.pts));
+  if (cands.length) return cands[0];
+  return { pts: [[a.x, a.y], [b.x, b.y]], kind: 'fallback' };
+}
+
+/* rounded corners so the orthogonal path still looks like a wire */
+function pathOf(pts) {
+  const p = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const q = p[p.length - 1];
+    if (Math.abs(pts[i][0] - q[0]) + Math.abs(pts[i][1] - q[1]) > 0.01) p.push(pts[i]);
+  }
+  let d = 'M ' + p[0][0] + ' ' + p[0][1];
+  for (let i = 1; i < p.length - 1; i++) {
+    const [px, py] = p[i - 1], [cx, cy] = p[i], [nx, ny] = p[i + 1];
+    const d1 = Math.hypot(cx - px, cy - py), d2 = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(7, d1 / 2, d2 / 2);
+    const ax = (cx - px) / d1, ay = (cy - py) / d1;
+    const bx = (nx - cx) / d2, by = (ny - cy) / d2;
+    d += ` L ${cx - ax * r} ${cy - ay * r} Q ${cx} ${cy} ${cx + bx * r} ${cy + by * r}`;
+  }
+  const e = p[p.length - 1];
+  d += ` L ${e[0]} ${e[1]}`;
+  return d;
+}
+
+/* longest first, so the big runs get the cleanest channels */
+const ORDER = WIRES.slice().sort((u, v) => {
+  const du = Math.abs(L[u[2]].pins[u[3]].x - L[u[0]].pins[u[1]].x);
+  const dv = Math.abs(L[v[2]].pins[v[3]].x - L[v[0]].pins[v[1]].x);
+  return dv - du;
+});
+
+const WIRE = ORDER.map(([sid, sp, tid, tp]) => {
+  const a = L[sid].pins[sp], b = L[tid].pins[tp];
+  if (!a || !b) { console.error('bad wire', sid, sp, tid, tp); return null; }
+  const key = sid + '.' + sp;
+  const r = route(a, b, new Set([sid, tid]), key);
+  remember(r.pts, key);
+  r.pts.forEach(([x, y]) => {
+    span.x0 = Math.min(span.x0, x); span.y0 = Math.min(span.y0, y);
+    span.x1 = Math.max(span.x1, x); span.y1 = Math.max(span.y1, y);
+  });
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', pathOf(r.pts));
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', C[a.t]);
+  p.setAttribute('stroke-width', a.t === 'exec' ? 3 : 2);
+  p.setAttribute('stroke-opacity', a.t === 'exec' ? 0.95 : 0.85);
+  p.setAttribute('stroke-linecap', 'round');
+  p.setAttribute('stroke-linejoin', 'round');
+  p.dataset.from = sid;
+  p.dataset.to = tid;
+  p.dataset.kind = r.kind;
+  gW.appendChild(p);
+  return { el: p, from: sid, to: tid, t: a.t, kind: r.kind };
+}).filter(Boolean);
+
+/* ---- build the node layer -------------------------------------------- */
+function add(parent, tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
+
+NODES.forEach(nd => {
+  const k = KIND[nd.kind];
+  const b = L[nd.id];
+  const g = add(gN, 'g', { 'data-id': nd.id, style: 'cursor:pointer' });
+  add(g, 'title', {}, nd.title + ' \u2014 ' + nd.note);
+
+  add(g, 'rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: 6,
+                   fill: k.fill, stroke: k.stroke, 'stroke-width': 1.5 });
+  add(g, 'path', { d: `M ${b.x} ${b.y + 6} q 0 -6 6 -6 h ${b.w - 12} q 6 0 6 6 v ${HEAD - 6} h ${-b.w} z`,
+                   fill: k.head });
+  add(g, 'path', { d: `M ${b.x} ${b.y + HEAD} h ${b.w}`, stroke: k.stroke, 'stroke-opacity': .7 });
+
+  add(g, 'circle', { cx: b.x + 17, cy: b.y + HEAD / 2, r: 9.5, fill: '#0b0c0f', stroke: k.stroke });
+  add(g, 'text', { x: b.x + 17, y: b.y + HEAD / 2 + 4, 'text-anchor': 'middle',
+                   'font-size': 11, 'font-weight': 700, fill: '#dde2ea' }, nd.n);
+  add(g, 'text', { x: b.x + 34, y: b.y + HEAD / 2 + 5, 'font-size': 13,
+                   'font-weight': 600, fill: '#eef1f6' }, nd.title);
+
+  nd.pins.forEach(p => {
+    const q = L[nd.id].pins[p.p];
+    const arr = p.p.includes('[]');
+    const col = C[p.t];
+    const sq = add(g, 'rect', { x: q.x - 5, y: q.y - 5, width: 10, height: 10, rx: 2,
+                                fill: col, stroke: '#0b0c0f', 'stroke-width': 1 });
+    if (arr) add(g, 'rect', { x: q.x - 2, y: q.y - 2, width: 4, height: 4, rx: 1, fill: '#0b0c0f' });
+    const isIn = p.d === 'in';
+    add(g, 'text', {
+      x: isIn ? q.x + 10 : q.x - 10,
+      y: q.y + 4.5,
+      'text-anchor': isIn ? 'start' : 'end',
+      'font-size': 11.5,
+      fill: p.t === 'exec' ? '#dfe3ea' : col
+    }, p.p);
+  });
+
+  g.addEventListener('click', ev => { ev.stopPropagation(); select(nd.id); });
+  g.addEventListener('pointerenter', () => { hover = nd.id; paint(); });
+  g.addEventListener('pointerleave', () => { if (hover === nd.id) hover = null; paint(); });
+});
+
+/* ---- highlight one node and its wires --------------------------------- */
+/* hover = temporary (leave and it goes back), click = pinned until you click
+   the same node again or the background.                                    */
+let sel = null, hover = null;
+
+function paint() {
+  const id = hover || sel;
+  WIRE.forEach(w => {
+    const hit = id && (w.from === id || w.to === id);
+    const baseW = w.t === 'exec' ? 3 : 2;
+    const baseO = w.t === 'exec' ? 0.95 : 0.85;
+    w.el.setAttribute('stroke-width', !id ? baseW : hit ? baseW + 1.8 : baseW);
+    w.el.setAttribute('stroke-opacity', !id ? baseO : hit ? 1 : 0.06);
+  });
+  const near = new Set();
+  if (id) {
+    near.add(id);
+    WIRE.forEach(w => {
+      if (w.from === id || w.to === id) { near.add(w.from); near.add(w.to); }
+    });
+  }
+  gN.querySelectorAll('g[data-id]').forEach(g => {
+    g.setAttribute('opacity', !id || near.has(g.dataset.id) ? 1 : 0.25);
+  });
+}
+
+function highlight(id) { sel = id; paint(); }
+function select(id) { highlight(sel === id ? null : id); }
+
+svg.addEventListener('click', () => { sel = null; paint(); });
+
+/* ---- pan / zoom ------------------------------------------------------- */
+let k = 1, tx = 0, ty = 0;
+
+function apply() { root.setAttribute('transform', `translate(${tx} ${ty}) scale(${k})`); }
+
+function bounds() {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  Object.values(L).forEach(b => {
+    x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+    x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+  });
+  /* wires may run in lanes outside the node area - include them */
+  x0 = Math.min(x0, span.x0); y0 = Math.min(y0, span.y0);
+  x1 = Math.max(x1, span.x1); y1 = Math.max(y1, span.y1);
+  return { x0: x0 - 34, y0: y0 - 34, x1: x1 + 44, y1: y1 + 34 };
+}
+
+function fit() {
+  const r = svg.getBoundingClientRect();
+  const bb = bounds();
+  const bw = bb.x1 - bb.x0, bh = bb.y1 - bb.y0;
+  k = Math.min(r.width / bw, r.height / bh) * 0.98;
+  tx = -bb.x0 * k + (r.width - bw * k) / 2;
+  ty = -bb.y0 * k + (r.height - bh * k) / 2;
+  apply();
+}
+
+function zoomAt(f, cx, cy) {
+  const next = Math.max(0.15, Math.min(2.5, k * f));
+  const wx = (cx - tx) / k, wy = (cy - ty) / k;
+  tx = cx - wx * next; ty = cy - wy * next; k = next;
+  apply();
+}
+
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  zoomAt(Math.pow(1.0016, -e.deltaY), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+
+const stage = document.getElementById('stage');
+let drag = null;
+
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toolbar')) return;
+  drag = { x: e.clientX, y: e.clientY, tx, ty };
+  stage.classList.add('dragging');
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', e => {
+  if (!drag) return;
+  tx = drag.tx + (e.clientX - drag.x);
+  ty = drag.ty + (e.clientY - drag.y);
+  apply();
+});
+stage.addEventListener('pointerup', () => { drag = null; stage.classList.remove('dragging'); });
+
+document.querySelectorAll('#toolbar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const r = svg.getBoundingClientRect();
+    const act = btn.dataset.act;
+    if (act === 'fit') setStep(-1);
+    else if (act === 'in') zoomAt(1.2, r.width / 2, r.height / 2);
+    else if (act === 'out') zoomAt(1 / 1.2, r.width / 2, r.height / 2);
+    else if (act === 'prev') setStep(step - 1);
+    else if (act === 'next') setStep(step + 1);
+    else { k = 1; apply(); }
+  });
+});
+
+/* ---- step through the nodes, one at a time ---------------------------- */
+let step = -1;
+const stepcard = document.getElementById('stepcard');
+const stepno   = document.getElementById('stepno');
+
+/* the aux get node has no step number in the doc, so it gets no "n." prefix */
+function numbered(nd) { return /^[0-9]+$/.test(String(nd.n)); }
+function label(nd) { return numbered(nd) ? nd.n + '. ' + nd.title : nd.title; }
+
+/* walk the badge numbers 1..12 in order, aux node last, so the counter always
+   agrees with the badge printed on the node */
+const WALK = NODES.slice().sort((a, b) =>
+  (numbered(a) ? +a.n : 999) - (numbered(b) ? +b.n : 999));
+const NSTEPS = NODES.filter(numbered).length;
+
+function setStep(i) {
+  if (i >= WALK.length) i = 0;
+  if (i < 0) {                       /* walked off the start: overview */
+    step = -1;
+    stepcard.hidden = true;
+    stepno.textContent = '1\u2013' + NSTEPS;
+    highlight(null);
+    fit();
+    return;
+  }
+  step = i;
+  const nd = WALK[step], b = L[nd.id], r = svg.getBoundingClientRect();
+  k = Math.max(0.9, Math.min(k, 1.3));
+  tx = r.width / 2 - (b.x + b.w / 2) * k;
+  ty = r.height / 2 - (b.y + b.h / 2) * k;
+  apply();
+  highlight(nd.id);
+  stepno.textContent = numbered(nd) ? nd.n + '/' + NSTEPS : 'aux';
+  stepcard.hidden = false;
+  stepcard.innerHTML = '<b>' + label(nd) + '</b><br>' + nd.note;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') { setStep(step + 1); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft') { setStep(step - 1); e.preventDefault(); }
+  else if (e.key === 'Escape' || e.key === 'f' || e.key === 'F') setStep(-1);
+});
+
+/* ---- side panel: one row per node, in badge order --------------------- */
+const why = document.getElementById('why');
+WALK.forEach(n => {
+  const tr = document.createElement('tr');
+  const a = document.createElement('td'); a.textContent = label(n);
+  const b = document.createElement('td'); b.textContent = n.note;
+  tr.append(a, b);
+  why.appendChild(tr);
+});
+
+window.addEventListener('resize', fit);
+paint();
+fit();
+</script>
+</body>
+</html>
+
+
