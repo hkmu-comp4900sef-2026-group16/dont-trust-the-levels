@@ -5,6 +5,13 @@ Blueprint nodes or variables (`unreal.BlueprintEditorLibrary` and
 `KismetEditorUtilities` are absent — `Structure.md` §11), so §1-§4 are editor
 work; §6 is the scripted half.
 
+**Before editing:** `git lfs lock` the three assets you are about to touch —
+`Content/DontTrustTheLevels/Core/Interfaces/BPI_EffectUser.uasset`,
+`.../Player/Blueprints/BP_Player.uasset`,
+`.../Enemies/Blueprints/BP_EnemyBase.uasset` (`EnemyWorkPlan.md` §11). None of
+them is locked today; `BP_EnemyProjectile_Wood.uasset` is (wing-del007) and is
+not part of this card.
+
 **Concept.** Killing an enemy switches the player's gun to a *different*,
 randomly picked effect class from the pool — through the port every other switch
 already uses (`BP_Player::Set Effect Class`, `ProjectileShooting.md` Part 7).
@@ -253,9 +260,12 @@ report `PENDING`; a broken wire reports `FAIL`. Exit code 1 only on `FAIL`.
   death" becomes "only my bullets", and the trigger is scattered across the
   weapons pillar instead of sitting in one enemy function.
 
-**Rollback** (editor, not `git checkout` — `BP_EnemyBase`/`BP_Player` carry
-other uncommitted work): rewire `Clear Timer.then -> Destory Actor after delay`,
-delete the message + `Get Player Character` nodes, delete the event and the
-`Effect Classes` variable, then remove `BPI_EffectUser` from Class Settings and
-delete the interface asset.
+**Rollback.** The pre-edit anchor is `e90faa3` (the 12 enemy packages) plus
+`11cdd6a` (this card), so `git checkout -- Content/.../BP_EnemyBase.uasset` (and
+the same for `BP_Player.uasset`) is a clean revert — check `git status` shows
+neither file before you start, and commit the built version so the next revert
+works too. Manual revert instead: rewire
+`Clear Timer.then -> Destory Actor after delay`, delete the message + `Get Player
+Character` nodes, delete the event and the `Effect Classes` variable, then remove
+`BPI_EffectUser` from Class Settings and delete the interface asset.
 
