@@ -1004,9 +1004,13 @@ while hidden; re-enable the `ContactBox` (`QueryOnly`, `Pawn=Overlap`) in the
 visible phase. Visible = vulnerable, contact `1`. There is no
 `bInvulnerableWhileInvisible` toggle any more; hidden is always untouchable.
 
-`RefreshStateFlipbook` override: if `bInvisible`, do nothing; otherwise play
-`FLB_Ghost_Idle` loop. Optional VFX: `SPR_Ghost_Particles` on a second
-`PaperSpriteComponent`, toggled with the same state.
+`RefreshStateFlipbook` override: `Function Entry` → `PlayStateFlipbook
+(FLB_Ghost_Idle, loop)` **unconditionally** — no Branch, and it does *not* call
+the parent `Refresh State Flipbook`. `bInvisible` needs no gate: while hidden
+the sprite is not drawn, and `SetFlipbook` only resets `AccumulatedTime` when
+the sheet changes, so a refresh while hidden costs nothing. Optional VFX:
+`SPR_Ghost_Particles` on a second `PaperSpriteComponent`, toggled with the same
+state.
 
 ---
 
