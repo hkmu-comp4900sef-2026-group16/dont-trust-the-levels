@@ -435,6 +435,13 @@ Set Life Span (DestroyDelay)
 `DestroyDelay` must be wired into `Set Life Span`'s **In Lifespan** pin. A
 literal `0.0` clears the lifespan timer, so the corpse never auto-destroys.
 
+> The `[optional: score / sound / spawn effect]` slot is where the kill-triggered
+> random shooting-effect switch goes: one `Get Player Character` +
+> `BPI_EffectUser` message between `Clear Timer` and the `Destory Actor after
+> delay` box. Build card: `Docs/EffectSwitchOnKill.md` §4 (planned, nothing
+> built yet).
+
+
 `Clear Timer ("RecoverFromHit")` is **required**. `AnyDamage` schedules that
 timer just before calling `Die` on a lethal hit; if it is left pending it fires
 0.2 s later, `RefreshStateFlipbook` plays `IdleFlipbook`, and the death art

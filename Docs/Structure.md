@@ -342,7 +342,10 @@ BPI_Killable    "I can be killed"      -> BP_Player and BP_EnemyBase implement i
 BPI_Resettable  "I can be reset"       -> traps implement it (planned)
 BPI_Fireable    "I can be fired"       -> weapons implement it (planned)
 BPI_NoiseSource "I make noise"         -> weapons implement it (planned)
+BPI_EffectUser  "re-roll the gun"      -> BP_Player implements it; BP_EnemyBase::Die
+                                          sends it on a kill (EffectSwitchOnKill.md, planned)
 ```
+
 
 **Why not `Cast To BP_Player`?** A cast hard-codes the class name. The player
 class has already been renamed once (Pink Man -> Ninja Frog); a cast would have

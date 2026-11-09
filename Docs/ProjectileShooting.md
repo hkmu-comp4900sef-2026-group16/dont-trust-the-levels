@@ -973,6 +973,15 @@ from traps, pickups, volumes, cutscenes:
   `Set Effect Class` — implement it on `BP_Player` (the implementation
   body is this same function). Five minutes of work, done lazily, not now.
 
+**First real caller (built as a card, 9 Nov 2026):** killing an enemy re-rolls
+the gun to a different, random effect class through exactly this path —
+`BPI_EffectUser` with one message (`Randomize Effect Class`), implemented on
+`BP_Player`, sent from `BP_EnemyBase::Die`. The message carries no class on
+purpose: the pool lives with the gun, so the enemy only says "re-roll". Build
+card and verifier: `Docs/EffectSwitchOnKill.md` /
+`py -3 Scripts/_verify_effect_on_kill.py`.
+
+
 **Why a class variable and not an instance:** instances are runtime
 artifacts (spawned per player, per shot); the *port state* must survive the
 instance dying and be trivially serializable for save games. The class is
