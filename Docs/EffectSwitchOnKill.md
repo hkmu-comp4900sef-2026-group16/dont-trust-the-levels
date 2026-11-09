@@ -64,6 +64,10 @@ Build the function **before** adding the interface to any class: a class that
 adds an interface while it is still function-less never picks later functions
 up (`Structure.md` §9, "Creating an interface").
 
+Press **`+` once**. A second click leaves an empty `NewFunction_0` in the asset
+(the verifier reports it as `WARN … extra function graph`); it surfaces as a
+bogus "New Function 0" event on every class that implements the interface.
+
 The export strips spaces (`On Wall Hit` → `OnWallHit`), so the verifier looks
 for `RandomizeEffectClass`.
 
