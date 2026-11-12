@@ -125,7 +125,12 @@ this body:
 | 6 | **CapsuleComponent -> Get Overlapping Actors** | Class Filter = `BP_EnemyBase`; output -> `ForEachLoop` |
 | 7 | **ForEachLoop `Array Element` -> `TryDashDamage`** | handles an enemy that was already touching the player when the dash began |
 
-Chain: `Entry -> 1 -> 2 -> 3 -> 3a -> 4 -> 5 -> 5a/5b (ForEach loop) -> 6 (ForEach loop) -> 7 -> Return`.
+Chain: `Entry -> 1 -> 2 -> 3 -> 3a -> 4 -> 5 -> 5b (ForEach loop) -> 6 (ForEach loop) -> 7 -> Return`.
+
+`Get All Actors with Tag` (5a) and `Get Overlapping Actors` (6) are **pure data
+nodes** in 4.27: they have no exec pins. Wire their array output into the
+`ForEachLoop`, and send the exec wire from `5` into the loop, not into the
+getter. The same rule applies to the end-of-window loop in §5.
 
 Call `BeginDashInvincibility` from the `Dash Logic` chain immediately after
 `SET bIsDashing = true`. Do **not** call it from `EndDash`: `EndDash` runs on a
