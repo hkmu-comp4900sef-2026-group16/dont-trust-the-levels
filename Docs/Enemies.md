@@ -138,6 +138,13 @@ killable, the overlap falls back to `Apply Damage` with `ContactDamage` (see
 §4.4). If `BP_Player` gains health later, replace that Kill with `Apply Damage`
 first.
 
+**Dash damage is not a second contract.** `DashDamage.md` has `BP_Player` send
+`ApplyDamage` to any capsule overlap tagged `Enemy`; that is the same
+`AnyDamage` gate above (`bIsDead / bInvulnerable / bIFrameActive / bUseHealth`).
+A dash therefore hurts exactly the phases a bullet can hurt and cannot bypass
+the Spike Turtle, Rhino, hidden Ghost, ON Skull or Snail shell. No enemy asset
+needs a new function or variable for the dash.
+
 ### 2.3 Trap interaction contract (enemy-neutral)
 
 **Enemies never trigger traps and traps never damage enemies. The only

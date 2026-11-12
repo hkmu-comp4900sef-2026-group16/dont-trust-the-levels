@@ -2,6 +2,12 @@
 
 **Owner:** Player pillar · **Branch:** `branch/Dennis` · **Status:** Part 1 done (ini), Parts 2–6 pending editor work
 
+> **Dash damage / i-frames:** `DashDamage.md` is the prepared follow-on card.
+> It adds one-hit-per-dash damage, a short pass-through/invincibility window
+> (`WorldDynamic` + `PhysicsBody` ignored on the capsule; sprite collision off), and keeps the Spike Turtle solid
+> because its capsule is the only enemy on `Pawn = Block`. It reuses
+> `BP_EnemyBase.AnyDamage` for phase-aware damage; no enemy asset change.
+
 **Goal:** pressing **Spacebar** sends the player a fixed distance (`DashRange`) toward
 wherever the crosshair is pointing — any direction in the screen plane, including
 up/down diagonals, on the ground **or** mid-air. Walls/floors stop the dash early
@@ -31,6 +37,7 @@ PlayerController so weapons can call it"* — this doc builds that function).
 | World aim point | `BP_PlayerController` → new function `GetAimWorldLocation` | PC owns aim data; Weapons pillar calls the same function later without casting to the pawn |
 | Dash state machine | `BP_Player` event graph + variables | Player pillar owns movement feel |
 | `EndDash()` | `BP_Player` function | one restore-state routine, called from 3 sites |
+| Dash damage + i-frames | `BP_Player` variables / functions | separate card in `DashDamage.md`; collision timing lives there, not in `EndDash` |
 
 ## Part 1 — Input mapping (done, text-only edit)
 
@@ -43,6 +50,10 @@ PlayerController so weapons can call it"* — this doc builds that function).
 
 **Spacebar was Jump; it is now Dash** (one key can't fire two actions). Jump remains
 on **W**, **Up** and **Gamepad_FaceButton_Bottom**.
+
+**`LeftMouseButton` is Fire only.** LMB was briefly dual-bound to `Dash` so a
+shot also dashed, but every normal shot then jerked the player toward the
+crosshair; that mapping was removed. Spacebar is the dedicated dash.
 
 ## Part 2 — BP_PlayerController: function `GetAimWorldLocation`
 
@@ -192,9 +203,13 @@ in `SetMovementMode(Flying)`, `AddActorWorldOffset` with sweep in Tick, three
 
 | Symptom | Cause → fix |
 |---|---|
+| The player jerks toward the crosshair on every normal shot | `LeftMouseButton` is mapped to **both** `Fire` and `Dash`. Delete the `Dash`/`LeftMouseButton` line from `DefaultInput.ini`, restart the editor, and run `_verify_shooting.py`; it must print `PASS Dash is not on LeftMouseButton (LMB is Fire only)` and no `live Dash mappings: 2` warning. |
+| **Only Inverse shots jerk the player / sometimes look like a dash** | Not Dash. The inverse spawn point is inside the player capsule (§3.1 in `InverseShot.md`). Set `Spawn Actor → Collision Handling Override` to `AdjustIfPossibleButAlwaysSpawn` (robust for steep aim) and add a second `Subtract` for 120uu horizontal clearance. A stale LMB→Dash would move **every** shot, not only Inverse. Run `py -3 Scripts/_probe_inverse_push.py` to print the capsule/box geometry. |
 | Spacebar jumps (or does nothing) | Stale/duplicate mapping: `DefaultInput.ini` is only read at editor start — close and reopen the editor after editing it; confirm exactly **one** SpaceBar line, under action `Dash` |
 | Player both jumps and dashes | SpaceBar mapped to both actions — remove one mapping |
 | Dash is instant / one frame | `bBlockingHit` true every frame: check `bSweep ✓` and that you aren't starting inside geometry |
+| Dash passes through enemies but deals no damage | The dash-damage card is not built, or `CapsuleComponent BeginOverlap` is not gated by `bIsDashing`; see `DashDamage.md` §4 |
+| Player dies during the dash | `Kill Logic` does not test `bDashInvincible`, or collision was restored before the i-frame timer; see `DashDamage.md` §5–§6 |
 | Dash always goes one fixed way | `GetUnitDirection` From/To swapped (From = **player**, To = **aim**) |
 | Character floats after dash | `EndDash` left `Flying` — its SetMovementMode must be `Falling` |
 | Dash drifts sideways | AddMovementInput gate (Part 5) missing |
