@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<!--
+  dash_damage_graph.html - the picture behind Docs/DashDamage.md sections 3-6.
+
+  HAND-AUTHORED, NOT GENERATED. The node/wire spec is the GRAPHS data block at
+  the bottom of this file, written from the step tables in DashDamage.md, so
+  keep the two in sync by hand.
+
+  Self-contained: open it in a browser, no editor or network needed.
+  Controls: hover a node to light up its wires, drag to pan, wheel to zoom.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dash damage &mdash; BP_Player graph</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#151b23; --line:#283341; --txt:#dce5ef; --dim:#8b9bb0;
+    --event:#a78bfa; --func:#34d399; --set:#fbbf24; --branch:#2dd4bf;
+    --pure:#93a4b8; --cast:#f472b6; --timer:#60a5fa; --kill:#f87171;
+    --exec:#e8edf4; --bool:#ef7d7d; --float:#7ee787; --int:#79c0ff;
+    --actor:#d2a8ff; --enum:#ffa657; --name:#e3b341; --array:#f778ba;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--txt);font:13px/1.4 "Segoe UI",system-ui,sans-serif;
+       display:flex;flex-direction:column;overflow:hidden}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px 0}
+  .top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  h1{margin:0;font-size:16px;font-weight:600}
+  h1 small{color:var(--dim);font-weight:400;font-size:12px;margin-left:6px}
+  .meta{margin-left:auto;color:var(--dim);font-size:11px}
+  .meta a{color:#7cc4ff;text-decoration:none}
+  .meta a:hover{text-decoration:underline}
+  .bar{display:flex;align-items:center;gap:8px;margin-top:9px;padding-bottom:9px;flex-wrap:wrap}
+  nav{display:flex;gap:5px;flex-wrap:wrap}
+  .tab{background:transparent;color:var(--dim);border:1px solid transparent;border-bottom:none;
+       border-radius:6px 6px 0 0;padding:5px 11px;font:inherit;font-size:12px;cursor:pointer}
+  .tab:hover{color:var(--txt)}
+  .tab.on{background:#1b2431;border-color:var(--line);color:#fff}
+  #note{background:#101720;border-top:1px solid var(--line);color:#9fb3c8;font-size:11.5px;
+        padding:5px 16px;margin:0 -16px;min-height:26px}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 360px;flex:1;min-height:0}
+  #stage{position:relative;overflow:hidden;cursor:grab;background-image:radial-gradient(#ffffff0d 1px,transparent 1px);
+         background-size:24px 24px}
+  #stage.drag{cursor:grabbing}
+  #scene{display:block;width:100%;height:100%}
+  #view{transform-origin:0 0}
+  #toolbar{position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:5px;
+           background:#151b23df;border:1px solid #344152;border-radius:6px;padding:5px}
+  #toolbar button{background:#202b38;color:var(--txt);border:1px solid #344152;border-radius:4px;
+                  font:inherit;font-size:12px;padding:3px 9px;cursor:pointer}
+  #toolbar button:hover{background:#2a3848}
+  #zoom{color:var(--dim);font-size:11px;min-width:42px;text-align:center;font-variant-numeric:tabular-nums}
+  #tip{position:absolute;right:12px;bottom:12px;max-width:440px;background:#151b23f2;
+       border:1px solid #3a4658;border-left:3px solid #7cc4ff;border-radius:6px;
+       padding:7px 11px;font-size:12px;line-height:1.45;pointer-events:none;color:#c7d3e1}
+  #tip b{color:#fff}
+  aside{background:var(--panel);border-left:1px solid var(--line);padding:14px 16px;overflow-y:auto}
+  aside h2{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
+           margin:18px 0 7px;font-weight:600}
+  aside h2:first-child{margin-top:0}
+  aside p{margin:0 0 10px;color:#c1cedd}
+  aside code{background:#26313f;padding:1px 4px;border-radius:3px;font-size:12px;color:#e6edf5}
+  aside .hint{color:var(--dim);font-size:11.5px;font-style:italic}
+  #steps{margin:0;padding-left:20px}
+  #steps li{margin-bottom:5px;color:#c1cedd}
+  #steps b{color:#fff;font-weight:600}
+  .legend div{margin-bottom:4px;font-size:12px;color:#c1cedd}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:baseline}
+  .sw.round{border-radius:50%}
+  .flow{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:4px 0 9px;font-size:11.5px;color:var(--dim)}
+  .flow span{background:#202b38;border:1px solid #344152;border-radius:4px;padding:2px 6px;color:#c7d3e1}
+  .flow i{color:#6f8298;font-style:normal}
+  @media (max-width:900px){
+    main{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) 290px}
+    aside{border-left:none;border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>Dash damage &amp; i-frames <small>BP_Player graph</small></h1>
+    <span class="meta">source: <a href="DashDamage.md">&sect;3&ndash;6 DashDamage.md</a> &middot; hand-authored</span>
+  </div>
+  <div class="bar">
+    <nav id="tabs"></nav>
+  </div>
+  <div id="note"></div>
+</header>
+
+<main>
+  <section id="stage">
+    <svg id="scene" xmlns="http://www.w3.org/2000/svg">
+      <g id="view"></g>
+    </svg>
+    <div id="toolbar">
+      <button id="fit" title="fit the whole graph">Fit</button>
+      <button id="minus" title="zoom out">&minus;</button>
+      <span id="zoom">100%</span>
+      <button id="plus" title="zoom in">+</button>
+      <button id="reset" title="100% at the origin">100%</button>
+    </div>
+    <div id="tip" hidden></div>
+  </section>
+
+  <aside>
+    <h2 id="side-title">BeginDashInvincibility</h2>
+    <p id="side-desc"></p>
+    <div class="flow" id="side-flow"></div>
+    <h2>Build order</h2>
+    <ol id="steps"></ol>
+    <h2>Pin colours</h2>
+    <div class="legend">
+      <div><span class="sw round" style="background:var(--exec)"></span>exec &mdash; the only real flow</div>
+      <div><span class="sw" style="background:var(--bool)"></span>boolean</div>
+      <div><span class="sw" style="background:var(--float)"></span>float</div>
+      <div><span class="sw" style="background:var(--int)"></span>integer</div>
+      <div><span class="sw" style="background:var(--actor)"></span>actor / object</div>
+      <div><span class="sw" style="background:var(--enum)"></span>enum / struct</div>
+      <div><span class="sw" style="background:var(--array)"></span>array</div>
+    </div>
+    <h2>Reading the wires</h2>
+    <p class="hint">Solid light wires are exec: they decide what runs next. Coloured dashed wires are data: they only feed values. Pure nodes have no exec pins &mdash; wire their output straight into the consumer.</p>
+    <p class="hint">Hover a node to isolate its wires. Drag the canvas to pan, wheel to zoom, or press Fit.</p>
+  </aside>
+</main>
+
+<script>
+/* =========================================================================
+   GRAPHS: hand-authored from Docs/DashDamage.md.  A node's `pins` are split
+   left (dir:"in") / right (dir:"out"); the edge names must match them.
+   ========================================================================= */
+const GRAPHS = {
+  begin: {
+    title: 'BeginDashInvincibility',
+    note: 'Start of the dash: clear the hit list, open the i-frame window, turn WorldDynamic/PhysicsBody contact into pass-through, and arm the timer that closes it.',
+    desc: 'Called from Dash Logic immediately after SET bIsDashing = true. The timer is what ends the window; EndDash does not run it, because a wall stop and a normal dash both end while the i-frame clock can still be running.',
+    flow: ['SET bIsDashing = true', 'BeginDashInvincibility', 'AddActorWorldOffset'],
+    steps: [
+      'Clear <b>DashHitActors</b> so this dash starts with a fresh hit list.',
+      'Set <b>bDashInvincible</b> to true before anything can call Kill.',
+      'Capsule &rarr; <b>WorldDynamic = Ignore</b>. This is the trap/projectile/contact-box channel.',
+      'Sprite &rarr; <b>Set Collision Enabled = NoCollision</b>. The CharacterMesh profile blocks WorldDynamic, so the capsule change alone is not enough.',
+      'Capsule &rarr; <b>PhysicsBody = Ignore</b> for body/trigger overlaps.',
+      'Set Timer by Function Name: <b>EndDashInvincibility</b>, time = <b>DashIFrameDuration</b>, looping = false.',
+      'Get All Actors with Tag <b>Enemy.Hazard</b> &rarr; Ignore Actor When Moving(true). This skips the WorldStatic toxic puddle without ignoring walls or floors.',
+      'Get Overlapping Actors (class filter <b>BP_EnemyBase</b>) &rarr; TryDashDamage. This catches an enemy already touching the player when the dash began.'
+    ],
+    nodes: [
+      { id:'entry', kind:'event', title:'BeginDashInvincibility', sub:'FUNCTION ENTRY', x:30, y:40, w:220,
+        note:'Function entry. No inputs, no outputs; the exec chain starts on then.',
+        pins:[{name:'then',type:'exec',dir:'out'}] },
+      { id:'clear', kind:'func', title:'Clear (Array)', sub:'DashHitActors', x:280, y:40, w:210,
+        note:'Clears the per-dash hit list. It is cleared at the start, not the end, so a wall-stopped dash still leaves a clean list for the next one.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = DashHitActors',type:'array',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'set_inv', kind:'set', title:'SET bDashInvincible', sub:'VARIABLE SET', x:520, y:40, w:200,
+        note:'The Kill gate reads this flag. Set it before the collision changes, because an already-in-flight Kill can arrive at any time.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Value = true',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'coll_dyn', kind:'func', title:'Set Collision Response', sub:'CapsuleComponent - WorldDynamic', x:750, y:40, w:280,
+        note:'WorldDynamic covers trap triggers, enemy ContactBoxes, enemy projectiles and the KillVolume trigger.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Channel = WorldDynamic',type:'enum',dir:'in'},{name:'Response = Ignore',type:'enum',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'sprite', kind:'func', title:'Set Collision Enabled', sub:'Sprite', x:1060, y:40, w:280,
+        note:'The paper Sprite uses the CharacterMesh profile and blocks WorldDynamic; disabling it is required for traps and projectiles to ignore the player.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Sprite',type:'actor',dir:'in'},{name:'Collision Enabled = NoCollision',type:'enum',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'coll_phys', kind:'func', title:'Set Collision Response', sub:'CapsuleComponent - PhysicsBody', x:1370, y:40, w:280,
+        note:'PhysicsBody is the remaining query channel; ignore it for the same window.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Channel = PhysicsBody',type:'enum',dir:'in'},{name:'Response = Ignore',type:'enum',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+
+      { id:'timer', kind:'timer', title:'Set Timer by Function Name', sub:'EndDashInvincibility', x:1680, y:40, w:310,
+        note:'Time-based, not Dash-ended: the i-frame window can outlive a dash stopped by a wall. Keep DashIFrameDuration >= DashDuration (0.15).',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Function Name = EndDashInvincibility',type:'name',dir:'in'},{name:'Time = DashIFrameDuration',type:'float',dir:'in'},{name:'Looping = false',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'get_hit', kind:'pure', title:'Get DashHitActors', sub:'ARRAY GET', x:30, y:220, w:240,
+        note:'The per-dash actor array. Clear at the start and Add Unique in TryDashDamage.',
+        pins:[{name:'DashHitActors',type:'array',dir:'out'}] },
+      { id:'tag_get', kind:'pure', title:'Get All Actors with Tag', sub:'Enemy.Hazard', x:1680, y:230, w:280,
+        note:'Pure data node: no exec pins. The output array feeds the ForEachLoop in step 5b.',
+        pins:[{name:'Tag = "Enemy.Hazard"',type:'name',dir:'in'},{name:'Actors',type:'array',dir:'out'}] },
+      { id:'tag_loop', kind:'func', title:'ForEachLoop', sub:'Enemy.Hazard puddles', x:1370, y:370, w:320,
+        note:'Loop body ignores each puddle actor for movement; Completed continues to the enemy overlap loop.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Array',type:'array',dir:'in'},{name:'Loop Body',type:'exec',dir:'out'},{name:'Completed',type:'exec',dir:'out'},{name:'Array Element',type:'actor',dir:'out'}] },
+      { id:'ignore', kind:'func', title:'Ignore Actor When Moving', sub:'CapsuleComponent', x:1720, y:370, w:320,
+        note:'Only Enemy.Hazard actors are ignored. This is not a blanket WorldStatic ignore, so walls and floors still block the dash.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Actor',type:'actor',dir:'in'},{name:'bShouldIgnore = true',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+
+      { id:'overlap_get', kind:'pure', title:'Get Overlapping Actors', sub:'CapsuleComponent', x:30, y:520, w:320,
+        note:'Pure data node. The class filter BP_EnemyBase returns only enemies already touching the player when the dash starts.',
+        pins:[{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Class Filter = BP_EnemyBase',type:'class',dir:'in'},{name:'Overlapping Actors',type:'array',dir:'out'}] },
+      { id:'overlap_loop', kind:'func', title:'ForEachLoop', sub:'BP_EnemyBase', x:380, y:520, w:320,
+        note:'Initial overlap coverage: BeginOverlap will not fire for an overlap that already existed.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Array',type:'array',dir:'in'},{name:'Loop Body',type:'exec',dir:'out'},{name:'Completed',type:'exec',dir:'out'},{name:'Array Element',type:'actor',dir:'out'}] },
+      { id:'try_fn', kind:'func', title:'TryDashDamage', sub:'FUNCTION CALL', x:730, y:520, w:260,
+        note:'One hit per enemy per dash. ApplyDamage, never Kill.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Other Actor',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'return', kind:'func', title:'Return Node', sub:'END OF FUNCTION', x:1040, y:520, w:180,
+        note:'Both loops complete, then the function returns. The timer runs independently on the world clock.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] }
+    ],
+    edges: [
+      {from:'entry',to:'clear',fromPin:'then',toPin:'exec'},
+      {from:'clear',to:'set_inv',fromPin:'then',toPin:'exec'},
+      {from:'set_inv',to:'coll_dyn',fromPin:'then',toPin:'exec'},
+      {from:'coll_dyn',to:'sprite',fromPin:'then',toPin:'exec'},
+      {from:'sprite',to:'coll_phys',fromPin:'then',toPin:'exec'},
+      {from:'coll_phys',to:'timer',fromPin:'then',toPin:'exec'},
+      {from:'timer',to:'tag_loop',fromPin:'then',toPin:'exec'},
+      {from:'get_hit',to:'clear',fromPin:'DashHitActors',toPin:'Target = DashHitActors'},
+      {from:'tag_get',to:'tag_loop',fromPin:'Actors',toPin:'Array'},
+      {from:'tag_loop',to:'ignore',fromPin:'Loop Body',toPin:'exec'},
+      {from:'tag_loop',to:'ignore',fromPin:'Array Element',toPin:'Actor'},
+      {from:'tag_loop',to:'overlap_loop',fromPin:'Completed',toPin:'exec'},
+      {from:'overlap_get',to:'overlap_loop',fromPin:'Overlapping Actors',toPin:'Array'},
+      {from:'overlap_loop',to:'try_fn',fromPin:'Loop Body',toPin:'exec'},
+      {from:'overlap_loop',to:'try_fn',fromPin:'Array Element',toPin:'Other Actor'},
+      {from:'overlap_loop',to:'return',fromPin:'Completed',toPin:'exec'}
+    ]
+  },
+
+  try: {
+    title: 'TryDashDamage',
+    note: 'One eligible enemy, one hit per dash. ApplyDamage is used deliberately so enemy health and phase gates decide whether the hit exists.',
+    desc: 'Called from the capsule BeginOverlap event and from the initial overlap loop in BeginDashInvincibility. It never calls Kill; a 5-health walker must survive a dash exactly like it survives one Basic bullet.',
+    flow: ['Other Actor', 'Actor Has Tag = Enemy', 'already hit?', 'ApplyDamage'],
+    steps: [
+      'Reject anything without the <b>Enemy</b> actor tag.',
+      'Reject an actor already in <b>DashHitActors</b>; this is the one-hit-per-dash rule.',
+      'Add the actor to <b>DashHitActors</b> before ApplyDamage.',
+      'Apply <b>DashDamage</b> (1.0) with Self as Damage Causer and Self &rarr; Get Controller as Event Instigator.',
+      'Do not use Kill here: ApplyDamage reaches BP_EnemyBase.AnyDamage, which already honours bIsDead, bInvulnerable, bIFrameActive and bUseHealth.'
+    ],
+    nodes: [
+      { id:'try_entry', kind:'event', title:'TryDashDamage', sub:'FUNCTION ENTRY (Other Actor)', x:30, y:40, w:250,
+        note:'The Other Actor input is supplied by the caller: capsule overlap or the initial overlap loop.',
+        pins:[{name:'then',type:'exec',dir:'out'}] },
+      { id:'other_get', kind:'pure', title:'Other Actor', sub:'FUNCTION INPUT', x:30, y:220, w:240,
+        note:'The actor passed into the function. Every data pin below reads this one value.',
+        pins:[{name:'Other Actor',type:'actor',dir:'out'}] },
+      { id:'has_tag', kind:'pure', title:'Actor Has Tag', sub:'Tag = Enemy', x:340, y:40, w:280,
+        note:'The Enemy tag is on every enemy, including the Spike Turtle. The turtle still rejects damage through its own bInvulnerable / bUseHealth gate.',
+        pins:[{name:'Target',type:'actor',dir:'in'},{name:'Tag = Enemy',type:'name',dir:'in'},{name:'Return Value',type:'bool',dir:'out'}] },
+      { id:'branch_tag', kind:'branch', title:'Branch', sub:'Tag present?', x:680, y:40, w:210,
+        note:'False returns immediately. True continues to the per-dash hit test.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
+      { id:'contains', kind:'pure', title:'Array Contains', sub:'DashHitActors', x:680, y:250, w:300,
+        note:'Already hit this dash? Add Unique happens later, so this test is the gate that prevents double damage from multiple overlap events.',
+        pins:[{name:'Target Array',type:'array',dir:'in'},{name:'Item To Find',type:'actor',dir:'in'},{name:'Return Value',type:'bool',dir:'out'}] },
+      { id:'branch_contains', kind:'branch', title:'Branch', sub:'Already hit?', x:1040, y:40, w:220,
+        note:'True returns without damage. False continues to Add Unique + ApplyDamage.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
+
+      { id:'add_unique', kind:'func', title:'Add Unique', sub:'DashHitActors', x:1040, y:250, w:300,
+        note:'Add before dealing damage: if ApplyDamage is rejected by a phase, the enemy is still on this dash hit list and will not be retried.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = DashHitActors',type:'array',dir:'in'},{name:'New Item',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'apply', kind:'kill', title:'Apply Damage', sub:'DashDamage = 1.0', x:1400, y:250, w:340,
+        note:'Reaches BP_EnemyBase.AnyDamage. Damage Causer = Self; Event Instigator = Self -> Get Controller. Do not use Kill.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Damaged Actor',type:'actor',dir:'in'},{name:'Base Damage = DashDamage',type:'float',dir:'in'},{name:'Damage Causer = Self',type:'actor',dir:'in'},{name:'Event Instigator = Get Controller',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'return_early', kind:'func', title:'Return Node', sub:'NO DAMAGE', x:1400, y:40, w:180,
+        note:'Early return for a non-enemy or an enemy already hit this dash.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] },
+      { id:'return_done', kind:'func', title:'Return Node', sub:'DAMAGE SENT', x:1800, y:250, w:180,
+        note:'ApplyDamage has been called; the function ends.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] },
+      { id:'get_hits', kind:'pure', title:'Get DashHitActors', sub:'ARRAY GET', x:340, y:430, w:260,
+        note:'The per-dash array read by Array Contains and Add Unique.',
+        pins:[{name:'DashHitActors',type:'array',dir:'out'}] },
+      { id:'get_damage', kind:'pure', title:'Get DashDamage', sub:'FLOAT GET', x:1400, y:520, w:240,
+        note:'Class default 1.0; the same number as a Basic bullet.',
+        pins:[{name:'DashDamage',type:'float',dir:'out'}] },
+      { id:'get_controller', kind:'pure', title:'Get Controller', sub:'SELF', x:1040, y:520, w:260,
+        note:'Pawn -> Controller; fed to ApplyDamage Event Instigator so the kill credit is correct.',
+        pins:[{name:'Controller',type:'actor',dir:'out'}] }
+    ],
+    edges: [
+      {from:'try_entry',to:'branch_tag',fromPin:'then',toPin:'exec'},
+      {from:'other_get',to:'has_tag',fromPin:'Other Actor',toPin:'Target'},
+      {from:'has_tag',to:'branch_tag',fromPin:'Return Value',toPin:'Condition'},
+      {from:'branch_tag',to:'return_early',fromPin:'False',toPin:'exec',label:'False'},
+      {from:'branch_tag',to:'branch_contains',fromPin:'True',toPin:'exec',label:'True'},
+      {from:'other_get',to:'contains',fromPin:'Other Actor',toPin:'Item To Find'},
+      {from:'get_hits',to:'contains',fromPin:'DashHitActors',toPin:'Target Array'},
+      {from:'contains',to:'branch_contains',fromPin:'Return Value',toPin:'Condition'},
+      {from:'branch_contains',to:'return_early',fromPin:'True',toPin:'exec',label:'True'},
+      {from:'branch_contains',to:'add_unique',fromPin:'False',toPin:'exec',label:'False'},
+      {from:'get_hits',to:'add_unique',fromPin:'DashHitActors',toPin:'Target = DashHitActors'},
+      {from:'other_get',to:'add_unique',fromPin:'Other Actor',toPin:'New Item'},
+      {from:'add_unique',to:'apply',fromPin:'then',toPin:'exec'},
+      {from:'other_get',to:'apply',fromPin:'Other Actor',toPin:'Damaged Actor'},
+      {from:'get_damage',to:'apply',fromPin:'DashDamage',toPin:'Base Damage = DashDamage'},
+      {from:'get_controller',to:'apply',fromPin:'Controller',toPin:'Event Instigator = Get Controller'},
+      {from:'apply',to:'return_done',fromPin:'then',toPin:'exec'}
+    ]
+  },
+
+  end: {
+    title: 'EndDashInvincibility',
+    note: 'Timer callback: restore collision, release the puddle ignores, then kill the player only if a live contact-damage enemy is still overlapping.',
+    desc: 'The late check is needed because the ContactBox BeginOverlap already happened while collision was ignored. bDealContactDamage is the same flag the enemy contact chain uses, so a hidden Ghost or an OFF Floating Skull is safe.',
+    flow: ['bDashInvincible = false', 'restore collision', 'enemy still inside?', 'Kill if dangerous'],
+    steps: [
+      'Set <b>bDashInvincible</b> to false first; this closes the Kill gate.',
+      'Capsule &rarr; <b>WorldDynamic = Block</b>.',
+      'Sprite &rarr; <b>Set Collision Enabled = QueryOnly</b> (restore the CharacterMesh profile).',
+      'Capsule &rarr; <b>PhysicsBody = Block</b>.',
+      'Release every <b>Enemy.Hazard</b> actor from Ignore Actor When Moving (false).',
+      'Get Overlapping Actors (class filter <b>BP_EnemyBase</b>) &rarr; Cast &rarr; Branch <b>NOT bIsDead AND bDealContactDamage</b>.',
+      'True &rarr; Kill(Self). False &rarr; return. A dead enemy is skipped; a harmless phase is safe.'
+    ],
+    nodes: [
+      { id:'end_entry', kind:'event', title:'EndDashInvincibility', sub:'TIMER TARGET', x:30, y:40, w:240,
+        note:'Called by Set Timer by Function Name. It is not called by EndDash; this is the time-based close of the window.',
+        pins:[{name:'then',type:'exec',dir:'out'}] },
+      { id:'set_false', kind:'set', title:'SET bDashInvincible', sub:'VARIABLE SET', x:310, y:40, w:220,
+        note:'Close the Kill gate first. After this point a real Kill is allowed through again.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Value = false',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'restore_dyn', kind:'func', title:'Set Collision Response', sub:'CapsuleComponent - WorldDynamic', x:570, y:40, w:300,
+        note:'Restores trap triggers, ContactBoxes, projectiles and the KillVolume trigger.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Channel = WorldDynamic',type:'enum',dir:'in'},{name:'Response = Block',type:'enum',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'restore_sprite', kind:'func', title:'Set Collision Enabled', sub:'Sprite', x:900, y:40, w:320,
+        note:'Restore QueryOnly, the CharacterMesh profile the Sprite normally uses.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Sprite',type:'actor',dir:'in'},{name:'Collision Enabled = QueryOnly',type:'enum',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'restore_phys', kind:'func', title:'Set Collision Response', sub:'CapsuleComponent - PhysicsBody', x:1250, y:40, w:300,
+        note:'Restore the second ignored channel.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Channel = PhysicsBody',type:'enum',dir:'in'},{name:'Response = Block',type:'enum',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'tag_get_end', kind:'pure', title:'Get All Actors with Tag', sub:'Enemy.Hazard', x:1580, y:40, w:280,
+        note:'Pure getter: feed its array to the release loop.',
+        pins:[{name:'Tag = "Enemy.Hazard"',type:'name',dir:'in'},{name:'Actors',type:'array',dir:'out'}] },
+
+      { id:'tag_loop_end', kind:'func', title:'ForEachLoop', sub:'Enemy.Hazard puddles', x:1250, y:250, w:320,
+        note:'Release every puddle ignored at dash start. Completed continues to the overlap check.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Array',type:'array',dir:'in'},{name:'Loop Body',type:'exec',dir:'out'},{name:'Completed',type:'exec',dir:'out'},{name:'Array Element',type:'actor',dir:'out'}] },
+      { id:'ignore_end', kind:'func', title:'Ignore Actor When Moving', sub:'CapsuleComponent', x:1600, y:250, w:330,
+        note:'bShouldIgnore = false releases the puddle. Do this before the late check so a puddle is not mistaken for a solid wall.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Actor',type:'actor',dir:'in'},{name:'bShouldIgnore = false',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'overlap_get_end', kind:'pure', title:'Get Overlapping Actors', sub:'CapsuleComponent', x:30, y:430, w:330,
+        note:'Pure getter. Class filter BP_EnemyBase; this is the late exit check.',
+        pins:[{name:'Target = Capsule',type:'actor',dir:'in'},{name:'Class Filter = BP_EnemyBase',type:'class',dir:'in'},{name:'Overlapping Actors',type:'array',dir:'out'}] },
+      { id:'overlap_loop_end', kind:'func', title:'ForEachLoop', sub:'BP_EnemyBase overlaps', x:390, y:430, w:330,
+        note:'Body casts each overlapping enemy; Completed ends the function.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Array',type:'array',dir:'in'},{name:'Loop Body',type:'exec',dir:'out'},{name:'Completed',type:'exec',dir:'out'},{name:'Array Element',type:'actor',dir:'out'}] },
+      { id:'cast', kind:'cast', title:'Cast To BP_EnemyBase', sub:'AS BP_EnemyBase', x:750, y:430, w:270,
+        note:'Expose bIsDead and bDealContactDamage. The cast is safe because the class filter already returned BP_EnemyBase actors.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Object',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'},{name:'As BP_EnemyBase',type:'actor',dir:'out'}] },
+
+      { id:'branch_end', kind:'branch', title:'Branch', sub:'live & contact-dangerous?', x:1060, y:430, w:280,
+        note:'Condition = NOT bIsDead AND bDealContactDamage. True kills; False returns safely.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
+      { id:'kill', kind:'kill', title:'Kill (Message)', sub:'TARGET = SELF', x:1380, y:430, w:230,
+        note:'Only reached on True: the player is still inside a live, contact-dangerous enemy after the i-frames end.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = Self',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'return_end', kind:'func', title:'Return Node', sub:'END OF FUNCTION', x:1650, y:430, w:180,
+        note:'Both the safe False path and the kill path end here.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] },
+      { id:'get_dead', kind:'pure', title:'Get bIsDead', sub:'ON AS BP_EnemyBase', x:750, y:660, w:260,
+        note:'Dead enemies must never kill the player, even if their contact box still overlaps.',
+        pins:[{name:'Target',type:'actor',dir:'in'},{name:'bIsDead',type:'bool',dir:'out'}] },
+      { id:'not_dead', kind:'pure', title:'NOT Boolean', sub:'INVERT', x:1060, y:660, w:150,
+        note:'Live = NOT dead.',
+        pins:[{name:'A',type:'bool',dir:'in'},{name:'Return Value',type:'bool',dir:'out'}] },
+      { id:'get_contact', kind:'pure', title:'Get bDealContactDamage', sub:'ON AS BP_EnemyBase', x:750, y:790, w:300,
+        note:'The same flag the enemy contact chain uses. Hidden Ghost and OFF Floating Skull are false, so they are safe.',
+        pins:[{name:'Target',type:'actor',dir:'in'},{name:'bDealContactDamage',type:'bool',dir:'out'}] },
+      { id:'and_danger', kind:'pure', title:'AND Boolean', sub:'LIVE + DANGEROUS', x:1250, y:720, w:150,
+        note:'Both conditions must be true. This is the gate that makes the late exit check exact.',
+        pins:[{name:'A',type:'bool',dir:'in'},{name:'B',type:'bool',dir:'in'},{name:'Return Value',type:'bool',dir:'out'}] }
+    ],
+    edges: [
+      {from:'end_entry',to:'set_false',fromPin:'then',toPin:'exec'},
+      {from:'set_false',to:'restore_dyn',fromPin:'then',toPin:'exec'},
+      {from:'restore_dyn',to:'restore_sprite',fromPin:'then',toPin:'exec'},
+      {from:'restore_sprite',to:'restore_phys',fromPin:'then',toPin:'exec'},
+      {from:'restore_phys',to:'tag_loop_end',fromPin:'then',toPin:'exec'},
+      {from:'tag_get_end',to:'tag_loop_end',fromPin:'Actors',toPin:'Array'},
+      {from:'tag_loop_end',to:'ignore_end',fromPin:'Loop Body',toPin:'exec'},
+      {from:'tag_loop_end',to:'ignore_end',fromPin:'Array Element',toPin:'Actor'},
+      {from:'tag_loop_end',to:'overlap_loop_end',fromPin:'Completed',toPin:'exec'},
+      {from:'overlap_get_end',to:'overlap_loop_end',fromPin:'Overlapping Actors',toPin:'Array'},
+      {from:'overlap_loop_end',to:'cast',fromPin:'Loop Body',toPin:'exec'},
+      {from:'overlap_loop_end',to:'cast',fromPin:'Array Element',toPin:'Object'},
+      {from:'cast',to:'branch_end',fromPin:'then',toPin:'exec'},
+      {from:'cast',to:'get_dead',fromPin:'As BP_EnemyBase',toPin:'Target'},
+      {from:'cast',to:'get_contact',fromPin:'As BP_EnemyBase',toPin:'Target'},
+      {from:'get_dead',to:'not_dead',fromPin:'bIsDead',toPin:'A'},
+      {from:'not_dead',to:'and_danger',fromPin:'Return Value',toPin:'A'},
+      {from:'get_contact',to:'and_danger',fromPin:'bDealContactDamage',toPin:'B'},
+      {from:'and_danger',to:'branch_end',fromPin:'Return Value',toPin:'Condition'},
+      {from:'branch_end',to:'kill',fromPin:'True',toPin:'exec',label:'True'},
+      {from:'branch_end',to:'return_end',fromPin:'False',toPin:'exec',label:'False'},
+      {from:'kill',to:'return_end',fromPin:'then',toPin:'exec'},
+      {from:'overlap_loop_end',to:'return_end',fromPin:'Completed',toPin:'exec'}
+    ]
+  },
+
+  wiring: {
+    title: 'Call sites',
+    note: 'The three functions only work once they are wired into the existing BP_Player chains. These are the three small edits.',
+    desc: 'BeginDashInvincibility goes after SET bIsDashing = true, before the dash offset. TryDashDamage is called by the capsule overlap event and by the initial overlap loop. bDashInvincible is OR-ed into the first Kill Logic branch.',
+    flow: ['Dash Logic', 'Capsule BeginOverlap', 'Kill Logic'],
+    steps: [
+      '<b>Dash Logic</b>: SET bIsDashing = true &rarr; BeginDashInvincibility &rarr; AddActorWorldOffset (the existing dash move).',
+      '<b>CapsuleComponent BeginOverlap</b>: Other Actor &rarr; Branch bIsDashing? &rarr; True &rarr; TryDashDamage(Other Actor).',
+      '<b>Kill Logic</b>: replace the first branch condition with <b>bIsDead OR bDashInvincible</b>; True still returns without death, False keeps the existing death chain.'
+    ],
+    nodes: [
+      { id:'dash_set', kind:'set', title:'SET bIsDashing', sub:'EXISTING DASH LOGIC', x:30, y:40, w:260,
+        note:'The existing dash state. Call BeginDashInvincibility immediately after this SET, before AddActorWorldOffset starts moving.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'begin_call', kind:'func', title:'BeginDashInvincibility', sub:'FUNCTION CALL', x:330, y:40, w:270,
+        note:'Opens the i-frame window and starts the timer. Do not call it from EndDash.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'move', kind:'func', title:'AddActorWorldOffset', sub:'EXISTING DASH MOVE', x:640, y:40, w:300,
+        note:'The existing movement node; the collision changes must already be in place before this runs.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'overlap_event', kind:'event', title:'On Component Begin Overlap', sub:'CAPSULECOMPONENT', x:30, y:240, w:370,
+        note:'Standard Character capsule event. Other Actor is the data pin that feeds TryDashDamage.',
+        pins:[{name:'then',type:'exec',dir:'out'},{name:'Other Actor',type:'actor',dir:'out'}] },
+      { id:'is_dashing', kind:'pure', title:'Get bIsDashing', sub:'BOOL GET', x:440, y:240, w:230,
+        note:'Only a real dash may deal damage. The overlap event fires for ordinary walking too.',
+        pins:[{name:'bIsDashing',type:'bool',dir:'out'}] },
+      { id:'dash_branch', kind:'branch', title:'Branch', sub:'bIsDashing?', x:710, y:240, w:220,
+        note:'False returns. True calls TryDashDamage with Other Actor.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
+      { id:'try_call', kind:'func', title:'TryDashDamage', sub:'FUNCTION CALL', x:970, y:240, w:270,
+        note:'The same function used by the initial overlap loop.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Other Actor',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'false_return', kind:'func', title:'Return Node', sub:'NOT DASHING', x:970, y:390, w:220,
+        note:'Walking overlap does not deal dash damage.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] },
+      { id:'kill_branch', kind:'branch', title:'Kill Logic: first Branch', sub:'EXISTING DEATH GATE', x:30, y:540, w:320,
+        note:'Replace the old bIsDead condition with bIsDead OR bDashInvincible. Keep both True and False destinations.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
+      { id:'no_death', kind:'func', title:'True -> return', sub:'NO DEATH', x:390, y:540, w:280,
+        note:'Existing True destination: return without dying.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] },
+      { id:'death_chain', kind:'func', title:'False -> death chain', sub:'EXISTING DESTINATION', x:710, y:540, w:300,
+        note:'Existing False destination: continue to the normal Kill -> level reload path.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] },
+      { id:'get_dead_w', kind:'pure', title:'Get bIsDead', sub:'BOOL GET', x:30, y:720, w:220,
+        note:'A real death still short-circuits the gate.',
+        pins:[{name:'bIsDead',type:'bool',dir:'out'}] },
+      { id:'get_inv_w', kind:'pure', title:'Get bDashInvincible', sub:'BOOL GET', x:30, y:840, w:250,
+        note:'The i-frame flag set by BeginDashInvincibility and cleared by EndDashInvincibility.',
+        pins:[{name:'bDashInvincible',type:'bool',dir:'out'}] },
+      { id:'or_w', kind:'pure', title:'OR Boolean', sub:'bIsDead OR bDashInvincible', x:310, y:760, w:150,
+        note:'True blocks the Kill while the dash i-frame window is open.',
+        pins:[{name:'A',type:'bool',dir:'in'},{name:'B',type:'bool',dir:'in'},{name:'Return Value',type:'bool',dir:'out'}] }
+    ],
+    edges: [
+      {from:'dash_set',to:'begin_call',fromPin:'then',toPin:'exec'},
+      {from:'begin_call',to:'move',fromPin:'then',toPin:'exec'},
+      {from:'overlap_event',to:'dash_branch',fromPin:'then',toPin:'exec'},
+      {from:'is_dashing',to:'dash_branch',fromPin:'bIsDashing',toPin:'Condition'},
+      {from:'overlap_event',to:'try_call',fromPin:'Other Actor',toPin:'Other Actor'},
+      {from:'dash_branch',to:'try_call',fromPin:'True',toPin:'exec',label:'True'},
+      {from:'dash_branch',to:'false_return',fromPin:'False',toPin:'exec',label:'False'},
+      {from:'get_dead_w',to:'or_w',fromPin:'bIsDead',toPin:'A'},
+      {from:'get_inv_w',to:'or_w',fromPin:'bDashInvincible',toPin:'B'},
+      {from:'or_w',to:'kill_branch',fromPin:'Return Value',toPin:'Condition'},
+      {from:'kill_branch',to:'no_death',fromPin:'True',toPin:'exec',label:'True'},
+      {from:'kill_branch',to:'death_chain',fromPin:'False',toPin:'exec',label:'False'}
+    ]
+  }
+};
+
+
+/* ---- palette ----------------------------------------------------------- */
+const NS = 'http://www.w3.org/2000/svg';
+const COLORS = {
+  exec:'#e8edf4', bool:'#ef7d7d', float:'#7ee787', int:'#79c0ff',
+  actor:'#d2a8ff', object:'#d2a8ff', enum:'#ffa657', name:'#e3b341',
+  array:'#f778ba', class:'#d2a8ff', string:'#e3b341'
+};
+const KIND_COLORS = {
+  event:'#a78bfa', func:'#34d399', set:'#fbbf24', branch:'#2dd4bf',
+  pure:'#93a4b8', cast:'#f472b6', timer:'#60a5fa', kill:'#f87171'
+};
+const KIND_BADGE = {
+  event:'E', func:'F', set:'S', branch:'B', pure:'P', cast:'C', timer:'T', kill:'K'
+};
+
+const stage = document.getElementById('stage');
+const scene = document.getElementById('scene');
+const view = document.getElementById('view');
+const tabsEl = document.getElementById('tabs');
+const noteEl = document.getElementById('note');
+const tipEl = document.getElementById('tip');
+const zoomEl = document.getElementById('zoom');
+const sideTitle = document.getElementById('side-title');
+const sideDesc = document.getElementById('side-desc');
+const sideFlow = document.getElementById('side-flow');
+const stepsEl = document.getElementById('steps');
+
+let current = 'begin';
+let scale = 1, tx = 0, ty = 0, W = 0, H = 0;
+let dragging = null;
+const nodeEls = new Map();
+let edgeEls = [];
+
+function el(tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+function colorOf(type) { return COLORS[type] || '#93a4b8'; }
+function kindColor(kind) { return KIND_COLORS[kind] || KIND_COLORS.pure; }
+function cut(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '...' : s; }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+/* Node geometry: the left/right pin columns share the same row grid. */
+function layoutNode(n) {
+  const ins = n.pins.filter(p => p.dir === 'in');
+  const outs = n.pins.filter(p => p.dir === 'out');
+  const rows = Math.max(1, ins.length, outs.length);
+  n._h = 64 + rows * 20;
+  n._pin = {};
+  function place(list) {
+    list.forEach((p, i) => {
+      const y = n.y + 64 + ((rows - list.length) * 20) / 2 + i * 20;
+      n._pin[p.dir + ':' + p.name] = y;
+    });
+  }
+  place(ins); place(outs);
+}
+function pinY(n, pin) {
+  const key = pin.dir + ':' + pin.name;
+  if (n._pin && n._pin[key] != null) return n._pin[key];
+  return n.y + 64;
+}
+
+
+function addDefs(types) {
+  const defs = el('defs');
+  types.forEach(t => {
+    const m = el('marker', { id: 'arw-' + t, viewBox: '0 0 10 10', refX: '9', refY: '5',
+      markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse' });
+    m.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 z', fill: colorOf(t) }));
+    defs.appendChild(m);
+  });
+  view.appendChild(defs);
+}
+
+function insideBox(n, x, y) {
+  return x > n.x + 2 && x < n.x + n.w - 2 && y > n.y + 2 && y < n.y + n._h - 2;
+}
+function segmentLen(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+function pathLength(pts) {
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += segmentLen(pts[i - 1], pts[i]);
+  return total;
+}
+function scorePath(pts, g, a, b) {
+  let crossed = 0;
+  for (const n of g.nodes) {
+    if (n.id === a.id || n.id === b.id) continue;
+    let hit = false;
+    for (let i = 1; i < pts.length && !hit; i++) {
+      const p = pts[i - 1], q = pts[i];
+      const steps = Math.max(2, Math.ceil(segmentLen(p, q) / 7));
+      for (let s = 1; s < steps; s++) {
+        const t = s / steps;
+        if (insideBox(n, p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t)) { hit = true; break; }
+      }
+    }
+    if (hit) crossed++;
+  }
+  return crossed * 100000 + pathLength(pts);
+}
+function routePoints(g, a, b, x1, y1, x2, y2, idx) {
+  const gap = Math.max(14, Math.min(28, Math.abs(x2 - x1) * 0.22));
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const topY = Math.min.apply(null, g.nodes.map(n => n.y)) - 24 - (idx % 3) * 8;
+  const botY = Math.max.apply(null, g.nodes.map(n => n.y + n._h)) + 24 + (idx % 3) * 8;
+  const cands = [
+    [{x:x1,y:y1},{x:mx,y:y1},{x:mx,y:y2},{x:x2,y:y2}],
+    [{x:x1,y:y1},{x:x1 + gap,y:y1},{x:x1 + gap,y:y2},{x:x2,y:y2}],
+    [{x:x1,y:y1},{x:x1 + gap,y:y1},{x:x1 + gap,y:my},{x:x2 - gap,y:my},{x:x2 - gap,y:y2},{x:x2,y:y2}],
+    [{x:x1,y:y1},{x:x1 + gap,y:y1},{x:x1 + gap,y:topY},{x:x2 - gap,y:topY},{x:x2 - gap,y:y2},{x:x2,y:y2}],
+    [{x:x1,y:y1},{x:x1 + gap,y:y1},{x:x1 + gap,y:botY},{x:x2 - gap,y:botY},{x:x2 - gap,y:y2},{x:x2,y:y2}]
+  ];
+  let best = cands[0], bestScore = Infinity;
+  cands.forEach(pts => {
+    const s = scorePath(pts, g, a, b);
+    if (s < bestScore) { best = pts; bestScore = s; }
+  });
+  return best;
+}
+function labelPoint(pts) {
+  let left = pathLength(pts) / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const d = segmentLen(pts[i - 1], pts[i]);
+    if (left <= d) {
+      const t = d ? left / d : 0;
+      return {x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+              y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t};
+    }
+    left -= d;
+  }
+  return pts[pts.length - 1];
+}
+
+function drawEdge(g, e, idx) {
+  const a = g._byId[e.from], b = g._byId[e.to];
+  if (!a || !b) { console.warn('unknown edge endpoint', e); return; }
+  const pa = a.pins.find(p => p.dir === 'out' && p.name === e.fromPin) || a.pins.find(p => p.dir === 'out');
+  const pb = b.pins.find(p => p.dir === 'in' && p.name === e.toPin) || b.pins.find(p => p.dir === 'in');
+  if (!pa || !pb) { console.warn('unknown pin', e); return; }
+  const x1 = a.x + a.w, y1 = pinY(a, pa);
+  const x2 = b.x, y2 = pinY(b, pb);
+  const isExec = pa.type === 'exec';
+  const type = isExec ? 'exec' : pa.type;
+  const pts = routePoints(g, a, b, x1, y1, x2, y2, idx);
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + p.x + ',' + p.y).join(' ');
+  const p = el('path', {
+    d: d, fill: 'none', stroke: colorOf(type),
+    'stroke-width': isExec ? 2.3 : 1.8,
+    'stroke-opacity': isExec ? 0.95 : 0.78,
+    'stroke-dasharray': isExec ? '' : '5 4',
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    'marker-end': 'url(#arw-' + type + ')',
+    'data-from': a.id, 'data-to': b.id
+  });
+  p.appendChild(el('title', {}, (isExec ? 'Exec: ' : pa.type + ': ') + a.title + ' -> ' + b.title));
+  view.appendChild(p);
+  edgeEls.push({ el: p, from: a.id, to: b.id, exec: isExec });
+  if (e.label) {
+    const lp = labelPoint(pts);
+    const t = el('text', { x: lp.x, y: lp.y - 5, 'text-anchor': 'middle', 'font-size': 10,
+      fill: colorOf(type), 'paint-order': 'stroke', stroke: '#0e1116', 'stroke-width': 3.5 });
+    t.textContent = e.label;
+    view.appendChild(t);
+  }
+}
+
+function drawNode(n) {
+  const kc = kindColor(n.kind);
+  const g = el('g', { 'data-id': n.id, style: 'cursor:pointer' });
+  g.appendChild(el('title', {}, n.title + ' - ' + n.note));
+  g.appendChild(el('rect', { x: n.x, y: n.y, width: n.w, height: n._h, rx: 6,
+    fill: '#1a222c', stroke: kc, 'stroke-width': 1.2 }));
+  g.appendChild(el('rect', { x: n.x, y: n.y, width: 4, height: n._h, rx: 2, fill: kc }));
+  g.appendChild(el('rect', { x: n.x + 4, y: n.y, width: n.w - 4, height: 44, rx: 4,
+    fill: kc, 'fill-opacity': 0.11 }));
+  g.appendChild(el('line', { x1: n.x, y1: n.y + 44, x2: n.x + n.w, y2: n.y + 44,
+    stroke: '#ffffff', 'stroke-opacity': 0.08 }));
+  g.appendChild(el('circle', { cx: n.x + 18, cy: n.y + 22, r: 8, fill: '#0e1116', stroke: kc }));
+  g.appendChild(el('text', { x: n.x + 18, y: n.y + 26, 'text-anchor': 'middle',
+    'font-size': 9.5, 'font-weight': 700, fill: '#dce5ef' }, KIND_BADGE[n.kind] || 'P'));
+  g.appendChild(el('text', { x: n.x + 32, y: n.y + 22, 'font-size': 12.5,
+    'font-weight': 600, fill: '#f1f5fa' }, cut(n.title, Math.max(10, Math.floor((n.w - 44) / 6.4)))));
+  g.appendChild(el('text', { x: n.x + 32, y: n.y + 36, 'font-size': 9,
+    fill: kc, 'text-transform': 'uppercase', 'letter-spacing': 0.4 },
+    cut(n.sub || n.kind, Math.max(12, Math.floor((n.w - 44) / 5.4)))));
+
+  n.pins.forEach(p => {
+    const isIn = p.dir === 'in';
+    const px = isIn ? n.x : n.x + n.w;
+    const py = pinY(n, p);
+    const col = colorOf(p.type);
+    if (p.type === 'exec') {
+      g.appendChild(el('circle', { cx: px, cy: py, r: 4.8, fill: col, stroke: '#0b0e13', 'stroke-width': 1 }));
+    } else {
+      g.appendChild(el('rect', { x: px - 4, y: py - 4, width: 8, height: 8, rx: 1.5,
+        fill: col, stroke: '#0b0e13', 'stroke-width': 1 }));
+      if (p.type === 'array') {
+        g.appendChild(el('rect', { x: px - 1.6, y: py - 1.6, width: 3.2, height: 3.2, rx: 0.6, fill: '#0b0e13' }));
+      }
+    }
+    const label = cut(p.name, Math.max(8, Math.floor((n.w - 24) / 6.1)));
+    const txt = el('text', { x: isIn ? px + 10 : px - 10, y: py + 3.5,
+      'text-anchor': isIn ? 'start' : 'end', 'font-size': 10.2,
+      fill: p.type === 'exec' ? '#e8edf4' : col }, label);
+    txt.appendChild(el('title', {}, p.name));
+    g.appendChild(txt);
+  });
+
+  g.addEventListener('pointerenter', () => highlight(n.id));
+  g.addEventListener('pointerleave', () => highlight(null));
+  g.addEventListener('click', ev => { ev.stopPropagation(); showTip(n); });
+  view.appendChild(g);
+  nodeEls.set(n.id, g);
+}
+
+
+function highlight(id) {
+  const near = new Set();
+  if (id) {
+    near.add(id);
+    edgeEls.forEach(e => {
+      if (e.from === id || e.to === id) { near.add(e.from); near.add(e.to); }
+    });
+  }
+  edgeEls.forEach(e => {
+    const hit = id && (e.from === id || e.to === id);
+    e.el.setAttribute('stroke-opacity', !id ? (e.exec ? 0.95 : 0.78) : hit ? 1 : 0.07);
+    if (hit) e.el.setAttribute('stroke-width', e.exec ? 3.6 : 2.8);
+    else e.el.setAttribute('stroke-width', e.exec ? 2.3 : 1.8);
+  });
+  nodeEls.forEach((el, nid) => {
+    el.setAttribute('opacity', !id || near.has(nid) ? 1 : 0.28);
+  });
+}
+
+function showTip(n) {
+  tipEl.hidden = false;
+  tipEl.innerHTML = '<b>' + esc(n.title) + '</b><br>' + esc(n.note);
+}
+
+function updateSide(g) {
+  noteEl.textContent = g.note;
+  sideTitle.textContent = g.title;
+  sideDesc.textContent = g.desc;
+  sideFlow.innerHTML = g.flow.map((s, i) =>
+    '<span>' + esc(s) + '</span>' + (i < g.flow.length - 1 ? '<i>&rarr;</i>' : '')).join('');
+  stepsEl.innerHTML = g.steps.map(s => '<li>' + s + '</li>').join('');
+}
+
+function render() {
+  const g = GRAPHS[current];
+  view.innerHTML = '';
+  nodeEls.clear(); edgeEls = [];
+  tipEl.hidden = true;
+  g._byId = {};
+  g.nodes.forEach(n => { layoutNode(n); g._byId[n.id] = n; });
+
+  W = Math.max.apply(null, g.nodes.map(n => n.x + n.w)) + 80;
+  H = Math.max.apply(null, g.nodes.map(n => n.y + n._h)) + 100;
+
+  const types = new Set(['exec']);
+  g.edges.forEach(e => {
+    const a = g._byId[e.from];
+    const p = a && a.pins.find(x => x.dir === 'out' && x.name === e.fromPin);
+    if (p && p.type !== 'exec') types.add(p.type);
+  });
+  addDefs(Array.from(types));
+
+  g.edges.forEach((e, i) => drawEdge(g, e, i));
+  g.nodes.forEach(drawNode);
+  updateSide(g);
+  fit();
+}
+
+function fit() {
+  const sw = stage.clientWidth - 36;
+  const sh = stage.clientHeight - 36;
+  if (!W || !H || sw <= 0 || sh <= 0) return;
+  scale = Math.min(1, sw / W, sh / H);
+  if (!isFinite(scale) || scale <= 0) scale = 1;
+  scale = Math.max(0.18, scale);
+  tx = Math.max(14, (stage.clientWidth - W * scale) / 2);
+  ty = Math.max(12, (stage.clientHeight - H * scale) / 2);
+  apply();
+}
+
+function apply() {
+  view.setAttribute('transform', 'translate(' + tx + ' ' + ty + ') scale(' + scale + ')');
+  zoomEl.textContent = Math.round(scale * 100) + '%';
+}
+
+
+/* ---- tabs -------------------------------------------------------------- */
+const TAB_LABELS = { begin:'Begin', try:'Try', end:'End', wiring:'Call sites' };
+Object.keys(GRAPHS).forEach(key => {
+  const b = document.createElement('button');
+  b.className = 'tab';
+  b.textContent = TAB_LABELS[key] || GRAPHS[key].title;
+  b.title = GRAPHS[key].title;
+  b.dataset.key = key;
+  b.addEventListener('click', () => select(key));
+  tabsEl.appendChild(b);
+});
+function select(key) {
+  current = key;
+  Array.from(tabsEl.children).forEach(b => b.classList.toggle('on', b.dataset.key === key));
+  render();
+}
+
+/* ---- pan / zoom ------------------------------------------------------- */
+stage.addEventListener('pointerdown', ev => {
+  if (ev.button !== 0) return;
+  if (ev.target.closest && ev.target.closest('g[data-id]')) return;
+  dragging = { x: ev.clientX, y: ev.clientY, tx: tx, ty: ty };
+  stage.classList.add('drag');
+  tipEl.hidden = true;
+});
+window.addEventListener('pointermove', ev => {
+  if (!dragging) return;
+  tx = dragging.tx + ev.clientX - dragging.x;
+  ty = dragging.ty + ev.clientY - dragging.y;
+  apply();
+});
+window.addEventListener('pointerup', () => {
+  dragging = null;
+  stage.classList.remove('drag');
+});
+stage.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const r = stage.getBoundingClientRect();
+  const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  const next = Math.min(2.5, Math.max(0.15, scale * (ev.deltaY < 0 ? 1.12 : 1 / 1.12)));
+  tx = mx - (mx - tx) * (next / scale);
+  ty = my - (my - ty) * (next / scale);
+  scale = next;
+  apply();
+}, { passive: false });
+stage.addEventListener('dblclick', fit);
+
+function zoomAt(k) {
+  const mx = stage.clientWidth / 2, my = stage.clientHeight / 2;
+  const next = Math.min(2.5, Math.max(0.15, scale * k));
+  tx = mx - (mx - tx) * (next / scale);
+  ty = my - (my - ty) * (next / scale);
+  scale = next;
+  apply();
+}
+document.getElementById('fit').addEventListener('click', fit);
+document.getElementById('plus').addEventListener('click', () => zoomAt(1.18));
+document.getElementById('minus').addEventListener('click', () => zoomAt(1 / 1.18));
+document.getElementById('reset').addEventListener('click', () => { scale = 1; tx = 20; ty = 20; apply(); });
+window.addEventListener('resize', fit);
+
+/* ---- boot ------------------------------------------------------------- */
+(function boot() {
+  let start = 'begin';
+  try {
+    const h = decodeURIComponent((location.hash || '').replace(/^#/, ''));
+    if (GRAPHS[h]) start = h;
+  } catch (err) { /* file:// may refuse */ }
+  select(start);
+})();
+</script>
+</body>
+</html>
+

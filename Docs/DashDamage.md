@@ -19,6 +19,10 @@
 This builds on `DashAiming.md`. That document owns movement, aim and the
 `Dash` input; this one only adds the collision / damage layer.
 
+**Visual graph:** open [`dash_damage_graph.html`](dash_damage_graph.html) for the
+hand-authored `BeginDashInvincibility` / `TryDashDamage` /
+`EndDashInvincibility` node wires and the three call-site edits.
+
 ---
 
 ## 1. Why this needs no new collision channel or interface
