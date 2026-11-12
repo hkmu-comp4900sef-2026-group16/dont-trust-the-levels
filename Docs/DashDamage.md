@@ -390,7 +390,3 @@ and save `BP_Player`, then run PIE §9.2 before committing.
 - No enemy binary changes are expected. The Spike Turtle exception is already
   its `Pawn = Block` capsule; do not edit `BP_SpikeTurtle` for this feature.
 - Close the editor before `git add` / commit (`CLAUDE.md` hard rule 3).
-
-
-
-
