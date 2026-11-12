@@ -5,7 +5,8 @@
 `py -3 Scripts/_verify_effect_on_kill.py` gives `15 PASS / 0 FAIL / 0 PENDING /
 0 WARN` (`Die: Clear Timer → RandomizeEffectClass message → Destory box`,
 `Get Player Character(0)`). Remaining: the §5 in-game pass, then the doc goes
-to DONE.
+to DONE. The pool gained a 4th target, `BP_Effect_Inverse`
+(`InverseShot.md` §4); the roll itself is data-driven and needs no graph change.
 Python in this build cannot author Blueprint nodes or variables
 (`unreal.BlueprintEditorLibrary` and `KismetEditorUtilities` are absent —
 `Structure.md` §11), so §1-§4 are editor work; §6 is the scripted half.
@@ -13,9 +14,11 @@ Python in this build cannot author Blueprint nodes or variables
 **Before editing:** `git lfs lock` the three assets you are about to touch —
 `Content/DontTrustTheLevels/Core/Interfaces/BPI_EffectUser.uasset`,
 `.../Player/Blueprints/BP_Player.uasset`,
-`.../Enemies/Blueprints/BP_EnemyBase.uasset` (`EnemyWorkPlan.md` §11). None of
-them is locked today; `BP_EnemyProjectile_Wood.uasset` is (wing-del007) and is
-not part of this card.
+`.../Enemies/Blueprints/BP_EnemyBase.uasset` (`EnemyWorkPlan.md` §11). **All
+three are currently locked by `DC2828`** (12 Nov 2026: `BP_Player` ID 62706514,
+`BPI_EffectUser` ID 62706491, `BP_EnemyBase` ID 62706515) — coordinate before
+rebuilding this card. `BP_EnemyProjectile_Wood.uasset` is locked by
+`wing-del007` and is not part of this card.
 
 **Concept.** Killing an enemy switches the player's gun to a *different*,
 randomly picked effect class from the pool — through the port every other switch
@@ -41,7 +44,7 @@ visible on the next LMB, `Jammed` included (that shot then does nothing, §7).
 | | |
 |---|---|
 | Trigger | `BP_EnemyBase::Die`, between `Clear Timer ("RecoverFromHit")` and the `Destory Actor after delay` box |
-| Pool | `BP_Effect_Basic` · `BP_Effect_Ricochet` · `BP_Effect_Heavy` · `BP_Effect_Jammed` — **built with the first three** (Jammed dropped, §3 note) |
+| Pool | `BP_Effect_Basic` · `BP_Effect_Ricochet` · `BP_Effect_Heavy` · `BP_Effect_Inverse` — **built: all four** (Jammed dropped, §3 note; `InverseShot.md` §4) |
 | Port | `BP_Player::Set Effect Class` — still the only writer of `Effect Class` |
 | Transport | new `BPI_EffectUser` interface (`Structure.md` §9: no cross-pillar casts) |
 | Roll | uniform over the pool, **minus** the effect that is live right now |
@@ -84,7 +87,7 @@ Open `/Game/DontTrustTheLevels/Player/Blueprints/BP_Player`.
 
 | Variable | Type | Instance Editable | Default |
 |---|---|---|---|
-| `Effect Classes` | **Array** of **Class Reference** → `BP_EffectBase` | ✓ | Basic, Ricochet, Heavy, Jammed — **built: Basic, Ricochet, Heavy** |
+| `Effect Classes` | **Array** of **Class Reference** → `BP_EffectBase` | ✓ | Basic, Ricochet, Heavy, Inverse — **built: all four** (Jammed dropped) |
 
 | Step | Action |
 |---|---|
@@ -92,7 +95,7 @@ Open `/Game/DontTrustTheLevels/Player/Blueprints/BP_Player`.
 | 2 | Variable type dropdown → **Class Reference** → parent class `BP_EffectBase` |
 | 3 | Next to the type, tick the **array** grid icon (a `TArray<Class>` — the icon stays on) |
 | 4 | Details → tick **Instance Editable** |
-| 5 | **Compile**, then **Class Defaults** → Details → `Effect Classes` → `+` four times, pick `BP_Effect_Basic`, `BP_Effect_Ricochet`, `BP_Effect_Heavy`, `BP_Effect_Jammed` (**built: three `+` — Jammed left out, note below**) |
+| 5 | **Compile**, then **Class Defaults** → Details → `Effect Classes` → `+` four times, pick `BP_Effect_Basic`, `BP_Effect_Ricochet`, `BP_Effect_Heavy`, `BP_Effect_Inverse` (**built: all four; Inverse is the 4th — `InverseShot.md` §4**) |
 | 6 | **Compile + Save** |
 
 The pool is data: drop `BP_Effect_Jammed` from the list if a kill should never
@@ -101,16 +104,18 @@ Do **not** leave the array empty (§7).
 
 **Built as 3 entries (9 Nov 2026).** The live CDO holds `BP_Effect_Basic`,
 `BP_Effect_Ricochet`, `BP_Effect_Heavy` — Jammed was dropped, so a kill can
-never leave the gun silent. With three entries and the §3 rule that the roll
-must skip the live class, each kill is a **1-in-2** shot at `Heavy`; `Heavy`
-does `Damage=5` (`ProjectileShooting.md` Part 3), so half the kills turn the
-next shot into a one-hit kill on a 2 HP enemy such as `BP_Bat`
+never leave the gun silent. With those three entries and the §3 rule that the
+roll must skip the live class, each kill is a **1-in-2** shot at `Heavy`;
+`Heavy` does `Damage=5` (`ProjectileShooting.md` Part 3), so half the kills turn
+the next shot into a one-hit kill on a 2 HP enemy such as `BP_Bat`
 (`Enemies.md` §6.8 — this is the in-game answer to "why did that bat die in
-one hit"). Add `BP_Effect_Jammed` back for the card's four-class pool →
-1-in-3 for every class, Jammed included.
+one hit"). Add `BP_Effect_Inverse` as the 4th (`InverseShot.md` §4;
+`Scripts/_make_shooting.py` appends it idempotently) → each kill becomes
+**1-in-3** over the other classes. Add `BP_Effect_Jammed` back for the
+five-class menu → 1-in-4 for every class, Jammed included.
 
 **`Effect Class` already exists — do not touch it.** The singular is the class
-that is live *now*; `Set Effect Class` is its only writer, and the four debug
+that is live *now*; `Set Effect Class` is its only writer, and the debug
 keys plus the fire path read it as a single class. Ticking the array icon on it
 breaks all of them. `Effect Classes` (plural) is a **new, separate** variable —
 the menu to roll from — and nothing writes it at runtime. Also mind the type:
@@ -229,7 +234,7 @@ shell pops — and it is already `bIsDead`-gated.
 |---|---|---|
 | 1 | Kill a Slime/Bat with bullets | the gun's behaviour changes on the next LMB (see table below) |
 | 2 | Press `2` (Ricochet), kill one enemy | the result is never Ricochet — the roll excludes the live effect |
-| 3 | Kill eight enemies | every class in the pool turns up (three today — §3 note); no kill leaves the gun on the same class |
+| 3 | Kill eight enemies | every class in the pool turns up (four after `InverseShot.md` §4); no kill leaves the gun on the same class |
 | 4 | Shoot a Snail | first hit pops the shell — **no switch** (`Die` is not called, `Enemies.md` §6.3); the next lethal hit switches |
 | 5 | Kill a `BP_Rock1`/`BP_Rock2` | the split spawns children, then `Parent: Die` switches — once, not once per rock |
 | 6 | Two bullets, one kill | one switch (the `bIsDead` gate at the top of `Die`) |
@@ -243,10 +248,11 @@ What each effect looks like (from `ProjectileShooting.md` Part 3):
 | `BP_Effect_Basic` | fast, straight, no bounce, 1 damage |
 | `BP_Effect_Ricochet` | bounces up to 3 times and can kill the shooter on the return |
 | `BP_Effect_Heavy` | slow, drops (gravity 1.0), 5 damage |
-| `BP_Effect_Jammed` | LMB does **nothing** — the fire gate reads `Can Fire` off the live effect |
+| `BP_Effect_Inverse` | the bullet leaves from the back and travels down the aim line (aim up → shoots down) — `InverseShot.md` |
+| `BP_Effect_Jammed` | no bullet — the fire gate reads `Can Fire = false`; LMB does nothing (no dash either) |
 
 If a kill takes the gun away and nothing brings it back, that is `Jammed`
-doing its job; debug keys `1`-`4` restore a class by hand.
+doing its job; the debug keys `1`-`4` restore a class by hand.
 
 ---
 
@@ -271,7 +277,7 @@ T3D exports in `Scripts/_kill_effect_export/`:
   the `Destory Actor after delay` box, and the death chain around it is untouched
   (`bIsDead` gate first, `SetFlipbook(DeathFlipbook)`, `SetLifeSpan(DestroyDelay)`)
 
-Regressions it also re-checks: the four `Effect_*` debug keys still call
+Regressions it also re-checks: the `Effect_*` debug keys still call
 `SetEffectClass` (the 18 Oct bug, `ProjectileShooting.md` 6.4). Unbuilt parts
 report `PENDING`; a broken wire reports `FAIL`. Exit code 1 only on `FAIL`.
 

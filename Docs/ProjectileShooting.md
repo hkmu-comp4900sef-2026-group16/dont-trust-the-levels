@@ -36,14 +36,15 @@ ricochet is a legit kill — Part 5.4 / Part 8 item 8.
 | Work | Done by | Status (18 Oct 2026) |
 |---|---|---|
 | Import ammo art, create `T_PistolAmmoSmall_D` + `SPR_PistolAmmoSmall` | `Scripts/_make_shooting.py` (live editor) | ✅ done, idempotent — re-run any time |
-| Create `BPI_ProjectileEffect`, `BP_EffectBase` + 4 children, `BP_Projectile` (empty shells) | `Scripts/_make_shooting.py` | ✅ done |
+| Create `BPI_ProjectileEffect`, `BP_EffectBase` + 5 children, `BP_Projectile` (empty shells) | `Scripts/_make_shooting.py` | ✅ all five children done, including `BP_Effect_Inverse` (`InverseShot.md` §2) |
 | Add `Fire` / `Effect_*` action mappings to `DefaultInput.ini` | `Scripts/_make_shooting.py` | ✅ done — **live in the running editor** |
 | Add the `On Wall Hit` function to `BPI_ProjectileEffect` | **human**, editor UI | ✅ done (Part 2) |
 | `BP_EffectBase` variables (`Can Fire`, `Damage`, `Speed`, `Bounces`, `My Projectile`) | **human**, editor UI | ✅ done (Part 3.1) |
 | `BP_EffectBase` per-effect knobs (`Gravity Scale`, `Can Hit Shooter`) | **human**, editor UI | ✅ done (Part 3.1 — both variables added 18 Oct; the two base reads and all 8 child values PASS) |
+| `BP_EffectBase` `Spawn Behind` knob + `BP_Effect_Inverse` | **human**, editor UI | ✅ the knob is on `BP_EffectBase`; all five children inherit it (`BP_Effect_Inverse.SpawnBehind = true`). The `Shoot` fork is built and verified — typed `Select Vector` A = `Subtract` (rear), B = `Add` (front); typed `Select Rotator` A = `ComposeRotators` (pitch 180), B = `GetComponentRotation`; both `bPickA` pins read `SpawnBehind`. **No key 5** — Inverse comes from the kill pool (`InverseShot.md` §3, §5) |
 | `BP_EffectBase` implements `BPI_ProjectileEffect` | **human**, editor UI | ✅ done (Part 3.2 — *Class Settings*, not Class Defaults) |
 | `BP_EffectBase` `On Wall Hit` logic (Bounces decrement + `Bounce` call) | **human**, editor UI | ✅ done (Part 3.3 — 13 nodes / 24 wires, all three markers PASS) |
-| Per-child default values | `Scripts/_make_shooting.py` re-run | ✅ 24/24 PASS — 6 per child (the 18 Oct re-run wrote the two new fields: Ricochet `CanHitShooter=true`, Heavy `GravityScale=1.0`) |
+| Per-child default values | `Scripts/_make_shooting.py` re-run | ✅ 24/24 for the original four (6 per child; the 18 Oct re-run wrote Ricochet `CanHitShooter=true`, Heavy `GravityScale=1.0`); `BP_Effect_Inverse` + `SpawnBehind` are done (the child reads `True`); the `Shoot` fork is built and the typed Selects are A = rear / B = front (`InverseShot.md` §3) |
 | `BP_Projectile` components + Details | **human**, editor UI | ✅ done (Part 5.1 — Box is the root, Extent `(20,50,20)`, presets `BlockAllDynamic` / `NoCollision`, Source Sprite `SPR_PistolAmmoSmall`, gravity 0.0, **Should Bounce ✓ / Bounciness 1.0 / Friction 0.0**; the two eyeball-only WARNs stay) |
 | `BP_Projectile` variables (`Effect Class`, `Shooter`, `Effect`) | **human**, editor UI | ✅ done (Part 5.2) |
 | `BP_Projectile` `Bounce` function | **human**, editor UI | ✅ done (Part 5.4 — 27 nodes with step 16's second `Ignore Actor When Moving`; read back from the 19 Oct 00:03 export) |
@@ -129,10 +130,10 @@ self-inflicted regression from the first fix attempt):**
 
 The build half is therefore **closed** — the Part 8 PIE checklist, not more
 nodes.
-**Part 6 is finished** once the four key events exist again and each `Pressed`
+**Part 6 is finished** once the key events exist again and each `Pressed`
 chain ends on the `Set Effect Class` **call** — the verifier follows each chain
-and FAILs a missing or variable-only one (`PASS  the four debug keys call Set
-Effect Class (the function)` is the gate). The built half is re-read node by node
+and FAILs a missing or variable-only one (`PASS  every debug key present calls
+Set Effect Class (the function)` is the gate). The built half is re-read node by node
 in panel **6.0b** of `Scripts/player_graph.html` (the boards for every step are
 in the same page).
 Both WARNs are values this Python build cannot read
@@ -227,7 +228,7 @@ ini was written 12 Oct 21:05 and the current session started 17 Oct 22:28, so
 ```text
 live input actions: Jump, Dash, Fire, Effect_Basic, Effect_Ricochet,
                     Effect_Heavy, Effect_Jammed
-input action Fire: LIVE      (…each of the four Effect_* keys: LIVE)
+input action Fire: LIVE      (…each of the Effect_* keys: LIVE)
 ```
 
 — so **Part 6 can be built in this session** (`Fire` and the four
@@ -266,14 +267,15 @@ teleport, …).
 renders, never collides; it is a per-shot data holder that owns hit
 policy). Per-shot instances are spawned by `BP_Projectile`'s BeginPlay.
 
-**Status:** ✅ 3.1 + 3.2 + 3.3 all done. All seven variables are live — the
-verifier reads `MyProjectile`, `GravityScale` and `CanHitShooter` on the base
+**Status:** ✅ 3.1 + 3.2 + 3.3 all done. The original seven variables are live —
+the verifier reads `MyProjectile`, `GravityScale` and `CanHitShooter` on the base
 plus all 24 child values; 3.2 the export carries `ImplementedInterfaces` and the
 verifier reads `PASS implements BPI_ProjectileEffect`; 3.3 the `On Wall Hit`
 event node, the `Bounces` decrement and the `Bounce` call are all in the
 EventGraph's 13 nodes / 24 wires, and the verifier's three graph markers PASS.
-The two per-effect rows were data-only — nothing else in this file changed —
-and Parts 4–5 now read them.
+`Spawn Behind` is the eighth variable (built — `InverseShot.md` §1). The
+per-effect rows were data-only — nothing else in this file changed — and
+Parts 4–5 now read them.
 
 ### 3.1 Variables (My Blueprint → Variables → +)
 
@@ -285,13 +287,16 @@ and Parts 4–5 now read them.
 | `Bounces` | Integer | ✓ | `0` | remaining ricochets, decremented per wall hit |
 | `Gravity Scale` | Float | ✓ | `0.0` | how hard gravity pulls *this* effect's bullet: `0.0` = dead straight (Basic / Ricochet / Jammed), `1.0` = world gravity, so **Heavy visibly arcs**. BeginPlay copies it into the bullet's `Projectile Movement → Projectile Gravity Scale` (Part 5.3 step 7) |
 | `Can Hit Shooter` | Boolean | ✓ | `false` | may this effect's *bounced* bullet stop ignoring the player who fired it? `false` = never (Basic / Heavy / Jammed), `true` = **Ricochet**, so a return shot is a legit kill. Read twice: in `Bounce` (Part 5.4 step 16) and in the hit graph's second gate (Part 5.5 step 2b) |
+| `Spawn Behind` | Boolean | ✓ | `false` | spawn this effect's bullet at the mirrored muzzle (gun location − forward × 60) with the rotation pitched 180°, so it leaves from the character's back and travels **down** the aim line (aim up → bullet goes down). Read once by the `Shoot` collapsed graph in `BP_Player` when it builds the spawn transform (`InverseShot.md` §3); the bullet and its BeginPlay are untouched. `true` = **Inverse** |
 | `My Projectile` | Object → `BP_Projectile` | ✗ | — | runtime back-reference the projectile sets in its BeginPlay, used to command the bullet (bounce / destroy) |
 
-Both new rows are plain **data** — no new interface message and no per-effect
-graph. The bullet already holds the effect reference, so the values reach it
-through the same `Effect` get it uses for `Speed` and `Damage`; a brand-new
-child inherits `0.0` / `false` and behaves exactly like Basic until you type a
-number or tick the box (Part 4).
+The three per-effect knobs (`Gravity Scale`, `Can Hit Shooter`, `Spawn Behind`)
+are plain **data** — no new interface message and no per-effect graph. The bullet
+already holds the effect reference, so the values reach it through the same
+`Effect` get it uses for `Speed` and `Damage`; the spawn knob is read by the
+`Shoot` collapsed graph off `Gun Effect`. A brand-new child inherits `0.0` / `false` /
+`false` and behaves exactly like Basic until you type a number or tick a box
+(Part 4).
 
 ### 3.2 Implement the interface
 
@@ -385,35 +390,37 @@ future effect a copy-paste of this file.
 
 ---
 
-## Part 4 — The four effects (defaults, mostly scripted)
+## Part 4 — The effect children (defaults, mostly scripted)
 
 Each child is **only a row in Class Defaults** — that is the entire
-"strategy". **Status: ✅ 24/24 (18 Oct) — 6 values × 4 children. The original
-four were scripted on 17 Oct; once Part 3.1 compiled the two new variables onto
-`BP_EffectBase`, a plain re-run wrote `GravityScale` / `CanHitShooter` too and
-all 24 values read back from the CDOs. (While the variables were still missing
-the verifier said `PENDING BP_Effect_Basic.GravityScale: variable not added yet
-(doc Part 3)` — the expected state then, not a failure.)**
+"strategy". **Status: ✅ 24/24 for the original four (18 Oct) — 6 values ×
+4 children. The original four were scripted on 17 Oct; once Part 3.1 compiled
+the two new variables onto `BP_EffectBase`, a plain re-run wrote
+`GravityScale` / `CanHitShooter` too and all 24 values read back from the
+CDOs. The fifth child and its `Spawn Behind` value are built
+(`InverseShot.md` §1-§2). (While a variable is still missing the verifier says
+`PENDING BP_Effect_Basic.GravityScale: variable not added yet (doc Part 3)` —
+the expected state then, not a failure.)**
 Re-run any time (idempotent):
 
 ```
 py -3 Scripts/_make_shooting.py
 ```
 
-(the script is idempotent; it finds the new variables and sets all 24 values —
-6 per child). Target values — verify by opening each child's **Class Defaults**,
-or in the editor with `py -3 Scripts/_verify_shooting.py`:
+(the script is idempotent; it finds the variables and sets all of them —
+7 per child × 5 children). Target values — verify by opening each child's
+**Class Defaults**, or in the editor with `py -3 Scripts/_verify_shooting.py`:
 
-| Blueprint | Can Fire | Damage | Speed | Bounces | Gravity Scale | Can Hit Shooter | Reads as |
-|---|---|---|---|---|---|---|---|
-| `BP_Effect_Basic` | true | 1.0 | 3000 | 0 | 0.0 | false | the starting pistol |
-| `BP_Effect_Ricochet` | true | 1.0 | 3000 | **3** | 0.0 | **true** | pinball rounds — and they can come back at you |
-| `BP_Effect_Heavy` | true | **5.0** | **2200** | 0 | **1.0** | false | slow, lethal, drops while it flies |
-| `BP_Effect_Jammed` | **false** | 1.0 | 3000 | 0 | 0.0 | false | click — nothing |
+| Blueprint | Can Fire | Damage | Speed | Bounces | Gravity Scale | Can Hit Shooter | Spawn Behind | Reads as |
+|---|---|---|---|---|---|---|---|---|
+| `BP_Effect_Basic` | true | 1.0 | 3000 | 0 | 0.0 | false | false | the starting pistol |
+| `BP_Effect_Ricochet` | true | 1.0 | 3000 | **3** | 0.0 | **true** | false | pinball rounds — and they can come back at you |
+| `BP_Effect_Heavy` | true | **5.0** | **2200** | 0 | **1.0** | false | false | slow, lethal, drops while it flies |
+| `BP_Effect_Jammed` | **false** | 1.0 | 3000 | 0 | 0.0 | false | false | click — nothing |
+| `BP_Effect_Inverse` | true | 1.0 | 3000 | 0 | 0.0 | false | **true** | the same round fired out of the character's back (`InverseShot.md`) |
 
-If you prefer by hand: open each child, **Class Defaults**, type the six
-values (four numbers, one number, one tick), Compile + Save — identical
-result.
+If you prefer by hand: open each child, **Class Defaults**, type the values
+(numbers, one tick each), Compile + Save — identical result.
 
 ---
 
@@ -883,6 +890,14 @@ no "first effect" special case exists anywhere.
 
 **Board 6.3** in `Scripts/player_graph.html` (13 nodes / 14 wires).
 
+> **In the live asset the chain lives in the `Shoot` collapsed graph** (14 nodes,
+> a `K2Node_Composite` in the EventGraph whose `BoundGraph` is `EdGraph "Shoot"`,
+> with `K2Node_Tunnel` entry/exit); the Fire action event calls it. Open it by
+> double-clicking the **`Shoot`** node to the right of the **Fire** input event —
+> it is not a function, so it will not appear under My Blueprint → Functions.
+> The step numbers below name the same nodes, so build the inverse fork against
+> `Shoot` (`InverseShot.md` §3), not a second copy on the event graph.
+
 Right-click in the EventGraph → **Input → Action Events → Fire → Pressed**.
 
 | Step | Node | Pins |
@@ -894,13 +909,21 @@ Right-click in the EventGraph → **Input → Action Events → Fire → Pressed
 | 5 | **Get Forward Vector** *(Kismet Math — input is a rotator)* | ← node 4's rotation |
 | 6 | **Multiply** *(Vector × Float)* | A ← node 5 · B = `60.0` (muzzle clearance: half the 100uu art + a hair) |
 | 7 | **Add** *(Vector + Vector)* | A ← node 3 · B ← node 6 → muzzle world location |
-| 8 | **Spawn Actor from Class** (Class pin = `BP_Projectile`) | **Class** = `BP_Projectile` · right-click the **Spawn Transform** pin → **Split Struct Pin** → **Location** ← node 7 · **Rotation** ← node 4 · Scale (1,1,1) · **Collision Handling Override** = `Always Spawn, Ignore Collisions` · exposed pins: **Effect Class** ← `Get Effect Class` · **Shooter** ← **Get a reference to self** |
+| 8 | **Spawn Actor from Class** (Class pin = `BP_Projectile`) | **Class** = `BP_Projectile` · right-click the **Spawn Transform** pin → **Split Struct Pin** → **Location** ← node 7 · **Rotation** ← node 4 · Scale (1,1,1) · **Collision Handling Override** = `AdjustIfPossibleButAlwaysSpawn` (not `AlwaysSpawn`: the inverse rear point can overlap the player capsule and depenetrate it — `InverseShot.md` §3.1) · exposed pins: **Effect Class** ← `Get Effect Class` · **Shooter** ← **Get a reference to self** |
 | 9 | **False (can't fire):** | wire nothing — a jammed effect makes the LMB do exactly nothing |
 
 The bullet spawns at the muzzle with the barrel's world rotation — the gun
 already aims at the crosshair (GunAiming.md Part 5), so no aim math is
 duplicated here. Everything past the spawn (velocity, hit policy, damage)
 is the bullet's own BeginPlay and hit event from Part 5.
+
+**Inverse shots fork only the spawn transform.** The `Shoot` collapsed graph in
+`BP_Player` reads `Gun Effect.Spawn Behind` (the live instance, like `Can Fire`)
+and selects between the muzzle above and the mirrored rear point, with the rear
+rotation pitched 180°. One `Spawn Actor` node still serves both; build steps and the
+exact wiring are in `InverseShot.md` §3. The bullet's BeginPlay is unchanged —
+`forward × Speed` already points the other way because the spawn rotation is
+reversed.
 
 **Why read `Can Fire` from `Gun Effect`, not from the class:** the gate
 must consult the *live instance*. If a future effect lowers `Can Fire`
@@ -1090,7 +1113,7 @@ returns to "bullets never hurt their owner"; no architecture change.
 | Bullet spawns but sits still | BeginPlay exec chain broken (steps 2→3→4→5, then 6→7, are one chain); or `Effect Class` default is None → the effect spawn fails, `Get Speed` returns 0. Set default `BP_Effect_Basic` in Class Defaults |
 | Bullet falls downward | If **every** effect drops, `Projectile Movement → Projectile Gravity Scale` was typed on the *component* — reset it to **0.0**; the effect owns gravity (5.3 step 7). If only Heavy drops, that is correct |
 | Bullet passes through floors | Box preset not `BlockAllDynamic`, or `Simulation Generates Hit Events` off, or the sprite still collides (must be `NoCollision`) |
-| Bullet dies at the spawn point | Spawned inside a wall (fired while hugging one) — keep `Always Spawn, Ignore Collisions` on the player's SpawnActor; confirm `Ignore Actor When Moving` runs with `Shooter` set |
+| Bullet dies at the spawn point | Spawned inside a wall (fired while hugging one) — keep `AdjustIfPossibleButAlwaysSpawn` on the player's SpawnActor; confirm `Ignore Actor When Moving` runs with `Shooter` set |
 | First shot kills the player | Hit-event order wrong — the `== Shooter` branch must come **first**; or the effect's `Can Hit Shooter` gate (2b) is missing/shorted so the True path falls straight through |
 | Heavy bullets fly dead straight | `Gravity Scale` is 0.0 on `BP_Effect_Heavy` (re-run `_make_shooting.py`), or 5.3 step 7 is missing / wired to the wrong node. The node must be **Set Projectile Gravity Scale** (Target `ProjectileMovement`), fed by **Get Gravity Scale** on the effect — without it the effect value never reaches the component |
 | Ricochet never hurts me | **First: 5.5 step 3's `Does Implement Interface` has no `Interface` set** — an empty pin is false for *every* actor, so the hit is treated as a wall and the bullet bounces instead of dying (the verifier FAILs it with `Does Implement Interface has no Interface set`). Then: `Can Hit Shooter` is false on `BP_Effect_Ricochet`, or 5.4 step 16 is missing (the movement ignore then filters the sweep, so no hit event exists), or 2b is not wired to 3 on True |
@@ -1116,7 +1139,8 @@ The entire point of the port — no graph in this file is touched:
    Blueprint Class** → name it (say `BP_Effect_Poison`) → save in
    `/Game/DontTrustTheLevels/Weapons/Blueprints/`.
 2. **Class Defaults** → type new numbers (Damage 2, Speed 2600, Gravity
-   Scale 0.4 if it should lob, Can Hit Shooter if its bounces may hurt you).
+   Scale 0.4 if it should lob, Can Hit Shooter if its bounces may hurt you,
+   Spawn Behind if it should fire from the character's back — `InverseShot.md`).
 3. Wire any trigger — a key, a trap volume, a pickup — to
    `Set Effect Class` with the new class. Done. No new variable, node or
    interface — the two knobs added in this revision are exactly so that
