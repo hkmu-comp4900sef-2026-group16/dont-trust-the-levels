@@ -1,7 +1,7 @@
 # DashDamage.md -- dash damage, i-frames and pass-through
 
 **Owner:** Player pillar - **Branch:** `branch/Dennis` - **Status:** prepared
-13 Nov 2026 (Blueprint graph work pending)
+13 Nov 2026 (Blueprint graph work pending; no-knockback damage type added)
 
 **Goal:** dashing is a dodge **and** an attack:
 
@@ -12,6 +12,10 @@
   Damage uses the same eligibility gate as a bullet, so an invulnerable phase
   (spikes-out turtle, hidden Ghost, ON Floating Skull, Rhino, Snail shell)
   takes nothing.
+- Dash damage carries the **`BP_DamageType_Dash`** marker. The enemy still
+  loses health, flashes, plays its hit animation and dies normally, but it
+  **does not receive the normal knockback**; a dash must not shove an enemy
+  along the dash direction. Bullets keep their normal knockback.
 - The player is invincible for a few frames at the start of the dash. When the
   i-frame window ends, collision is restored. If the player is still inside a
   dangerous enemy at that moment, the player dies.
@@ -21,7 +25,8 @@ This builds on `DashAiming.md`. That document owns movement, aim and the
 
 **Visual graph:** open [`dash_damage_graph.html`](dash_damage_graph.html) for the
 hand-authored `BeginDashInvincibility` / `TryDashDamage` /
-`EndDashInvincibility` node wires and the three call-site edits.
+`EndDashInvincibility` node wires, the three call-site edits and the enemy
+no-knockback branch.
 
 ---
 
@@ -90,6 +95,13 @@ That is exactly "only enemies, or the enemy phase that a bullet can hurt".
 A dash hit therefore reuses the bullet contract instead of adding a second
 damage path that could drift from it.
 
+The one enemy-side difference is the damage type. The dash passes
+`BP_DamageType_Dash` and `BP_EnemyBase.Event AnyDamage` branches on it at the
+end of its non-lethal path, before `SET bWasKnockedBack` and `LaunchCharacter`.
+The health / hit-reaction / death chain above has already run, so the hit is
+still a normal hit; only the shove is skipped. Section 8.1 has the exact graph
+change.
+
 ---
 
 ## 2. Variables on `BP_Player` (Category `Dash`)
@@ -101,24 +113,26 @@ Add these four in **My Blueprint -> Variables**:
 | `bDashInvincible` | Boolean | `false` | blocks `Kill` and is the timer's live flag |
 | `DashIFrameDuration` | Float | `0.20` | length of the i-frame / pass-through window; keep it **>= `DashDuration`** (`0.15`) |
 | `DashDamage` | Float | `1.0` | damage per enemy per dash; same value as a Basic bullet |
-| `DashHitActors` | Array of Actor | empty | one hit per enemy per dash |
+| `DashHitActor` | Array of Actor | empty | one hit per enemy per dash |
 
-`DashHitActors` is cleared at the start of every dash, not at the end: a dash
+`DashHitActor` is cleared at the start of every dash, not at the end: a dash
 that is stopped early by a wall still completes its i-frame window, and a later
 dash must start with a fresh list.
 
 ## 3. Start of the dash: begin the i-frame window
 
-In `BP_Player -> Dash`, continue the `Dash Logic` chain **after**
-`SET bIsDashing = true` (S3) and before `AddActorWorldOffset` starts moving the
-player.
+In `BP_Player -> Functions -> Dash Logic`, continue the existing chain **after**
+`SET bIsDashing = true` (S3) and before it starts moving the player. In the
+current graph the next exec pin is `LaunchCharacter`; the per-tick
+`AddActorWorldOffset` lives in `Dashing Logic`, so the call is already in place
+before movement begins.
 
 Add a new function **`BeginDashInvincibility`** (no inputs, no outputs) with
 this body:
 
 | # | Node | Wiring |
 |---|---|---|
-| 1 | **Clear** (Array) | Target = `DashHitActors` |
+| 1 | **Clear** (Array) | Target = `DashHitActor` |
 | 2 | **SET bDashInvincible** | value `true` |
 | 3 | **CapsuleComponent -> Set Collision Response to Channel** | Channel = `WorldDynamic`, New Response = `Ignore` |
 | 3a | **Sprite -> Set Collision Enabled** | `NoCollision` (it is `QueryOnly` normally; this stops it re-triggering traps/projectiles/puddles) |
@@ -137,13 +151,14 @@ nodes** in 4.27: they have no exec pins. Wire their array output into the
 getter. The same rule applies to the end-of-window loop in §5.
 
 Call `BeginDashInvincibility` from the `Dash Logic` chain immediately after
-`SET bIsDashing = true`. Do **not** call it from `EndDash`: `EndDash` runs on a
-wall hit and on normal completion, while the i-frame window is time-based.
+`SET bIsDashing = true` and before `LaunchCharacter`. Do **not** call it from
+`EndDash`: `EndDash` runs on a wall hit and on normal completion, while the
+i-frame window is time-based.
 
-> Why step 6 is needed: `OnComponentBeginOverlap` only fires when an overlap
-> *begins*. If the player starts a dash already standing inside a normal
-> enemy, no new overlap event occurs. The initial `GetOverlappingActors` loop
-> covers that case.
+> Why step 6 is needed: `Actor Begin Overlap` (or `OnComponentBeginOverlap`)
+> only fires when an overlap *begins*. If the player starts a dash already
+> standing inside a normal enemy, no new overlap event occurs. The initial
+> `GetOverlappingActors` loop covers that case.
 
 ---
 
@@ -157,12 +172,17 @@ New function on `BP_Player`:
 |---|---|---|
 | 1 | **Actor Has Tag** | Target = `Other Actor`; Tag = `Enemy` |
 | 2 | **Branch** | Condition = result of #1. False -> return. True -> continue |
-| 3 | **Array Contains** | Target = `DashHitActors`; Item to Find = `Other Actor` |
+| 3 | **Array Contains** | Target = `DashHitActor`; Item to Find = `Other Actor` |
 | 4 | **Branch** | Condition = result of #3. True -> return (already hit this dash). False -> continue |
-| 5 | **Add Unique** | Target = `DashHitActors`; New Item = `Other Actor` |
-| 6 | **Apply Damage** | Damaged Actor = `Other Actor`; Base Damage = `DashDamage`; Damage Causer = **Self**; Event Instigator = **Self -> Get Controller** |
+| 5 | **Add Unique** | Target = `DashHitActor`; New Item = `Other Actor` |
+| 6 | **Apply Damage** | Damaged Actor = `Other Actor`; Base Damage = `DashDamage`; Damage Causer = **Self**; Event Instigator = **Self -> Get Controller**; Damage Type Class = **`BP_DamageType_Dash`** |
 
 Chain: `Entry -> 1 -> 2 (False return / True) -> 3 -> 4 (True return / False) -> 5 -> 6 -> Return`.
+
+`Other Actor` must be an **Actor** object reference, not `BP_EnemyBase`.
+`Get Overlapping Actors` is declared as `TArray<AActor>`; its `Class Filter`
+only filters the results, so the loop's `Array Element` is still an `Actor` and
+cannot be wired into a `BP_EnemyBase` input without an explicit Cast.
 
 `Actor Has Tag "Enemy"` covers every enemy, including the Spike Turtle. The
 turtle is still filtered out of damage by its own `bInvulnerable` /
@@ -174,23 +194,32 @@ enemy's health, plays its hit reaction and lets its `bInvulnerable` phase
 decide whether the hit exists at all. Do **not** call `Kill` from the dash;
 that would ignore health and turn every dash into a one-shot.
 
-### 4.2 Player capsule `BeginOverlap`
+Set the `Apply Damage` node's **Damage Type Class** pin to
+`BP_DamageType_Dash` (the saved asset is
+`Content/DontTrustTheLevels/Player/Blueprints/BP_DamageType_Dash.uasset`).
+It is a plain Blueprint child of `DamageType` with no variables and no graph.
+Do not leave the pin at its default `DamageType`: the enemy uses this class to
+skip knockback. The pin is a class pin, so there is no extra node to add in
+`TryDashDamage`.
 
-In `BP_Player`'s event graph, select `CapsuleComponent` -> **Events** ->
-**On Component Begin Overlap (CapsuleComponent)**.
+### 4.2 Player overlap event
+
+In `BP_Player`'s event graph, use **Actor Begin Overlap** (the event currently
+wired in the graph). It fires for the player capsule's overlaps and supplies
+`Other Actor`. Binding `CapsuleComponent` -> **On Component Begin Overlap** is
+an equivalent alternative if you want the event scoped to that component.
 
 ```text
-On Component Begin Overlap (CapsuleComponent)
+Actor Begin Overlap
   -> Other Actor
   -> Branch: bIsDashing?
        False -> (return)
        True  -> TryDashDamage(Other Actor)
 ```
 
-This event already exists in every Character, but it only matters here because
-the player capsule is the thing that overlaps a **normal** enemy's Pawn
-capsule. Enemy `ContactBox` overlaps are ignored during the dash, so the dash
-cannot be mistaken for contact damage.
+The event only matters while dashing: the capsule overlaps a **normal** enemy's
+Pawn capsule, while enemy `ContactBox` overlaps are ignored during the dash, so
+the dash cannot be mistaken for contact damage.
 
 ## 5. End of the i-frame window: restore collision and check the exit
 
@@ -299,6 +328,56 @@ A dash never bypasses a phase gate. If a future enemy adds a new invulnerable
 phase, it only has to set `bInvulnerable`; this feature needs no per-enemy
 change.
 
+### 8.1 No knockback for dash damage
+
+`BP_EnemyBase` has one shared `Event AnyDamage`; all enemy children inherit it
+(verified 13 Nov 2026: only `BP_EnemyBase` has a `ReceiveAnyDamage` graph). The
+knockback is the block after the `Update State For Hit` composite:
+
+```text
+Update State For Hit -> Non-lethal
+  -> SET bWasKnockedBack = true
+  -> SET bAggro = false
+  -> SET bStranded = false
+  -> SET MaxWalkSpeed = MoveSpeed
+  -> SET UnreachableTime = 0
+  -> LaunchCharacter(...)
+```
+
+Insert a `Branch` between the composite's **`Non-lethal`** pin and
+`SET bWasKnockedBack`:
+
+```text
+DamageType -> Get Class -> Class Is Child Of (Parent Class = BP_DamageType_Dash)
+                         -> Branch.Condition
+
+Update State For Hit -> Non-lethal -> Branch
+  True  (dash damage)     -> (end; no knockback state, no LaunchCharacter)
+  False (bullet / other)  -> SET bWasKnockedBack -> ... -> LaunchCharacter
+```
+
+> **Do not reverse these two exec wires.** The **True** pin must stay
+> unconnected and **False** must go to the existing `SET bWasKnockedBack`.
+> If **True** is wired to `SET bWasKnockedBack`, the dash still launches the
+> enemy even though the class check is correct. `Scripts/_verify_dash_no_knockback.py`
+> checks this polarity explicitly.
+
+The `DamageType` event pin is currently unconnected; this is the one new data
+wire. `Class Is Child Of` is true for the `BP_DamageType_Dash_C` class and
+false for the default `DamageType` object that a bullet passes, so ordinary
+damage keeps the existing launch.
+
+The branch must stay **after** `Update State For Hit`: health subtraction, the
+red flash, hit flipbook, `LastDamageTime`, i-frames, `Die`, and the
+`bIsDead / bInvulnerable / bIFrameActive / bUseHealth` gate have already run.
+Do not branch before the `Should Take Damage?` gate, or dash damage would
+ignore an invulnerable phase.
+
+The True path may be left unconnected: this is an event graph, not a function,
+and the hit is already complete. Leaving it open is also why the enemy keeps
+its current aggro and movement instead of being stopped by `bAggro = false` and
+`MaxWalkSpeed = MoveSpeed`.
+
 ---
 
 ## 9. Verification
@@ -324,7 +403,7 @@ If the turtle capsule is not `Pawn = Block`, stop: the exception cannot work.
 
 | # | Test | Expected |
 |---|---|---|
-| 1 | Dash through a 2+ health walker | player passes through; enemy loses 1 health, plays Hit, survives |
+| 1 | Dash through a 2+ health walker | player passes through; enemy loses 1 health, plays Hit, survives; it does **not** slide or launch along the dash direction |
 | 2 | Dash through a 1-health enemy | enemy dies on the dash hit |
 | 3 | Dash into the Spike Turtle | player stops at the turtle; no damage to it; if spikes are out, late check kills the player |
 | 4 | Dash through active spikes | trap does **not** pop; player is not killed during the i-frame window |
@@ -339,19 +418,21 @@ If the turtle capsule is not `Pawn = Block`, stop: the exception cannot work.
 | 13 | Dash into a wall / floor | dash stops; no tunneling |
 | 14 | Dash over a toxic puddle | no puddle death during the dash; walls/floor still block |
 | 15 | Normal walk / jump / shoot after a dash | unchanged; collision is restored |
+| 16 | Dash-hit a walker and watch its feet | it stays on its platform; only its normal AI movement resumes |
+| 17 | Shoot the same walker | normal bullet knockback still launches it (the dash exception is not a global knockback removal) |
 
 ### 9.3 Static graph check after the build
 
 `py -3 Scripts/_verify_dash_damage.py` (read-only, editor open) first checks the
 three live collision premises above, then exports `BP_Player` and checks the
-graph markers below. Before the hand work it is expected to print
-`SUMMARY 4 PASS / 0 FAIL / 7 PENDING`; after the build the PENDING rows become
-PASS/FAIL.
+graph markers below. Until the `Damage Type Class` pin is set, the one expected
+FAIL is `dash damage type`. The two turtle rows are PENDING, not FAIL, when
+`L_Level_01` is not the open level.
 
 Fresh export of `BP_Player` should contain:
 
 - variables `bDashInvincible`, `DashIFrameDuration`, `DashDamage`,
-  `DashHitActors`;
+  `DashHitActor`;
 - functions `BeginDashInvincibility`, `TryDashDamage`,
   `EndDashInvincibility`;
 - `SetCollisionResponseToChannel` on `CapsuleComponent` with
@@ -362,7 +443,23 @@ Fresh export of `BP_Player` should contain:
 - `Set Timer by Function Name("EndDashInvincibility", DashIFrameDuration)`;
 - `GetOverlappingActors`, `Actor Has Tag("Enemy")`, `Array Contains`,
   `Add Unique`, `ApplyDamage`;
+- the `ApplyDamage` node's `DamageTypeClass` default contains
+  `BP_DamageType_Dash`;
 - `Kill Logic`'s first condition contains `bDashInvincible`.
+
+The no-knockback half has its own checker:
+`py -3 Scripts/_verify_dash_no_knockback.py` (read-only, editor open). It
+exports both Blueprints and checks that:
+
+- `BP_DamageType_Dash` exists and is a child of `DamageType`;
+- `BP_Player.TryDashDamage.ApplyDamage.DamageTypeClass` points at it;
+- `BP_EnemyBase.EventGraph` links `DamageType -> Get Class -> Class Is Child
+  Of(BP_DamageType_Dash)` into a Branch;
+- the Branch's True pin is empty (dash ends) and its False pin feeds
+  `SET bWasKnockedBack` (the existing chain); `LaunchCharacter` is still
+  present for ordinary damage;
+- only `BP_EnemyBase` has a `ReceiveAnyDamage` graph, so no child needs a
+  duplicate branch.
 
 `Scripts/_verify_shooting.py` and `Scripts/_verify_effect_on_kill.py` remain
 the regression checks for the projectile and effect contracts.
@@ -377,9 +474,11 @@ the regression checks for the projectile and effect contracts.
 | Player cannot dash through traps/projectiles | `WorldDynamic` is not `Ignore` on the capsule, or the `Sprite` is still `QueryOnly`; check the capsule response nodes and `Sprite -> Set Collision Enabled (NoCollision)` |
 | Player cannot dash through a toxic puddle | `Enemy.Hazard` tag is missing from `BP_ToxicPuddle`, or the `IgnoreActorWhenMoving` loop is absent; do **not** solve it by ignoring `WorldStatic` globally |
 | Player never takes damage after the dash | `EndDashInvincibility` did not restore the capsule responses / `Sprite = QueryOnly` / `IgnoreActorWhenMoving(false)`, or the late enemy check was omitted |
-| Enemy takes repeated damage from one dash | `DashHitActors` is not cleared at dash start, or `Array Contains` is wired before `Add Unique` wrongly |
+| Enemy takes repeated damage from one dash | `DashHitActor` is not cleared at dash start, or `Array Contains` is wired before `Add Unique` wrongly |
 | Enemy takes no damage | missing `Actor Has Tag "Enemy"` gate, `ApplyDamage` target not `Other Actor`, or the enemy is in an invulnerable phase |
 | Turtle takes damage | `AnyDamage` gate is broken; dash must reuse `ApplyDamage`, not `Kill` |
+| Enemy still slides in the dash direction | `ApplyDamage`'s Damage Type Class is still the default `DamageType`, or the `Non-lethal -> Class Is Child Of -> Branch` rewire is missing; the True path must skip `SET bWasKnockedBack` and `LaunchCharacter` |
+| Bullet knockback disappeared too | the dash Branch was put before `Should Take Damage?`, or its False path was not restored to the old knockback chain; only the non-lethal dash path skips it |
 | Player falls through the floor during a dash | the floor is `WorldDynamic`; walkable ground must be `WorldStatic` (or the player's `WorldStatic` response was changed) |
 | Dash damage hits through a wall | player capsule overlap is too large or the wall is on an ignored channel; keep walls `WorldStatic` and use the capsule, not a sphere trace |
 | Normal contact damage stops working | `WorldDynamic` was left as `Ignore` after the timer; verify `EndDashInvincibility` runs and restores it |
@@ -389,13 +488,18 @@ the regression checks for the projectile and effect contracts.
 ## 11. Commit
 
 **Status:** prepared; graph work is still editor-only (Python cannot create
-Blueprint variables, functions or nodes -- `Structure.md` §11). Build, compile
-and save `BP_Player`, then run PIE §9.2 before committing.
+Blueprint variables, functions or nodes -- `Structure.md` §11). The
+`BP_DamageType_Dash` marker asset is already created and saved. Finish the two
+graph edits (apply-damage type pin + enemy branch), compile and save both
+`BP_Player` and `BP_EnemyBase`, then run PIE §9.2 before committing.
 
 - Suggested message:
-  `feat(player): dash damage + i-frame pass-through, Spike Turtle stays solid`
+  `feat(player): dash damage + i-frame pass-through, no dash knockback`
 - Files: `Content/DontTrustTheLevels/Player/Blueprints/BP_Player.uasset` ·
+  `Content/DontTrustTheLevels/Enemies/Blueprints/BP_EnemyBase.uasset` ·
+  `Content/DontTrustTheLevels/Player/Blueprints/BP_DamageType_Dash.uasset` ·
   `Docs/DashDamage.md` · `Docs/DashAiming.md` · `Docs/Enemies.md`
-- No enemy binary changes are expected. The Spike Turtle exception is already
-  its `Pawn = Block` capsule; do not edit `BP_SpikeTurtle` for this feature.
+- The Spike Turtle exception is still its `Pawn = Block` capsule; do not edit
+  `BP_SpikeTurtle` for this feature. Every enemy inherits the one
+  `BP_EnemyBase` AnyDamage branch.
 - Close the editor before `git add` / commit (`CLAUDE.md` hard rule 3).

@@ -298,7 +298,13 @@ Event AnyDamage (Damage, DamageType, InstigatedBy, DamageCauser)
         Set Timer by Function Name ("RecoverFromHit", HitRecoveryTime, false)
         Branch: CurrentHealth <= 0
           True  → Die
-          False → optional LaunchCharacter knockback
+          False → Branch: DamageType is BP_DamageType_Dash?
+                    True  → (return; no knockback block)
+                    False → knockback block:
+                              bWasKnockedBack = true
+                              bAggro = false; bStranded = false
+                              MaxWalkSpeed = MoveSpeed; UnreachableTime = 0
+                              LaunchCharacter(...)
 ```
 
 `LastDamageTime` has two readers: the i-frame bookkeeping here and, when
@@ -319,6 +325,26 @@ KnockbackForce → Multiply(0.4)  → Z ─────────────�
 ```
 
 If `DamageCauser` is not valid, use `-Facing * KnockbackForce`.
+
+> **Dash damage skips the launch (13 Nov 2026).** `BP_Player.TryDashDamage`
+> sets `ApplyDamage.DamageTypeClass = BP_DamageType_Dash`. In the EventGraph,
+> after the `Update State For Hit` composite's **`Non-lethal`** pin, add:
+>
+> ```text
+> DamageType -> Get Class -> Class Is Child Of (Parent Class = BP_DamageType_Dash)
+>                          -> Branch
+> True  (dash)            -> end; no bWasKnockedBack, no LaunchCharacter
+> False (bullet / other)  -> SET bWasKnockedBack -> ... -> LaunchCharacter
+> ```
+>
+> **True must stay unconnected; False goes to `SET bWasKnockedBack`.** If
+> those two exec pins are swapped, the class check still looks correct but the
+> dash still launches. Keep the branch after `Update State For Hit`: health, hit reaction,
+> `LastDamageTime`, i-frames and `Die` already ran, and the
+> `bIsDead / bInvulnerable / bIFrameActive / bUseHealth` gate still rejects an
+> ineligible hit. Do not branch before that gate. All enemy children inherit
+> this one event (verified 13 Nov 2026: only `BP_EnemyBase` has a
+> `ReceiveAnyDamage` graph), so no child needs the same branch.
 
 > **The `Z` term is the knockback** (7 Nov 2026 retune). A purely horizontal
 > `(F, 0, 0)` vector moves a grounded walker about **15 uu**, however large `F`
@@ -1833,6 +1859,7 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
 | Path | What |
 |---|---|
 | `Content/DontTrustTheLevels/Enemies/Blueprints/BP_*.uasset` | 19 new shells |
+| `Content/DontTrustTheLevels/Player/Blueprints/BP_DamageType_Dash.uasset` | dash marker used by `AnyDamage` to skip knockback |
 | `Docs/Enemies.md` | this build sheet |
 | `Docs/EnemyAI.md` | 21 Oct movement/detection/platform/stairs revision |
 | `Docs/EnemyPlacement.md` | shared level-placement guide for all enemy types |

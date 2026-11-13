@@ -6,7 +6,9 @@
 > It adds one-hit-per-dash damage, a short pass-through/invincibility window
 > (`WorldDynamic` + `PhysicsBody` ignored on the capsule; sprite collision off), and keeps the Spike Turtle solid
 > because its capsule is the only enemy on `Pawn = Block`. It reuses
-> `BP_EnemyBase.AnyDamage` for phase-aware damage; no enemy asset change.
+> `BP_EnemyBase.AnyDamage` for phase-aware damage; dash hits pass
+> `BP_DamageType_Dash`, so the shared AnyDamage event skips knockback while
+> bullets keep it. No per-enemy child change.
 
 **Goal:** pressing **Spacebar** sends the player a fixed distance (`DashRange`) toward
 wherever the crosshair is pointing — any direction in the screen plane, including

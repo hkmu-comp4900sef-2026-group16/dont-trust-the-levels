@@ -47,7 +47,9 @@ default `AIController` (Auto Possess AI = Placed In World Or Spawned).
    everywhere; values of `2.0` are removed. The player has no health today.
 2. **Walking enemies never walk off a platform.** Patrol and chase both stop
    at a ledge. A ledge is not a path. Only a **knockback** may transfer an
-   enemy to another platform.
+   enemy to another platform. Dash damage is the exception: it passes
+   `BP_DamageType_Dash`, so `AnyDamage` skips the launch (`DashDamage.md`
+   §8.1) and a dash cannot transfer an enemy or shove it in the dash direction.
 3. **After a knockback, the landing platform becomes the new home platform.**
    The enemy re-learns its patrol bounds there and stays until the next
    knockback (or death).

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  dash_damage_graph.html - the picture behind Docs/DashDamage.md sections 3-6.
+  dash_damage_graph.html - the picture behind Docs/DashDamage.md sections 3-8.
 
   HAND-AUTHORED, NOT GENERATED. The node/wire spec is the GRAPHS data block at
   the bottom of this file, written from the step tables in DashDamage.md, so
@@ -82,8 +82,8 @@
 <body>
 <header>
   <div class="top">
-    <h1>Dash damage &amp; i-frames <small>BP_Player graph</small></h1>
-    <span class="meta">source: <a href="DashDamage.md">&sect;3&ndash;6 DashDamage.md</a> &middot; hand-authored</span>
+    <h1>Dash damage &amp; i-frames <small>BP_Player + BP_EnemyBase</small></h1>
+    <span class="meta">source: <a href="DashDamage.md">&sect;3&ndash;8 DashDamage.md</a> &middot; hand-authored</span>
   </div>
   <div class="bar">
     <nav id="tabs"></nav>
@@ -138,9 +138,9 @@ const GRAPHS = {
     title: 'BeginDashInvincibility',
     note: 'Start of the dash: clear the hit list, open the i-frame window, turn WorldDynamic/PhysicsBody contact into pass-through, and arm the timer that closes it.',
     desc: 'Called from Dash Logic immediately after SET bIsDashing = true. The timer is what ends the window; EndDash does not run it, because a wall stop and a normal dash both end while the i-frame clock can still be running.',
-    flow: ['SET bIsDashing = true', 'BeginDashInvincibility', 'AddActorWorldOffset'],
+    flow: ['SET bIsDashing = true', 'BeginDashInvincibility', 'LaunchCharacter'],
     steps: [
-      'Clear <b>DashHitActors</b> so this dash starts with a fresh hit list.',
+      'Clear <b>DashHitActor</b> so this dash starts with a fresh hit list.',
       'Set <b>bDashInvincible</b> to true before anything can call Kill.',
       'Capsule &rarr; <b>WorldDynamic = Ignore</b>. This is the trap/projectile/contact-box channel.',
       'Sprite &rarr; <b>Set Collision Enabled = NoCollision</b>. The CharacterMesh profile blocks WorldDynamic, so the capsule change alone is not enough.',
@@ -153,9 +153,9 @@ const GRAPHS = {
       { id:'entry', kind:'event', title:'BeginDashInvincibility', sub:'FUNCTION ENTRY', x:30, y:40, w:220,
         note:'Function entry. No inputs, no outputs; the exec chain starts on then.',
         pins:[{name:'then',type:'exec',dir:'out'}] },
-      { id:'clear', kind:'func', title:'Clear (Array)', sub:'DashHitActors', x:280, y:40, w:210,
+      { id:'clear', kind:'func', title:'Clear (Array)', sub:'DashHitActor', x:280, y:40, w:210,
         note:'Clears the per-dash hit list. It is cleared at the start, not the end, so a wall-stopped dash still leaves a clean list for the next one.',
-        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = DashHitActors',type:'array',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = DashHitActor',type:'array',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
       { id:'set_inv', kind:'set', title:'SET bDashInvincible', sub:'VARIABLE SET', x:520, y:40, w:200,
         note:'The Kill gate reads this flag. Set it before the collision changes, because an already-in-flight Kill can arrive at any time.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'Value = true',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
@@ -172,9 +172,9 @@ const GRAPHS = {
       { id:'timer', kind:'timer', title:'Set Timer by Function Name', sub:'EndDashInvincibility', x:1680, y:40, w:310,
         note:'Time-based, not Dash-ended: the i-frame window can outlive a dash stopped by a wall. Keep DashIFrameDuration >= DashDuration (0.15).',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'Function Name = EndDashInvincibility',type:'name',dir:'in'},{name:'Time = DashIFrameDuration',type:'float',dir:'in'},{name:'Looping = false',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
-      { id:'get_hit', kind:'pure', title:'Get DashHitActors', sub:'ARRAY GET', x:30, y:220, w:240,
+      { id:'get_hit', kind:'pure', title:'Get DashHitActor', sub:'ARRAY GET', x:30, y:220, w:240,
         note:'The per-dash actor array. Clear at the start and Add Unique in TryDashDamage.',
-        pins:[{name:'DashHitActors',type:'array',dir:'out'}] },
+        pins:[{name:'DashHitActor',type:'array',dir:'out'}] },
       { id:'tag_get', kind:'pure', title:'Get All Actors with Tag', sub:'Enemy.Hazard', x:1680, y:230, w:280,
         note:'Pure data node: no exec pins. The output array feeds the ForEachLoop in step 5b.',
         pins:[{name:'Tag = "Enemy.Hazard"',type:'name',dir:'in'},{name:'Actors',type:'array',dir:'out'}] },
@@ -192,7 +192,7 @@ const GRAPHS = {
         note:'Initial overlap coverage: BeginOverlap will not fire for an overlap that already existed.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'Array',type:'array',dir:'in'},{name:'Loop Body',type:'exec',dir:'out'},{name:'Completed',type:'exec',dir:'out'},{name:'Array Element',type:'actor',dir:'out'}] },
       { id:'try_fn', kind:'func', title:'TryDashDamage', sub:'FUNCTION CALL', x:730, y:520, w:260,
-        note:'One hit per enemy per dash. ApplyDamage, never Kill.',
+        note:'One hit per enemy per dash. ApplyDamage, never Kill. Other Actor must be typed Actor: GetOverlappingActors returns TArray<AActor>, so a BP_EnemyBase input would need a Cast.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'Other Actor',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
       { id:'return', kind:'func', title:'Return Node', sub:'END OF FUNCTION', x:1040, y:520, w:180,
         note:'Both loops complete, then the function returns. The timer runs independently on the world clock.',
@@ -206,7 +206,7 @@ const GRAPHS = {
       {from:'sprite',to:'coll_phys',fromPin:'then',toPin:'exec'},
       {from:'coll_phys',to:'timer',fromPin:'then',toPin:'exec'},
       {from:'timer',to:'tag_loop',fromPin:'then',toPin:'exec'},
-      {from:'get_hit',to:'clear',fromPin:'DashHitActors',toPin:'Target = DashHitActors'},
+      {from:'get_hit',to:'clear',fromPin:'DashHitActor',toPin:'Target = DashHitActor'},
       {from:'tag_get',to:'tag_loop',fromPin:'Actors',toPin:'Array'},
       {from:'tag_loop',to:'ignore',fromPin:'Loop Body',toPin:'exec'},
       {from:'tag_loop',to:'ignore',fromPin:'Array Element',toPin:'Actor'},
@@ -220,14 +220,15 @@ const GRAPHS = {
 
   try: {
     title: 'TryDashDamage',
-    note: 'One eligible enemy, one hit per dash. ApplyDamage is used deliberately so enemy health and phase gates decide whether the hit exists.',
-    desc: 'Called from the capsule BeginOverlap event and from the initial overlap loop in BeginDashInvincibility. It never calls Kill; a 5-health walker must survive a dash exactly like it survives one Basic bullet.',
-    flow: ['Other Actor', 'Actor Has Tag = Enemy', 'already hit?', 'ApplyDamage'],
+    note: 'One eligible enemy, one hit per dash. ApplyDamage is used deliberately so enemy health and phase gates decide whether the hit exists. The damage type tells the enemy to skip its knockback.',
+    desc: 'Called from the Actor Begin Overlap event (or a capsule component overlap event) and from the initial overlap loop in BeginDashInvincibility. It never calls Kill; a 5-health walker must survive a dash exactly like it survives one Basic bullet. Damage Type Class = BP_DamageType_Dash keeps health, hit reaction and death, but suppresses the shove.',
+    flow: ['Other Actor', 'Actor Has Tag = Enemy', 'already hit?', 'ApplyDamage(DashDamage, BP_DamageType_Dash)'],
     steps: [
       'Reject anything without the <b>Enemy</b> actor tag.',
-      'Reject an actor already in <b>DashHitActors</b>; this is the one-hit-per-dash rule.',
-      'Add the actor to <b>DashHitActors</b> before ApplyDamage.',
+      'Reject an actor already in <b>DashHitActor</b>; this is the one-hit-per-dash rule.',
+      'Add the actor to <b>DashHitActor</b> before ApplyDamage.',
       'Apply <b>DashDamage</b> (1.0) with Self as Damage Causer and Self &rarr; Get Controller as Event Instigator.',
+      'Set the <b>Damage Type Class</b> pin to <b>BP_DamageType_Dash</b>. BP_EnemyBase.AnyDamage uses this marker to skip knockback; leaving the pin at DamageType keeps the old shove.',
       'Do not use Kill here: ApplyDamage reaches BP_EnemyBase.AnyDamage, which already honours bIsDead, bInvulnerable, bIFrameActive and bUseHealth.'
     ],
     nodes: [
@@ -243,28 +244,28 @@ const GRAPHS = {
       { id:'branch_tag', kind:'branch', title:'Branch', sub:'Tag present?', x:680, y:40, w:210,
         note:'False returns immediately. True continues to the per-dash hit test.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
-      { id:'contains', kind:'pure', title:'Array Contains', sub:'DashHitActors', x:680, y:250, w:300,
+      { id:'contains', kind:'pure', title:'Array Contains', sub:'DashHitActor', x:680, y:250, w:300,
         note:'Already hit this dash? Add Unique happens later, so this test is the gate that prevents double damage from multiple overlap events.',
         pins:[{name:'Target Array',type:'array',dir:'in'},{name:'Item To Find',type:'actor',dir:'in'},{name:'Return Value',type:'bool',dir:'out'}] },
       { id:'branch_contains', kind:'branch', title:'Branch', sub:'Already hit?', x:1040, y:40, w:220,
         note:'True returns without damage. False continues to Add Unique + ApplyDamage.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
 
-      { id:'add_unique', kind:'func', title:'Add Unique', sub:'DashHitActors', x:1040, y:250, w:300,
+      { id:'add_unique', kind:'func', title:'Add Unique', sub:'DashHitActor', x:1040, y:250, w:300,
         note:'Add before dealing damage: if ApplyDamage is rejected by a phase, the enemy is still on this dash hit list and will not be retried.',
-        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = DashHitActors',type:'array',dir:'in'},{name:'New Item',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
-      { id:'apply', kind:'kill', title:'Apply Damage', sub:'DashDamage = 1.0', x:1400, y:250, w:340,
-        note:'Reaches BP_EnemyBase.AnyDamage. Damage Causer = Self; Event Instigator = Self -> Get Controller. Do not use Kill.',
-        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Damaged Actor',type:'actor',dir:'in'},{name:'Base Damage = DashDamage',type:'float',dir:'in'},{name:'Damage Causer = Self',type:'actor',dir:'in'},{name:'Event Instigator = Get Controller',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Target = DashHitActor',type:'array',dir:'in'},{name:'New Item',type:'actor',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'apply', kind:'kill', title:'Apply Damage', sub:'DashDamage = 1.0 · Type = BP_DamageType_Dash', x:1400, y:250, w:340,
+        note:'Reaches BP_EnemyBase.AnyDamage. Damage Causer = Self; Event Instigator = Self -> Get Controller. Damage Type Class = BP_DamageType_Dash makes the enemy skip its knockback; health, hit reaction and death are unchanged. Do not use Kill.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Damaged Actor',type:'actor',dir:'in'},{name:'Base Damage = DashDamage',type:'float',dir:'in'},{name:'Damage Causer = Self',type:'actor',dir:'in'},{name:'Event Instigator = Get Controller',type:'actor',dir:'in'},{name:'Damage Type Class = BP_DamageType_Dash',type:'class',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
       { id:'return_early', kind:'func', title:'Return Node', sub:'NO DAMAGE', x:1400, y:40, w:180,
         note:'Early return for a non-enemy or an enemy already hit this dash.',
         pins:[{name:'exec',type:'exec',dir:'in'}] },
       { id:'return_done', kind:'func', title:'Return Node', sub:'DAMAGE SENT', x:1800, y:250, w:180,
         note:'ApplyDamage has been called; the function ends.',
         pins:[{name:'exec',type:'exec',dir:'in'}] },
-      { id:'get_hits', kind:'pure', title:'Get DashHitActors', sub:'ARRAY GET', x:340, y:430, w:260,
+      { id:'get_hits', kind:'pure', title:'Get DashHitActor', sub:'ARRAY GET', x:340, y:430, w:260,
         note:'The per-dash array read by Array Contains and Add Unique.',
-        pins:[{name:'DashHitActors',type:'array',dir:'out'}] },
+        pins:[{name:'DashHitActor',type:'array',dir:'out'}] },
       { id:'get_damage', kind:'pure', title:'Get DashDamage', sub:'FLOAT GET', x:1400, y:520, w:240,
         note:'Class default 1.0; the same number as a Basic bullet.',
         pins:[{name:'DashDamage',type:'float',dir:'out'}] },
@@ -279,11 +280,11 @@ const GRAPHS = {
       {from:'branch_tag',to:'return_early',fromPin:'False',toPin:'exec',label:'False'},
       {from:'branch_tag',to:'branch_contains',fromPin:'True',toPin:'exec',label:'True'},
       {from:'other_get',to:'contains',fromPin:'Other Actor',toPin:'Item To Find'},
-      {from:'get_hits',to:'contains',fromPin:'DashHitActors',toPin:'Target Array'},
+      {from:'get_hits',to:'contains',fromPin:'DashHitActor',toPin:'Target Array'},
       {from:'contains',to:'branch_contains',fromPin:'Return Value',toPin:'Condition'},
       {from:'branch_contains',to:'return_early',fromPin:'True',toPin:'exec',label:'True'},
       {from:'branch_contains',to:'add_unique',fromPin:'False',toPin:'exec',label:'False'},
-      {from:'get_hits',to:'add_unique',fromPin:'DashHitActors',toPin:'Target = DashHitActors'},
+      {from:'get_hits',to:'add_unique',fromPin:'DashHitActor',toPin:'Target = DashHitActor'},
       {from:'other_get',to:'add_unique',fromPin:'Other Actor',toPin:'New Item'},
       {from:'add_unique',to:'apply',fromPin:'then',toPin:'exec'},
       {from:'other_get',to:'apply',fromPin:'Other Actor',toPin:'Damaged Actor'},
@@ -395,25 +396,25 @@ const GRAPHS = {
   wiring: {
     title: 'Call sites',
     note: 'The three functions only work once they are wired into the existing BP_Player chains. These are the three small edits.',
-    desc: 'BeginDashInvincibility goes after SET bIsDashing = true, before the dash offset. TryDashDamage is called by the capsule overlap event and by the initial overlap loop. bDashInvincible is OR-ed into the first Kill Logic branch.',
-    flow: ['Dash Logic', 'Capsule BeginOverlap', 'Kill Logic'],
+    desc: 'BeginDashInvincibility goes after SET bIsDashing = true, before LaunchCharacter / the dash offset. TryDashDamage is called by the Actor Begin Overlap event and by the initial overlap loop. bDashInvincible is OR-ed into the first Kill Logic branch.',
+    flow: ['Dash Logic', 'Actor BeginOverlap', 'Kill Logic'],
     steps: [
-      '<b>Dash Logic</b>: SET bIsDashing = true &rarr; BeginDashInvincibility &rarr; AddActorWorldOffset (the existing dash move).',
-      '<b>CapsuleComponent BeginOverlap</b>: Other Actor &rarr; Branch bIsDashing? &rarr; True &rarr; TryDashDamage(Other Actor).',
+      '<b>Dash Logic</b>: SET bIsDashing = true &rarr; BeginDashInvincibility &rarr; LaunchCharacter (the existing dash move; the per-tick AddActorWorldOffset is in Dashing Logic).',
+      '<b>Actor Begin Overlap</b>: Other Actor &rarr; Branch bIsDashing? &rarr; True &rarr; TryDashDamage(Other Actor).',
       '<b>Kill Logic</b>: replace the first branch condition with <b>bIsDead OR bDashInvincible</b>; True still returns without death, False keeps the existing death chain.'
     ],
     nodes: [
       { id:'dash_set', kind:'set', title:'SET bIsDashing', sub:'EXISTING DASH LOGIC', x:30, y:40, w:260,
-        note:'The existing dash state. Call BeginDashInvincibility immediately after this SET, before AddActorWorldOffset starts moving.',
+        note:'The existing dash state. Call BeginDashInvincibility immediately after this SET, before LaunchCharacter or AddActorWorldOffset starts moving.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
       { id:'begin_call', kind:'func', title:'BeginDashInvincibility', sub:'FUNCTION CALL', x:330, y:40, w:270,
         note:'Opens the i-frame window and starts the timer. Do not call it from EndDash.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
-      { id:'move', kind:'func', title:'AddActorWorldOffset', sub:'EXISTING DASH MOVE', x:640, y:40, w:300,
-        note:'The existing movement node; the collision changes must already be in place before this runs.',
+      { id:'move', kind:'func', title:'LaunchCharacter', sub:'EXISTING DASH MOVE', x:640, y:40, w:300,
+        note:'The existing move node in Dash Logic. The per-tick AddActorWorldOffset runs in Dashing Logic; the collision changes must already be in place before either runs.',
         pins:[{name:'exec',type:'exec',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
-      { id:'overlap_event', kind:'event', title:'On Component Begin Overlap', sub:'CAPSULECOMPONENT', x:30, y:240, w:370,
-        note:'Standard Character capsule event. Other Actor is the data pin that feeds TryDashDamage.',
+      { id:'overlap_event', kind:'event', title:'Actor Begin Overlap', sub:'BP_PLAYER CAPSULE', x:30, y:240, w:370,
+        note:'Actor-level overlap from the player capsule. A CapsuleComponent On Component Begin Overlap event is equivalent; either way, Other Actor feeds TryDashDamage.',
         pins:[{name:'then',type:'exec',dir:'out'},{name:'Other Actor',type:'actor',dir:'out'}] },
       { id:'is_dashing', kind:'pure', title:'Get bIsDashing', sub:'BOOL GET', x:440, y:240, w:230,
         note:'Only a real dash may deal damage. The overlap event fires for ordinary walking too.',
@@ -459,6 +460,56 @@ const GRAPHS = {
       {from:'or_w',to:'kill_branch',fromPin:'Return Value',toPin:'Condition'},
       {from:'kill_branch',to:'no_death',fromPin:'True',toPin:'exec',label:'True'},
       {from:'kill_branch',to:'death_chain',fromPin:'False',toPin:'exec',label:'False'}
+    ]
+  },
+
+  no_knockback: {
+    title: 'Enemy: no dash knockback',
+    note: 'BP_EnemyBase.Event AnyDamage: after Update State For Hit, one Branch on the damage class skips the whole knockback block for dash damage only.',
+    desc: 'This is the enemy-side edit behind section 8.1. The event DamageType pin is otherwise unused. Get Class -> Class Is Child Of(BP_DamageType_Dash) is True for a dash hit; the True exec path ends before SET bWasKnockedBack and LaunchCharacter. Bullets use the default DamageType, so the False path keeps the old launch.',
+    flow: ['DamageType', 'Get Class', 'Class Is Child Of', 'Branch', 'dash ends early'],
+    steps: [
+      'In <b>BP_EnemyBase -> EventGraph</b>, find <b>Update State For Hit</b> and break its <b>Non-lethal</b> link into SET bWasKnockedBack.',
+      'Add <b>Get Class</b> from the <b>DamageType</b> output of Event AnyDamage.',
+      'Add <b>Class Is Child Of</b>: Test Class = Get Class; Parent Class = <b>BP_DamageType_Dash</b>.',
+      'Add a <b>Branch</b>: Non-lethal &rarr; Branch. True (dash) ends; False goes to the existing SET bWasKnockedBack &rarr; ... &rarr; LaunchCharacter chain.',
+      '<b>Do not wire True to SET bWasKnockedBack.</b> True must stay empty; False is the only pin that feeds the existing knockback chain. Reversing them keeps the class check correct but still launches on a dash.',
+      'Do not move the Branch before the Should Take Damage? gate. Health, hit reaction, Die and the invulnerable/i-frame checks must run first.'
+    ],
+    nodes: [
+      { id:'dt_pin', kind:'pure', title:'DamageType', sub:'ANY DAMAGE EVENT PIN', x:30, y:40, w:300,
+        note:'The event already receives this object; it was unconnected before this edit.',
+        pins:[{name:'DamageType',type:'object',dir:'out'}] },
+      { id:'get_class', kind:'pure', title:'Get Class', sub:'OBJECT -> CLASS', x:380, y:40, w:240,
+        note:'Pure data node. A null DamageType produces no class; Class Is Child Of then returns false.',
+        pins:[{name:'Object',type:'object',dir:'in'},{name:'Class',type:'class',dir:'out'}] },
+      { id:'is_dash_class', kind:'pure', title:'Class Is Child Of', sub:'PARENT = BP_DamageType_Dash', x:670, y:40, w:360,
+        note:'True for BP_DamageType_Dash_C and any child; false for the default DamageType object a bullet passes.',
+        pins:[{name:'Test Class',type:'class',dir:'in'},{name:'Parent Class = BP_DamageType_Dash',type:'class',dir:'in'},{name:'Return Value',type:'bool',dir:'out'}] },
+      { id:'nonlethal', kind:'func', title:'Update State For Hit', sub:'NON-LETHAL OUTPUT', x:30, y:280, w:360,
+        note:'Health subtraction, red flash, hit flipbook, LastDamageTime and i-frames already ran inside this composite. Its True/then output is the lethal Die path, not shown.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Non-lethal',type:'exec',dir:'out'}] },
+      { id:'branch_nk', kind:'branch', title:'Branch', sub:'dash damage?', x:670, y:280, w:240,
+        note:'True skips knockback; False restores the existing launch path for bullets and other damage.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Condition',type:'bool',dir:'in'},{name:'True',type:'exec',dir:'out'},{name:'False',type:'exec',dir:'out'}] },
+      { id:'end_dash', kind:'func', title:'(end)', sub:'DASH: NO KNOCKBACK', x:980, y:430, w:300,
+        note:'Leaving the True exec pin open is valid in an event graph. The enemy keeps its current aggro and movement; no bWasKnockedBack and no LaunchCharacter.',
+        pins:[{name:'exec',type:'exec',dir:'in'}] },
+      { id:'set_knock', kind:'set', title:'SET bWasKnockedBack', sub:'EXISTING NORMAL PATH', x:980, y:280, w:320,
+        note:'Existing normal-damage block: true, then bAggro = false, bStranded = false, MaxWalkSpeed = MoveSpeed, UnreachableTime = 0.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'Value = true',type:'bool',dir:'in'},{name:'then',type:'exec',dir:'out'}] },
+      { id:'launch', kind:'func', title:'LaunchCharacter', sub:'EXISTING BULLET PATH', x:1350, y:280, w:300,
+        note:'The existing knockback launch follows the normal-damage block. Dash damage never reaches it.',
+        pins:[{name:'exec',type:'exec',dir:'in'},{name:'then',type:'exec',dir:'out'}] }
+    ],
+    edges: [
+      {from:'nonlethal',to:'branch_nk',fromPin:'Non-lethal',toPin:'exec'},
+      {from:'dt_pin',to:'get_class',fromPin:'DamageType',toPin:'Object'},
+      {from:'get_class',to:'is_dash_class',fromPin:'Class',toPin:'Test Class'},
+      {from:'is_dash_class',to:'branch_nk',fromPin:'Return Value',toPin:'Condition'},
+      {from:'branch_nk',to:'end_dash',fromPin:'True',toPin:'exec',label:'True (dash)'},
+      {from:'branch_nk',to:'set_knock',fromPin:'False',toPin:'exec',label:'False'},
+      {from:'set_knock',to:'launch',fromPin:'then',toPin:'exec'}
     ]
   }
 };
