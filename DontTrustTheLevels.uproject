@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "4.27",
+	"EngineAssociation": "{65BCFA65-4870-6620-C410-8D948FA5CAF8}",
 	"Category": "COMP4900SEF",
 	"Description": "Don't Trust The Levels - a 2D action deception platformer (COMP 4900SEF group project)",
 	"Plugins": [
