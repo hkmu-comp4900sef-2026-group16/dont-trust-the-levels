@@ -431,7 +431,11 @@ bases/spawned effects, not level actors.
 - Place it on a **long corridor/platform** with solid `WorldStatic` walls at
   both ends. Minimum zone width `450`; `500+` is preferred.
 - The player must be able to dodge the charge and let it hit a wall four times.
-  Do not put it on a short platform where it cannot build speed.
+  Test a near-wall dodge and a dodge farther from the wall. While charging,
+  Rhino keeps its direction for up to 2 seconds after the player crosses
+  behind it or moves onto another platform. A wall hit turns it immediately.
+  Leave enough run-up for Rhino to build speed and enough space for the
+  player to time the dodge.
 - Both walls must actually block the capsule (`WorldStatic = Block`) and have a
   mostly vertical normal (`Abs(Normal.X) > 0.7`). Do not use one-way platforms,
   thin decorative sprites, or movable walls as the rebound surface.

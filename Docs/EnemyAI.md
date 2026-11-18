@@ -639,8 +639,9 @@ Branch: LedgeAhead() -> False: stop movement; return   # stand at edge
 Add Movement Input ((Facing,0,0), 1)
 ```
 
-If the player jumps over the enemy, `Player.X - Self.X` flips and the enemy
-turns. It does not jump, path around a wall, or step down.
+If the player jumps over a walker using the base `ChaseStep`,
+`Player.X - Self.X` flips and the walker turns. It does not jump, path around a
+wall, or step down. Rhino overrides the turn behavior (see §8.6).
 
 **De-aggro rule:** the clock behind `DeAggroTime` starts only while the player
 is **unreachable** — off the enemy's platform, or more than `MaxChaseStepZ`
@@ -1168,15 +1169,30 @@ authoring contract.
   - `bInvulnerable=true` so player bullets and `Kill` are ignored;
   - `WallHitCooldown=0.5`, `LastWallHitTime=-1000`.
 - Movement: inherited `MoveSpeed=120`, `ChaseSpeed=600`; `ChargeSpeed=600`.
-  Override `UpdateAggro`, call `Parent: UpdateAggro`, then set
-  `bCharging=bAggro`. Do not duplicate detection.
-- On `Event Hit` with `Abs(Normal.X)>0.7` and `OtherActor != Player`:
+  Keep `TurnDelay=2.0` in `BP_Rhino`.
+  - `ChaseStep` faces the player when a charge begins. If the player crosses
+    behind Rhino on the same platform, Rhino keeps its direction until the
+    player has stayed behind for 2 seconds. Returning to the front clears
+    `PlayerBehindSince` to `-1.0`.
+  - If the player moves onto another platform during a charge, `UpdateAggro`
+    keeps Rhino moving in its current direction for up to 2 seconds. It
+    accumulates the inherited `UnreachableTime` so this window counts toward
+    `DeAggroTime=2.0`. The parent then handles de-aggro and patrol.
+  - Both paths use `MoveInFacingDirection` with the inherited `LedgeAhead`
+    ground check. The parent still handles detection. After the parent
+    update, sync `bCharging` from `bAggro` and refresh the flipbook when
+    the state changes.
+- On capsule hit, ignore dead Rhino and the player. Require
+  `Abs(Normal.X)>0.7` and a valid `OtherComp` with collision object type
+  `WorldStatic`. Wall impact reverses Rhino immediately. The separate
+  `WallHitCooldown=0.5` filters repeated wall impacts.
 
 ```text
 Branch: now - LastWallHitTime < WallHitCooldown -> return
 Set LastWallHitTime = now
 Set CurrentHealth -= 1
 SetFacing(-Facing)                       # turn around after hitting wall
+Set PlayerBehindSince = -1.0
 PlayStateFlipbook(HitWallFlipbook, false)
 Branch: CurrentHealth <= 0
   True  -> Set bInvulnerable = false
