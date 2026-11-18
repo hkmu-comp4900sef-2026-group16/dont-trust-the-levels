@@ -1118,6 +1118,8 @@ hit or in a `BP_KillVolume`.
 | `LastWallHitTime` | Float | `-1000.0` |
 | `RunFlipbook` | Paper Flipbook | `FLB_Rino_Run` |
 | `HitWallFlipbook` | Paper Flipbook | `FLB_Rino_HitWall` |
+| `TurnDelay` | Float | `2.0` |
+| `PlayerBehindSince` | Float | `-1.0` |
 
 **Defaults:** `MoveSpeed=120`, `ChaseSpeed=600`, `ChargeSpeed=600`,
 `MaxHealth=4`, `CurrentHealth=4`, `bUseHealth=true`,
@@ -1129,25 +1131,31 @@ hit or in a `BP_KillVolume`.
 **BeginPlay:** `InitEnemy`; `Set bInvulnerable=true`;
 `Set bDealContactDamage=true`; `SetFacing(ChargeDirection)`;
 `Set MaxWalkSpeed=MoveSpeed`; `PlayStateFlipbook(IdleFlipbook, true)`.
-The rectangle detection is the long one: `AggroHalfWidth=1200`,
-`AggroHalfHeight=500`, `DeAggroTime=2.0`. `ChaseSpeed=600` makes the base
-`ChaseStep` use charge speed. Override `UpdateAggro`, call
-`Parent: UpdateAggro`, then set `bCharging=bAggro`: on aggro it faces the
-player horizontally and charges; on de-aggro it resumes patrol. No vertical
-movement.
+Detection uses `AggroHalfWidth=1200`, `AggroHalfHeight=500` and
+`DeAggroTime=2.0`. On aggro, Rhino faces the player and charges horizontally.
+If the player stays behind it on the same platform, Rhino waits
+`TurnDelay=2.0` seconds before turning toward them. If the player moves onto
+another platform, Rhino continues in its current direction for up to 2
+seconds before the parent handles de-aggro. Both paths retain ledge
+protection. Wall impact still reverses Rhino immediately. See
+[EnemyAI §8.6](EnemyAI.md#86-rhino) for the Blueprint flow.
 
-**`Event Hit` — the only damage path**
+**Capsule `On Component Hit` — wall damage**
 
 ```text
+Branch: bIsDead -> return
 Break Hit Result
 Branch: OtherActor == Get Player Character(0) -> return   # contact kills player
 Branch: Abs(Normal.X) > 0.7
   False -> return
   True  ->
+    Is Valid (OtherComp) -> Invalid: return
+    Branch: OtherComp.GetCollisionObjectType() != WorldStatic -> return
     Branch: now - LastWallHitTime < WallHitCooldown -> return
     Set LastWallHitTime = now
     Set CurrentHealth = CurrentHealth - 1
     SetFacing(-Facing)                       # turn around after wall
+    Set PlayerBehindSince = -1.0
     PlayStateFlipbook(HitWallFlipbook, false)
     Branch: CurrentHealth <= 0
       True  -> Set bInvulnerable = false
@@ -1155,8 +1163,8 @@ Branch: Abs(Normal.X) > 0.7
       False -> Set Timer by Function Name("EndWallHit", 0.3, false)
 ```
 
-`EndWallHit` -> `bCharging=true` if the player is still aggro/reachable,
-otherwise `bCharging=false` and patrol; `RefreshStateFlipbook`.
+`EndWallHit` returns if dead. Otherwise it syncs `bCharging` from `bAggro`
+and calls `RefreshStateFlipbook`.
 
 `RefreshStateFlipbook` override: `FLB_Rino_Run` while `bCharging`, otherwise
 `FLB_Rino_Idle`. Because `bInvulnerable=true`, player bullets and `Kill` never
