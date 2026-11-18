@@ -63,6 +63,17 @@ The actor origin is the **bottom centre** of the block. The 100x200 sprite is
 placed with its top-left at `(-50, 0, 200)`, so it stands from the floor to two
 tiles high and is centred on the actor's X.
 
+`BP_TrapBase` now carries saw-oriented defaults, so `BP_Trap_Fire` must
+**override** them (the verifier fails on the leftovers):
+
+| Component | BP_TrapBase default | BP_Trap_Fire must be |
+|---|---|---|
+| `Trigger` | `(50, 0, -50)` | `(0, 0, 50)`, extent `(50,50,50)` |
+| `Sprite` | `(0, 0, 0)`, `BlockAllDynamic`, no flipbook | `(-50, 0, 200)`, `NoCollision`, `FLB_Fire_Off` |
+
+`Trigger` and `Sprite` are children of the inherited `TrapRoot` (at `(0,0,0)`),
+so the numbers above are relative to the actor origin.
+
 `Trigger` is the damage box; `StepBox` only starts the cycle. Do **not** add a
 second `Kill` or `Apply Damage` in this Blueprint; `BP_TrapBase` owns the
 player death.
@@ -119,11 +130,17 @@ On Component Begin Overlap (StepBox)
                      Sprite -> Set Looping (false)
                      Sprite -> Set Playback Position (0.0, false)
                      Sprite -> Play
-                     Set Timer by Event (Time = GET Delay, Event = FireOn)
+                     Set Timer by Function Name
+                       (Object = self, Function Name = FireOn, Time = GET Delay)
        False -> (nothing)
 ```
 
 Only the player starts the trap. Bullets and enemies are ignored.
+
+**Timer node:** use **Set Timer by Function Name** (the pattern already used in
+the other enemy traps), with `Function Name` = `FireOn` / `FireOff`. The custom
+event names must match the string exactly. The delegate version
+(**Set Timer by Event**) also works; both pass the verifier.
 
 ### 5.3 `FireOn` (custom event, timer target)
 
@@ -134,7 +151,8 @@ FireOn
   -> Sprite -> Play
   -> Trigger -> Set Collision Enabled (QueryOnly)
   -> SET bBurning = true
-  -> Set Timer by Event (Time = GET FireDuration, Event = FireOff)
+  -> Set Timer by Function Name
+       (Object = self, Function Name = FireOff, Time = GET FireDuration)
 ```
 
 Enabling `Trigger` kills a player who steps in while the fire is on.
@@ -178,8 +196,8 @@ only after the player steps off and back on.
 ### 5.5 Timer cleanup
 
 If the trap is destroyed or the level restarts, clear pending timers. Use
-`Set Timer by Event` with a `TimerHandle` variable only if you need to cancel;
-for a short one-shot sequence the default behaviour is acceptable.
+`Set Timer by Function Name` with a `TimerHandle` variable only if you need to
+cancel; for a short one-shot sequence the default behaviour is acceptable.
 
 ---
 
@@ -208,3 +226,27 @@ for a short one-shot sequence the default behaviour is acceptable.
 8. Wait for `FireOff`, step off and back on -> the cycle repeats.
 9. Die/respawn -> the block returns to off and can trigger again.
 10. Compile -> `Compile of BP_Trap_Fire successful`.
+
+---
+
+## 8. Verifier
+
+The shell, `FLB_Fire_Off` and the build guide are already created. Before PIE,
+run the read-only structural verifier (editor open, PIE stopped):
+
+```
+py -3 Scripts/_verify_fire.py
+```
+
+It checks the inheritance, `StepBox`/`Trigger` placement and collision, the two
+editable floats, `FLB_Fire_Off` (1 frame, 12 fps), the player gate, the
+`bCycleActive` gate, both timers, the three flipbook states, and that
+`BP_Trap_Fire` adds no second `Kill`.
+
+`PENDING` = not built yet; `FAIL` = built but contradicts this guide. With the
+fresh shell the three expected failures are the inherited saw defaults
+(`Trigger` at `(50,0,-50)`, `Sprite` at `(0,0,0)` and `BlockAllDynamic`) that
+the table in section 3 asks you to override.
+
+UE Python cannot read the *Instance Editable* flag, so the verifier prints a
+`WARN` for `Delay`/`FireDuration`; tick the eye icon on both yourself.
