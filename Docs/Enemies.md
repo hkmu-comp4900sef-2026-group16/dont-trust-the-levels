@@ -1112,7 +1112,7 @@ hit or in a `BP_KillVolume`.
 | Name | Type | Default |
 |---|---|---|
 | `bCharging` | Boolean | `false` |
-| `ChargeSpeed` | Float | `600.0` |
+| `ChargeSpeed` | Float | `1200.0` |
 | `ChargeDirection` | Float | `1.0` |
 | `WallHitCooldown` | Float | `0.5` |
 | `LastWallHitTime` | Float | `-1000.0` |
@@ -1121,12 +1121,18 @@ hit or in a `BP_KillVolume`.
 | `TurnDelay` | Float | `2.0` |
 | `PlayerBehindSince` | Float | `-1.0` |
 
-**Defaults:** `MoveSpeed=120`, `ChaseSpeed=600`, `ChargeSpeed=600`,
+**Defaults:** `MoveSpeed=120`, `ChaseSpeed=1200`, `ChargeSpeed=1200`,
 `MaxHealth=4`, `CurrentHealth=4`, `bUseHealth=true`,
 `bInvulnerable=true` (bullets/Kill no-op), `ContactDamage=1`,
 `IdleFlipbook=FLB_Rino_Idle`, `HitFlipbook=FLB_Rino_Hit`,
 `DeathFlipbook=FLB_Rino_HitWall`. `MoveSpeed` is inherited from
 `BP_EnemyBase`; do not add it again.
+
+The effective charge speed is **`ChaseSpeed`**: the base `UpdateAggro` sets
+`MaxWalkSpeed = ChaseSpeed` when the player enters the aggro box (and back to
+`MoveSpeed` on de-aggro). `ChargeSpeed` is declared but no node reads it, so
+changing it alone does nothing. `ChaseSpeed=1200` is above the player's
+`MaxWalkSpeed=1000`, so the charge closes distance; patrol stays at `120`.
 
 **BeginPlay:** `InitEnemy`; `Set bInvulnerable=true`;
 `Set bDealContactDamage=true`; `SetFacing(ChargeDirection)`;
@@ -1166,8 +1172,11 @@ Branch: Abs(Normal.X) > 0.7
 `EndWallHit` returns if dead. Otherwise it syncs `bCharging` from `bAggro`
 and calls `RefreshStateFlipbook`.
 
-`RefreshStateFlipbook` override: `FLB_Rino_Run` while `bCharging`, otherwise
-`FLB_Rino_Idle`. Because `bInvulnerable=true`, player bullets and `Kill` never
+`RefreshStateFlipbook` override: `FLB_Rino_Run` while **moving** (patrol or
+charge), otherwise `FLB_Rino_Idle`. The movement test is
+`Get Velocity -> Vector Length > 10`; the old condition was `bCharging` only,
+which left the patrol walking with the idle sheet (the "sliding in idle" bug).
+Because `bInvulnerable=true`, player bullets and `Kill` never
 reduce health; the wall event is the only path. Falling into a `BP_KillVolume`
 still destroys it by `Enemy` tag.
 
