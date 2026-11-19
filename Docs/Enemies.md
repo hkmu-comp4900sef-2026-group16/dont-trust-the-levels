@@ -1,0 +1,1875 @@
+# Enemies — base class, nine mechanics, and build sheets
+
+**Status (24 Oct 2026):** the Enemy pillar has **20 Blueprint shells** under
+`Content/DontTrustTheLevels/Enemies/Blueprints/`, created by
+`Scripts/_make_enemies.py`. The 19 enemy shells were new in the first pass; the
+20th, `BP_EnemyPlatform`, is the platform marker added for the `EnemyAI.md`
+rework. Their inherited Paper2D, capsule, movement, tag and lifespan defaults
+pass **199 / 0 / 2** in `Scripts/_verify_enemies.py` (the two warnings are the
+expected "Zone component not added yet" hand-work note on `BP_EnemyPlatform`).
+
+This build's Python **cannot create event graphs, variables, functions, SCS
+components or implemented interfaces** (probed in
+`Scripts/_probe_graph_api.py` / `_probe_blueprint_vars.py`). The shells are
+real and configured; the behaviour below is the **hand work** left in the
+editor. The same boundary is documented in `ProjectileShooting.md` §“Limits”
+and `Structure.md` §11.
+
+**Team execution (24 Oct 2026; A split 27 Oct 2026; B retired 4 Nov 2026):**
+`Docs/EnemyWorkPlan.md` assigns this work to three slots (A1/A2/C), defines the
+M1 base gate, the asset locks and the per-enemy acceptance tests. Owner B's
+assets (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) and `L_Level_Testing`
+moved to A2. Walkers still cannot start their graphs or PIE before the
+`BP_EnemyBase` AI gate; A1/A2 may prepare walker defaults and A2 may stage
+static map placement, while stationary/flyers and the projectile/puddle/shooter
+support run in parallel. The work plan does not override the technical rules
+below.
+
+> **⚠ 21 Oct 2026 AI revision.** Movement, patrol, detection, platform
+> ownership, stairs and contact-damage collision are redefined in
+> **`Docs/EnemyAI.md`**. Where the two files disagree, `EnemyAI.md` wins.
+> Key changes: Spike Turtle is stationary/invulnerable; walkers use
+> `BP_EnemyPlatform` zones and never walk off ledges; walkers use a rectangular
+> aggro box + de-aggro; Ghost/Bat use a sphere + no de-aggro; Rhino has 4
+> wall-health; Wood Log uses a finite rectangle; every contact is `1.0` and
+> needs the collision fix in `EnemyAI.md` §9. Level-placement rules are in
+> **`Docs/EnemyPlacement.md`**.
+
+---
+
+## 1. What exists
+
+| Asset | Parent | Role | Default art |
+|---|---|---|---|
+| `BP_EnemyBase` | `PaperCharacter` | shared health / damage / death / contact / facing | — |
+| `BP_ShooterEnemyBase` | `BP_EnemyBase` | shared ranged logic (fire interval, muzzle, projectile) | — |
+| `BP_RockBase` | `BP_EnemyBase` | shared split logic / piece cap | — |
+| `BP_EnemyPlatform` | `Actor` | hidden walkable-platform marker for patrol/home zones | — |
+| `BP_SpikeTurtle` | `BP_EnemyBase` | spikes-out invulnerability | `FLB_Turtle_Idle01` |
+| `BP_PeaPlant` | `BP_ShooterEnemyBase` | **unused** — Wood Log is the only shooter | `FLB_Plant_Idle` |
+| `BP_WoodLog` | `BP_ShooterEnemyBase` | moving wood shooter | `FLB_Trunk_Idle` |
+| `BP_Snail` | `BP_EnemyBase` | shell sweep after death | `FLB_Snail_Idle` |
+| `BP_Ghost` | `BP_EnemyBase` | visible/invisible cycle | `FLB_Ghost_Idle` |
+| `BP_Rock1` | `BP_RockBase` | tier 1, splits ×2 | `FLB_Rock1_Idle` |
+| `BP_Rock2` | `BP_RockBase` | tier 2, splits ×2 | `FLB_Rock2_Idle` |
+| `BP_Rock3` | `BP_RockBase` | tier 3, final | `FLB_Rock3_Idle` |
+| `BP_ToxicSlime` | `BP_EnemyBase` | leaves toxic tracks | `FLB_Slime_IdleRun` |
+| `BP_Rhino` | `BP_EnemyBase` | wall-only death | `FLB_Rino_Idle` |
+| `BP_FloatingSkull` | `BP_EnemyBase` | ON/OFF wall toggle | `FLB_Skull_Idle01` |
+| `BP_Bat` | `BP_EnemyBase` | ceiling trigger → chase | `FLB_Bat_CeilingIn` |
+| `BP_EnemyProjectile` | `PaperSpriteActor` | enemy bullet base | — (5 s lifespan) |
+| `BP_EnemyProjectile_Pea` | `BP_EnemyProjectile` | pea bullet | `SPR_Plant_Bullet` |
+| `BP_EnemyProjectile_Wood` | `BP_EnemyProjectile` | wood bullet | `SPR_Trunk_Bullet` |
+| `BP_ToxicPuddle` | `PaperSpriteActor` | slime trail hazard | `SPR_Slime_Particles` (3 s lifespan) |
+
+**Tags already set on the CDOs**
+
+- every enemy: `Enemy` + `Enemy.<Type>` (e.g. `Enemy.Turtle`)
+- bases: `Enemy.Base`, `Enemy.Shooter`, `Enemy.Rock`
+- flying: `Enemy.Flying`; special: `Enemy.Invulnerable`, `Enemy.Charger`,
+  `Enemy.Phase`, `Enemy.Toggle`, `Enemy.Toxic`, `Enemy.Shell`
+- projectiles: `EnemyProjectile` + `EnemyProjectile.Pea` / `.Wood`
+- puddle: `Enemy.Hazard`, `ToxicPuddle`
+
+Tags are identifiers, not collision filters. `BP_Projectile` does **not** read
+them today.
+
+---
+
+## 2. Architecture decisions
+
+| Decision | Why |
+|---|---|
+| `BP_EnemyBase` is a `PaperCharacter`, not `Actor` | inherited `Sprite0` (PaperFlipbookComponent), `CollisionCylinder` (capsule) and `CharacterMovement` mean a shell already renders and collides; no SCS components needed. |
+| One `BP_EnemyBase` + data/overrides | shared damage/death/facing/animation; each enemy only owns its state machine. |
+| `BP_ShooterEnemyBase` | Wood Log and Pea Plant share the same function; Wood Log is the only shooter used. |
+| `BP_RockBase` + three children | split tier is data; art and health differ per child. |
+| Actor tags on CDO | lets later systems find enemies without a hard cast; also documents intent in the Content Browser. |
+| Contact damage checks `Get Player Character(0)` | enemies do not damage each other; no player-class cast and no new interface. |
+| `BPI_Killable` on the base | the player projectile and `BP_KillVolume` speak it. Ordinary traps do **not**: they are player-only so enemies never trigger them (see 2.3). |
+
+### 2.1 The projectile contract (important)
+
+`BP_Projectile`'s hit graph currently does:
+
+```text
+On Component Hit → gates → Does Implement Interface(OtherActor, BPI_Killable)
+  → True → Apply Point Damage → Kill (Message) on OtherActor
+```
+
+So an enemy that implements `BPI_Killable` receives **point damage and then a
+Kill message in the same frame**. If `Kill` always died, every bullet would be
+a one-hit kill and `MaxHealth` would be meaningless.
+
+`BP_EnemyBase` therefore uses a **damage-frame guard**:
+
+```text
+Event AnyDamage:
+    set LastDamageTime = now
+    ... subtract health ...
+
+Event Kill:
+    if bIsDead            -> return
+    if bInvulnerable      -> return
+    if bUseHealth AND (now - LastDamageTime < 0.05)
+        -> return          # this is the projectile's immediate Kill, not a trap
+    Die
+```
+
+Consequences:
+
+- A surviving bullet hit does **not** kill; health works.
+- A second bullet in the same 0.05 s window also just damages (its Kill is ignored).
+- `BP_KillVolume` destroys `Enemy`-tagged actors at the pit bottom; it does not rely on `Kill`, which would be ignored while `bInvulnerable`. Ordinary traps never call `Kill` or `Destroy Actor` on an enemy (see 2.3).
+- Rhino now has 4 wall health (`MaxHealth=4`, `bInvulnerable=true` so bullets
+  are no-ops). Each wall `Event Hit` subtracts 1 and turns it; the 4th calls
+  `Die`. See `EnemyAI.md` §8.6.
+- If you would rather make this explicit, add one `Actor Has Tag(OtherActor,
+  "Enemy")` gate before `Kill` in `BP_Projectile` (Weapons pillar) and remove
+  the time guard. That is a one-node change; it is **not** applied here.
+
+### 2.2 Player damage
+
+The player has no health variable today; `BP_Player` implements `Kill` and
+reloads the level. Enemy contact damage therefore calls the **Kill message** on
+the player, after confirming `OtherActor == Get Player Character(0)` and
+`Does Implement Interface(OtherActor, BPI_Killable)`. If the target is not
+killable, the overlap falls back to `Apply Damage` with `ContactDamage` (see
+§4.4). If `BP_Player` gains health later, replace that Kill with `Apply Damage`
+first.
+
+**Dash damage is not a second contract.** `DashDamage.md` has `BP_Player` send
+`ApplyDamage` to any capsule overlap tagged `Enemy`; that is the same
+`AnyDamage` gate above (`bIsDead / bInvulnerable / bIFrameActive / bUseHealth`).
+A dash therefore hurts exactly the phases a bullet can hurt and cannot bypass
+the Spike Turtle, Rhino, hidden Ghost, ON Skull or Snail shell. No enemy asset
+needs a new function or variable for the dash.
+
+### 2.3 Trap interaction contract (enemy-neutral)
+
+**Enemies never trigger traps and traps never damage enemies. The only
+trap-related death is falling into a player-triggered hole.**
+
+| Rule | Implementation |
+|---|---|
+| No spike/fake-floor/saw trigger | Ordinary trap overlaps gate on `Equal(OtherActor, Get Player Character(0))`, not `BPI_Killable` |
+| No trap damage | Spikes are player-only and their `Sprite` is `NoCollision`; an enemy can stand in active spikes and walk through unharmed |
+| No enemy-caused collapse | `BP_Trap_FakeFloor.TriggerBox` drops the floor only for the player |
+| Enemies can fall | Gravity/collision still apply; an enemy on a floor when the **player** drops it falls with it |
+| Only the pit kills | `BP_KillVolume` keeps `BPI_Killable`; a tagged enemy that physically enters the `KillBox` is destroyed, bypassing `bInvulnerable` |
+| Projectile still damages | `BP_Projectile` still uses `BPI_Killable` + `ApplyPointDamage`; this is not trap damage |
+| Invulnerable still falls | A spikes-out turtle or Rhino dies in a pit because the volume destroys `Enemy`-tagged actors instead of relying on `Kill` |
+
+Why not reuse `BPI_Killable` for traps? Because `BP_EnemyBase` implements the
+same interface for bullets and pit death. The old trap gate would then make
+enemies pop spikes and take trap damage for free. `Docs/TrapTriggers.md` §2.1
+and §4.5 have the exact graph edits; `Scripts/_verify_traps.py` enforces them.
+
+**Do not** add a "trap immunity" collision channel to enemies. Keep the default
+`Pawn` capsule: collision is shared with terrain, bullets and the pit volume.
+The separation is the player-equality gate in the trap graph, which is also why
+an active spike can be walked through without a special enemy state.
+
+> **Contact damage (fixed 25 Oct 2026).** `BP_EnemyBase` has a `ContactBox`
+> (`Pawn=Overlap`, all else `Ignore`) bound to the contact chain, and
+> `CollisionCylinder` is now `Pawn = Overlap`, so the player cannot stand on the
+> enemy and the box catches the fall. Verified **45 PASS / 0 FAIL** for the
+> contact chain and **4 PASS / 0 FAIL** for the four enemy classes. See
+> `EnemyAI.md` §9.
+
+---
+## 3. `BP_EnemyBase` — variables, functions, components
+
+### 3.1 Components (inherited; do not add duplicates)
+
+| Component | Class | Use |
+|---|---|---|
+| `CollisionCylinder` | `CapsuleComponent` | root, terrain/bullet collision, `Event Hit` |
+| `ContactBox` (add by hand) | `BoxComponent` | player contact overlap; `Pawn=Overlap`, everything else `Ignore` |
+| `Sprite0` | `PaperFlipbookComponent` | all animation; rename variable only if you prefer `Sprite` |
+| `CharMoveComp` | `CharacterMovementComponent` | walking / flying / disabling movement |
+
+No SCS components are added by the generator. The **`ContactBox` is the one
+required hand-added component** (see `EnemyAI.md` §9); the inherited capsule
+stays solid for terrain/bullets and cannot generate player overlaps while both
+capsules are `Pawn=Block`. Do not use the capsule for contact events.
+
+`BP_EnemyBase` also has **Auto Possess AI = Placed In World Or Spawned** and the
+default `AIController` class. That is what makes `Add Movement Input` work for a
+placed enemy (and for rocks spawned at runtime) without a custom AI controller;
+it does not add a Behavior Tree or any AI logic.
+
+### 3.2 Variables (add in **My Blueprint → Variables**)
+
+| Name | Type | Default | Purpose |
+|---|---|---|---|
+| `MaxHealth` | Float | `3.0` | full health; children override |
+| `CurrentHealth` | Float | `3.0` | runtime |
+| `bUseHealth` | Boolean | `true` | false = ignore health (Spike Turtle); Rhino keeps health but is `bInvulnerable` |
+| `bInvulnerable` | Boolean | `false` | spikes-out / skull-on / rhino / i-frame gate |
+| `bIFrameActive` | Boolean | `false` | short post-hit immunity |
+| `IFrameDuration` | Float | `0.30` | i-frame length |
+| `LastDamageTime` | Float | `-1000.0` | damage-frame guard |
+| `bIsDead` | Boolean | `false` | hard stop |
+| `ContactDamage` | Float | `1.0` | used only for non-player damage fallback |
+| `bDealContactDamage` | Boolean | `true` | contact hazards on/off |
+| `ContactDamageCooldown` | Float | `0.50` | prevents overlap spam |
+| `LastContactDamageTime` | Float | `-1000.0` | cooldown stamp |
+| `KnockbackForce` | Float | `1200.0` | hit reaction (retuned from `200` on 7 Nov 2026, §4.2) |
+| `HitRecoveryTime` | Float | `0.20` | hit flipbook return |
+| `IdleFlipbook` | Paper Flipbook | child | base state |
+| `HitFlipbook` | Paper Flipbook | child | damage reaction |
+| `DeathFlipbook` | Paper Flipbook | child | death pose |
+| `Facing` | Integer | `1` | `1` right, `-1` left |
+| `DestroyDelay` | Float | `1.0` | seconds before `Destroy Actor` |
+| `ScoreValue` | Integer | `10` | optional score hook |
+| `MoveSpeed` | Float | `100.0` | child movement |
+| `bCanMove` | Boolean | `true` | attack/state pause |
+
+Set `MaxHealth`/`CurrentHealth` defaults per child (see §5–§7). The generator
+sets capsule/movement per child; these variables are **not** set by Python.
+
+### 3.3 Functions (all in `BP_EnemyBase`)
+
+| Function | Inputs | Outputs | Job |
+|---|---|---|---|
+| `InitEnemy` | — | — | set health/flags/facing, play idle |
+| `PlayStateFlipbook` | `NewFlipbook` (Paper Flipbook), `bLoop` (Boolean) | — | set + loop + play only when changed |
+| `SetFacing` | `Direction` (Float) | — | `Facing = sign(Direction)`; yaw 180 for +1 (right), yaw 0 for -1 (left) on `Sprite0` |
+| `RefreshStateFlipbook` | — | — | base plays `IdleFlipbook`; children override |
+| `ClearIFrames` | — | — | `bIFrameActive = false` |
+| `RecoverFromHit` | — | — | white sprite color + `RefreshStateFlipbook` |
+| `Die` | — | — | shared death; children override for shell/split |
+| `Kill` | interface event | — | forced death, with damage-frame guard |
+
+`Die` and `RefreshStateFlipbook` must be **functions**, not custom events, so a
+child can right-click → **Override**. Do not implement `Kill` as a function; it
+is the `BPI_Killable` **event** (the interface function has no outputs, and
+`Structure.md` §9 requires the event form).
+
+### 3.4 Class Settings
+
+1. **Class Settings → Interfaces → Add → `BPI_Killable`.**
+2. Compile. The **Event Kill** node should now appear under *Interfaces*.
+3. If it does not: remove and re-add `BPI_Killable` (the interface existed
+   before the class picked it up; documented in `Structure.md` §9).
+
+---
+
+## 4. `BP_EnemyBase` — event graph (build order)
+
+### 4.1 `Event BeginPlay` → `InitEnemy`
+
+```text
+Event BeginPlay
+  → InitEnemy
+```
+
+`InitEnemy` body:
+
+```text
+Set CurrentHealth   = MaxHealth
+Set bIsDead         = false
+Set bInvulnerable   = false
+Set bIFrameActive   = false
+Set LastDamageTime  = -1000.0
+Set LastContactDamageTime = -1000.0
+Set Facing          = 1
+PlayStateFlipbook (IdleFlipbook, true)
+```
+
+Children that add their own `Event BeginPlay` must call **`InitEnemy` first**
+then start their own timers/state. If a child does not add BeginPlay, the
+inherited base BeginPlay runs normally.
+
+### 4.2 `Event AnyDamage` (health + hit reaction)
+
+```text
+Event AnyDamage (Damage, DamageType, InstigatedBy, DamageCauser)
+  → Branch: bIsDead OR bInvulnerable OR bIFrameActive OR NOT bUseHealth
+      True  → (return)
+      False →
+        Set LastDamageTime = Get Game Time in Seconds
+        Set bIFrameActive  = true
+        Set Timer by Function Name ("ClearIFrames", IFrameDuration, false)
+        Set CurrentHealth  = CurrentHealth - Damage
+        Set Sprite0 Sprite Color = Red
+        PlayStateFlipbook (HitFlipbook, false)
+        Set Timer by Function Name ("RecoverFromHit", HitRecoveryTime, false)
+        Branch: CurrentHealth <= 0
+          True  → Die
+          False → Branch: DamageType is BP_DamageType_Dash?
+                    True  → (return; no knockback block)
+                    False → knockback block:
+                              bWasKnockedBack = true
+                              bAggro = false; bStranded = false
+                              MaxWalkSpeed = MoveSpeed; UnreachableTime = 0
+                              LaunchCharacter(...)
+```
+
+`LastDamageTime` has two readers: the i-frame bookkeeping here and, when
+`bAggroOnHit` is true, the base `UpdateAggro` hit window (`EnemyAI.md` §6.2).
+The stamp only happens after the gate above, so a hit swallowed by i-frames
+does not wake a sleeping walker.
+
+Knockback (optional, but it sells the hit):
+
+```text
+Get Actor Location (DamageCauser) → Break Vector
+Get Actor Location (Self)         → Break Vector
+Sign(Self.X - Causer.X) → Multiply(KnockbackForce) ──┐
+KnockbackForce → Multiply(0.4)  → Z ─────────────────┴→ Make Vector(X, 0, Z)
+                                                       → Launch Character(
+                                                             bXYOverride = true,
+                                                             bZOverride  = true)
+```
+
+If `DamageCauser` is not valid, use `-Facing * KnockbackForce`.
+
+> **Dash damage skips the launch (13 Nov 2026).** `BP_Player.TryDashDamage`
+> sets `ApplyDamage.DamageTypeClass = BP_DamageType_Dash`. In the EventGraph,
+> after the `Update State For Hit` composite's **`Non-lethal`** pin, add:
+>
+> ```text
+> DamageType -> Get Class -> Class Is Child Of (Parent Class = BP_DamageType_Dash)
+>                          -> Branch
+> True  (dash)            -> end; no bWasKnockedBack, no LaunchCharacter
+> False (bullet / other)  -> SET bWasKnockedBack -> ... -> LaunchCharacter
+> ```
+>
+> **True must stay unconnected; False goes to `SET bWasKnockedBack`.** If
+> those two exec pins are swapped, the class check still looks correct but the
+> dash still launches. Keep the branch after `Update State For Hit`: health, hit reaction,
+> `LastDamageTime`, i-frames and `Die` already ran, and the
+> `bIsDead / bInvulnerable / bIFrameActive / bUseHealth` gate still rejects an
+> ineligible hit. Do not branch before that gate. All enemy children inherit
+> this one event (verified 13 Nov 2026: only `BP_EnemyBase` has a
+> `ReceiveAnyDamage` graph), so no child needs the same branch.
+
+> **The `Z` term is the knockback** (7 Nov 2026 retune). A purely horizontal
+> `(F, 0, 0)` vector moves a grounded walker about **15 uu**, however large `F`
+> is: `Launch()` stores the vector, `bForceNextFloorCheck` re-grounds the victim
+> on the next move (`Vz = 0`), and `ApplyVelocityBraking` strips everything above
+> `GetMaxSpeed()` = `MaxWalkSpeed` — written as `MoveSpeed` a few nodes earlier —
+> at `GroundFriction^2 * BrakingDecelerationWalking` = `8^2 * 2048` =
+> 131072 uu/s². Only the `GroundFriction` (8) decay is left, `~v/8` uu. The
+> vertical component keeps the victim in `MOVE_Falling`, where ground friction
+> does not apply and `bWasKnockedBack` skips the AI Tick, for
+>
+> ```text
+> t_air = 2 * Lift / (980 * GravityScale)       enemies run GravityScale = 3
+> shove = KnockbackForce * t_air = F^2 / 3675    when Lift = 0.4 * F
+> ```
+>
+> `F = 200` (the old default) gave `Lift 80`, `t_air 0.054 s`, `~11 uu`.
+> `F = 1200` (live since 7 Nov 2026) gives `Lift 480`, `t_air 0.327 s`,
+> **`~392 uu`** plus the ~15 uu ground slide — roughly half of a `600`-wide
+> platform, with a `39 uu` hop. Tune `KnockbackForce` per enemy weight; keep the
+> `0.4` factor. The lift is a **multiple of** `KnockbackForce`, so `BP_Bat`
+> (`KnockbackForce = 0`) still sends a zero vector and keeps
+> `MOVE_Flying`/`MaxFlySpeed`.
+>
+> **Status (7 Nov 2026):** both halves are live. `KnockbackForce = 1200` is saved
+> in `BP_EnemyBase.uasset`, and the `MakeVector.Z` link
+> (`KnockbackForce → Multiply(0.4) → Z`, pasted from
+> `Scripts/_bp_enemy_base_knockback_lift_paste.txt`, compiled and saved) is in the
+> asset: `py -3 Scripts/_run_knockback_lift_check.py` prints `RESULT: PASS` with
+> `lift=480 uu air=0.327 s shove=392 uu`. What is left is the *feel* check in PIE
+> (tests 7 and 8), not the wiring.
+>
+> **Every walker now shares one number (7 Nov 2026, later).** `BP_Snail` still
+> carried the pre-retune `KnockbackForce = 200` override while the base and all
+> other walkers were `1200`, so it moved 11 uu where a rock moved 392 uu — the
+> "rock flies, snail twitches" report. Because the reach is `F² / 3675`, a child
+> that keeps an old force is 35x weaker at the same lift factor. The override is
+> removed: `py -3 Scripts/_run_set_knockback_uniform.py` copies the base value
+> onto every walker child (idempotent; `BP_Bat` stays `0` on purpose, see §6.8,
+> and the MOVE_Flying children are reported, not written). Inspect the live
+> values with `py -3 Scripts/_run_dump_enemy_cdo.py`.
+
+
+> **`bZOverride` must be `true`** (corrected 7 Nov 2026). With `false`,
+> `LaunchCharacter` adds the victim's *current* Z velocity to the authored
+> `(Force, 0, 0)` vector, so `KnockbackForce = 0` still sends a **non-zero**
+> `PendingLaunchVelocity` whenever the victim is moving vertically.
+> `UCharacterMovementComponent::Launch` stores it, and the next
+> `PerformMovement` calls `HandlePendingLaunch()`, which runs
+> `SetMovementMode(MOVE_Falling)`. Grounded walkers have `Vz ≈ 0`, so their
+> knockback is unchanged; a flyer loses `MOVE_Flying`. `GetMaxSpeed()` then
+> returns `MaxWalkSpeed` — which this same handler writes as `MoveSpeed` — and
+> `GetFallingLateralAcceleration()` keeps only X/Y and scales by `AirControl`
+> (0.05). That is the "Bat crawls after a hit" bug. With `bZOverride = true` a
+> zero force produces a zero vector, `HandlePendingLaunch()` returns early and
+> the flyer keeps `MOVE_Flying` / `MaxFlySpeed`. The live pin is `true` since
+> 7 Nov 2026; if it is ever reverted, every flying child needs its own guard
+> (`Enemies.md` §6.8, Option B).
+
+> `ApplyPointDamage` from `BP_Projectile` raises **both** `AnyDamage` and
+> `PointDamage`. Bind only **AnyDamage** here; binding both would subtract twice.
+
+### 4.3 `Event Kill` (forced death)
+
+```text
+Event Kill
+  → Branch: bIsDead            → True: return
+  → Branch: bInvulnerable      → True: return
+  → Branch: bUseHealth AND (Get Game Time in Seconds - LastDamageTime < 0.05)
+      True  → return           # projectile's immediate Kill
+      False → Die
+```
+
+This is the whole reason a 3-health turtle is not a one-shot.
+
+### 4.4 Contact damage (`Event ActorBeginOverlap` / component overlap)
+
+> **21 Oct 2026, fixed 25 Oct 2026:** the contact chain is bound to the
+> `ContactBox` overlap component. The inherited capsule is `Pawn = Overlap` now,
+> so the player falls through the enemy instead of standing on it; the box
+> catches contact. `WorldStatic`/`WorldDynamic` stay `Block` for terrain and
+> bullets. See `EnemyAI.md` §9.
+
+```text
+Event ActorBeginOverlap (OtherActor)
+  → Branch: OtherActor == Get Player Character (Player Index 0)
+      False → (return)
+      True  →
+        Branch: bIsDead OR NOT bDealContactDamage → True: return
+        Branch: (Get Game Time - LastContactDamageTime) < ContactDamageCooldown
+          True  → return
+          False →
+            Set LastContactDamageTime = Get Game Time in Seconds
+            Does Implement Interface (OtherActor, BPI_Killable)
+              True  → Kill (Message)   Target = OtherActor
+              False → Apply Damage (OtherActor, ContactDamage, ...)
+```
+
+Keep the player-equality gate. Without it every enemy would kill every other
+enemy that also implements `BPI_Killable`.
+
+---
+
+### 4.5 `Function Die` (shared death)
+
+```text
+Branch: bIsDead → True: return
+Set bIsDead            = true
+Set bInvulnerable      = true
+Set bDealContactDamage = false
+CharMoveComp → Disable Movement
+CollisionCylinder → Set Collision Enabled (No Collision)
+Sprite → Set Flipbook (DeathFlipbook)
+Sprite → Set Looping (false)
+Sprite → Play
+Clear Timer by Function Name ("RecoverFromHit")
+[optional: score / sound / spawn effect]
+Set Life Span (DestroyDelay)
+```
+
+`DestroyDelay` must be wired into `Set Life Span`'s **In Lifespan** pin. A
+literal `0.0` clears the lifespan timer, so the corpse never auto-destroys.
+
+> The `[optional: score / sound / spawn effect]` slot is where the kill-triggered
+> random shooting-effect switch goes: one `Get Player Character` +
+> `BPI_EffectUser` message between `Clear Timer` and the `Destory Actor after
+> delay` box. Build card: `Docs/EffectSwitchOnKill.md` §4 (planned, nothing
+> built yet).
+
+`Clear Timer ("RecoverFromHit")` is **required**. `AnyDamage` schedules that
+timer just before calling `Die` on a lethal hit; if it is left pending it fires
+0.2 s later, `RefreshStateFlipbook` plays `IdleFlipbook`, and the death art
+snaps back to idle for the rest of `DestroyDelay`. Clearing `"ClearIFrames"` is
+optional (it only resets a flag that no longer matters while dead).
+
+Overrides:
+
+- **Snail**: do not call `Die`; transition to the shell (see §6.3).
+- **Rocks**: spawn children, then call `Parent: Die` (see §6.2).
+- **Rhino**: call `Die` only from the wall-hit event (see §7.1).
+
+### 4.6 Helper functions — exact pins
+
+```text
+PlayStateFlipbook(NewFlipbook, bLoop)
+  Branch: NewFlipbook == None → return
+  Branch: Sprite0 → Get Flipbook == NewFlipbook
+    (if your graph has no Get Flipbook node, read Source Flipbook instead)
+    True  → Sprite0 → Set Looping(bLoop) → Play
+    False → Sprite0 → Set Flipbook(NewFlipbook)
+            → Set Looping(bLoop) → Play
+```
+
+`SetFacing(Direction)`:
+
+```text
+Branch: Direction >= 0
+  True  → Set Facing = 1   → Sprite Set Relative Rotation  (Yaw 180)
+  False → Set Facing = -1  → Sprite Set Relative Rotation  (Yaw 0)
+```
+
+Enemy art is drawn facing **left** at yaw 0, unlike `BP_Player`. `Facing`
+remains the movement sign (+1 = +X), so the **visual** mapping is inverted:
+yaw 180 faces right and yaw 0 faces left. `InitEnemy` must call
+`SetFacing(1.0)`, not merely set the `Facing` integer, or the sprite stays at
+its default yaw 0 (left) until the first patrol turn.
+
+The flip goes in the **Yaw** box. The saved `NewRotation` is ordered Pitch,
+Yaw, Roll, so a correct true branch serialises as `0, 180, 0`; the false
+branch is `0, 0, 0`. Typing `0, 0, 180` puts the 180 on Roll instead. Drag the
+`Sprite` component into the graph and pick **Set Relative Rotation** — plain
+"Set Actor Relative Rotation" targets the actor, not the flipbook.
+
+Ghost's art is also left-facing. Its chase previously multiplied
+`(Player.X - Self.X)` by `-1` to compensate for the old yaw 0 = right mapping;
+with this corrected mapping, feed Ghost the raw `Player.X - Self.X`.
+
+`ClearIFrames` → `Set bIFrameActive = false`.
+
+`RecoverFromHit` → `Set Sprite0 Sprite Color (White)` →
+`RefreshStateFlipbook`.
+
+`RefreshStateFlipbook` (base) → `PlayStateFlipbook(IdleFlipbook, true)`.
+
+---
+
+## 5. `BP_ShooterEnemyBase` + projectiles + puddle
+
+### 5.1 `BP_ShooterEnemyBase` variables
+
+| Name | Type | Default | Purpose |
+|---|---|---|---|
+| `ProjectileClass` | Class (Actor) | child | `BP_EnemyProjectile_Wood` (`_Pea` unused) |
+| `FireInterval` | Float | `2.0` | seconds between shots |
+| `NextFireTime` | Float | `0.0` | runtime |
+| `MuzzleOffset` | Vector | `(60, 0, 20)` | local X is forward; multiply X by `Facing` |
+| `ProjectileSpeed` | Float | `900.0` | passed to bullet |
+| `ProjectileDamage` | Float | `1.0` | passed to bullet |
+| `AttackFlipbook` | Paper Flipbook | child | attack state |
+| `bCanShoot` | Boolean | `true` | state gate |
+| `bRequireLineOfSight` | Boolean | `false` | optional trace |
+
+`Event BeginPlay` (shooter base) → `InitShooter`.
+
+`InitShooter`: call `InitEnemy`; `Set NextFireTime = Get Game Time in Seconds +
+FireInterval`; `Set Timer by Function Name ("TryFire", 0.2, true)`.
+
+Do **not** add a BeginPlay to `BP_WoodLog` unless it calls `InitShooter`; the
+shooter base BeginPlay is what starts the fire timer. `BP_PeaPlant` is unused
+and does not need this work.
+
+`TryFire`:
+
+```text
+Branch: bIsDead OR NOT bCanShoot → return
+Branch: Get Game Time in Seconds < NextFireTime → return
+Get Player Character (0) → Is Valid? → false: return
+SetFacing (Player.X - Self.X)
+PlayStateFlipbook (AttackFlipbook, false)
+Set bCanShoot = false
+Set bCanMove  = false
+Spawn Actor from Class:
+  Class = ProjectileClass
+  Spawn Transform = Self.ActorTransform
+      + MakeVector(MuzzleOffset.X * Facing, 0, MuzzleOffset.Z)
+  Collision Handling Override = Always Spawn
+  → Return Value → Cast to BP_EnemyProjectile → Init Projectile
+       Direction = (Facing, 0, 0)
+       Speed     = ProjectileSpeed
+       Damage    = ProjectileDamage
+       Shooter   = Self
+Set NextFireTime = Get Game Time in Seconds + FireInterval
+Set Timer by Function Name ("EndAttack", 0.5, false)
+```
+
+`EndAttack` → `bCanShoot = true`, `bCanMove = true`,
+`RefreshStateFlipbook`.
+
+### 5.2 `BP_EnemyProjectile` (hand-add components + graph)
+
+Add to the shell:
+
+| Component | Class | Settings |
+|---|---|---|
+| `SphereCollision` | `SphereComponent` | radius 8; **BlockAllDynamic**; generate hit events |
+| `ProjectileMovement` | `ProjectileMovementComponent` | Initial Speed 0; Max Speed 0; Gravity 0; Should Bounce false |
+
+Variables: `Speed` Float `900`, `Damage` Float `1`, `Direction` Vector `(1,0,0)`,
+`Shooter` Actor.
+
+`Function InitProjectile(Direction, Speed, Damage, Shooter)`:
+set the four variables; `ProjectileMovement → Set Velocity = Direction * Speed`.
+
+`Event BeginPlay` → `Set Life Span(5.0)`; if `Speed` is already set, set
+velocity (children may spawn with defaults).
+
+`On Component Hit (SphereCollision)`:
+
+```text
+Branch: OtherActor == Shooter → return
+Branch: OtherActor == Get Player Character(0)
+  True  → Does Implement Interface(BPI_Killable) → Kill (Message) on OtherActor
+          → Destroy Actor
+  False → Destroy Actor          # wall / floor / other blocking actor
+```
+
+For hit VFX, spawn `SPR_Plant_BulletPieces` or `SPR_Trunk_BulletPieces` at
+`Hit.ImpactPoint` before `Destroy Actor`. Do **not** use `ApplyPointDamage` on
+the player unless the player gains health; today `Kill` is the player contract.
+
+---
+
+### 5.3 Wood Log defaults (Pea Plant reference)
+
+The current build uses **Wood Log only**. The `BP_PeaPlant` column below is
+kept for reference and is not part of the build order.
+
+| Setting | `BP_PeaPlant` | `BP_WoodLog` |
+|---|---|---|
+| `ProjectileClass` | `BP_EnemyProjectile_Pea` | `BP_EnemyProjectile_Wood` |
+| `FireInterval` | `2.2` | `2.5` |
+| `MuzzleOffset` | `(60, 0, 20)` | `(90, 0, 10)` |
+| `AttackFlipbook` | `FLB_Plant_Attack` | `FLB_Trunk_Attack` |
+| `IdleFlipbook` | `FLB_Plant_Idle` | `FLB_Trunk_Idle` |
+| `HitFlipbook` | `FLB_Plant_Hit` | `FLB_Trunk_Hit` |
+| `DeathFlipbook` | `FLB_Plant_Hit` | `FLB_Trunk_Hit` |
+| `MaxHealth` | `2.0` | `3.0` |
+| `MoveSpeed` | `0` | `90` |
+| movement | `MOVE_None`, gravity 0 (already set) | ground walk (already set) |
+
+**Detection (superseded 21 Oct 2026):** Wood Log uses a **finite horizontal
+rectangle** and de-aggro, not unlimited range. Start with
+`AggroHalfWidth=1400`, `AggroHalfHeight=500`, `DeAggroTime=2.0`, plus the
+same-platform check. It stops to shoot, fires only horizontally
+(`Direction=(Facing,0,0)`, fixed muzzle Z), and resumes patrol when the player
+leaves or becomes unreachable. `TryFire` is gated by `bAggro`. See
+`EnemyAI.md` §6 and §8.9. A jumping player can dodge the shot by design.
+`bAggroOnHit=true` (A2 flips the CDO) matters here: the log **stops and shoots**
+rather than chases (`ChaseStep` override in §8.9), so a hit from outside the
+rectangle turns it on the player without moving it. The flag needs
+`ChaseSpeed > 0`, because the base `UpdateAggro` returns to `PatrolStep` before
+the box test when `ChaseSpeed <= 0`.
+**Status (5 Nov 2026):** `bAggroOnHit=true` is live on `BP_WoodLog` and verified
+by readback; it buys aim, not movement, because the child `ChaseStep` stands
+still.
+
+`BP_PeaPlant`: no patrol; `bCanMove=false`; `RefreshStateFlipbook` always
+`FLB_Plant_Idle`. It is unused in the current build.
+
+`BP_WoodLog`: patrol left/right with `Add Movement Input`; on wall/edge,
+`SetFacing(-Facing)`; use `FLB_Trunk_Run` while moving, `FLB_Trunk_Idle` while
+the attack pauses movement. `AttackFlipbook` is one-shot; `EndAttack` resumes.
+
+### 5.4 `BP_ToxicPuddle` (hand-add collision + graph)
+
+Add a `BoxCollision` named `ToxicBox`:
+
+- Box Extent `(100, 50, 20)` (scale the inherited sprite separately if needed)
+- Collision Preset **OverlapAllDynamic**
+- Generate Overlap Events ✓
+
+`InitialLifeSpan` is already **3.0** on the shell, so it self-destroys.
+
+`Event ActorBeginOverlap` → `OtherActor == Get Player Character(0)` →
+`Does Implement Interface(BPI_Killable)` → `Kill` message. Optional: start a
+0.5 s timer that applies damage while the player stands in it; clear it on
+`ActorEndOverlap`.
+
+The shell's default art is `SPR_Slime_Particles` (64×16 strip). Treat it as a
+placeholder: create a dedicated puddle sprite later if the strip reads wrong.
+
+---
+
+## 6. The nine mechanics
+
+All children inherit §3–§4. Only the child-specific additions are listed here.
+Set each child's **Class Defaults** for the variables in the tables; the
+generator already set the capsule, movement mode/speeds and idle flipbook.
+
+**Movement authority (24 Oct 2026):** a child has exactly one movement loop.
+Walkers (`Rocks`, `Snail`, `Slime`, `Rhino`, `WoodLog`) use the base
+`Event Tick` → `PatrolStep` / `ChaseStep` and never add a second movement Tick.
+Stationary/flyers (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) set
+`bCanMove=false`; their own Tick / `LaunchCharacter` is the only movement.
+`ChaseSpeed=0` for Turtle/Ghost/Skull; Bat inherits `ChaseSpeed=1000` because
+that value is also its `MaxFlySpeed`. `ChaseSpeed=0` also means "no detection"
+for Snail and Slime. See `EnemyAI.md` §4.3.
+
+**Gun-aggro set (5 Nov 2026):** only enemies the player's gun can damage are
+eligible to be woken by a hit: `BP_Rock1/2/3`, `BP_Snail`, `BP_WoodLog` and
+`BP_Bat`. The three walkers use `bAggroOnHit=true`; the base hit term deliberately
+skips `IsPlayerOnHomePlatform()` and the Z gate, so a shot from another platform
+still makes them walk toward the player's X and stop at the ledge (the closest
+safe spot on their platform). `BP_Bat` is the flying exception and needs its own
+hit branch because it replaces the base walker Tick; `bAggroOnHit` alone is a
+no-op there (`EnemyAI.md` §8.8). `BP_Rhino` (bullets no-op), `BP_Ghost`
+(intangible/invulnerable until its sphere trigger), `BP_SpikeTurtle`
+(invulnerable), and `BP_FloatingSkull` (no chase) cannot be gun-aggroed;
+`BP_ToxicSlime` cannot be aggroed at all (`ChaseSpeed=0`).
+
+**Do not duplicate inherited variables.** `bAggro`, `AggroRadius`, `ChaseSpeed`,
+`MoveSpeed`, `KnockbackForce`, `Facing`, the health/contact variables and
+`IdleFlipbook`/`HitFlipbook`/`DeathFlipbook` already exist on `BP_EnemyBase`.
+The tables list only **new** names; a child value for an inherited variable
+belongs in **Class Defaults**.
+
+### 6.1 Spike Turtle — `BP_SpikeTurtle`
+
+**Goal:** cannot be damaged while thorns are out.
+
+**Extra variables**
+
+| Name | Type | Default |
+|---|---|---|
+| `bSpikesOut` | Boolean | `false` |
+| `SpikeInterval` | Float | `1.8` |
+| `SpikeChangeTime` | Float | `0.7` |
+| `SpikesOutFlipbook` | Paper Flipbook | `FLB_Turtle_SpikesOut` |
+| `SpikesInFlipbook` | Paper Flipbook | `FLB_Turtle_SpikesIn` |
+| `IdleFlipbookA` | Paper Flipbook | `FLB_Turtle_Idle01` |
+| `IdleFlipbookB` | Paper Flipbook | `FLB_Turtle_Idle02` |
+| `bIdleAlt` | Boolean | `false` |
+
+**Defaults (21 Oct 2026 revision):** `bCanMove=false`, `ChaseSpeed=0`,
+`bUseHealth=false`, `bInvulnerable=true`, `ContactDamage=1`, `MaxHealth=3`,
+`HitFlipbook=FLB_Turtle_Hit`, `DeathFlipbook=FLB_Turtle_Hit`.
+
+**BeginPlay:** call `InitEnemy`; `Set Timer by Function Name("SpikeCycle",
+SpikeInterval, true)`; `Set Timer by Function Name("ToggleIdle", 1.4, true)`.
+
+**`SpikeCycle`**
+
+```text
+Set bSpikesOut = NOT bSpikesOut
+Branch bSpikesOut
+  True  → PlayStateFlipbook(SpikesOutFlipbook, false)
+          Set Timer by Function Name("FinishSpikeChange", SpikeChangeTime, false)
+  False → PlayStateFlipbook(SpikesInFlipbook, false)
+          Set Timer by Function Name("FinishSpikeChange", SpikeChangeTime, false)
+```
+
+**`FinishSpikeChange`**
+
+```text
+Set bDealContactDamage = bSpikesOut
+Set ContactDamage      = 1.0
+RefreshStateFlipbook
+```
+
+`RefreshStateFlipbook` (override): if `bSpikesOut`, play `IdleFlipbookB`;
+otherwise play `bIdleAlt ? IdleFlipbookB : IdleFlipbookA`; loop true.
+`ToggleIdle` → `Set bIdleAlt = NOT bIdleAlt` → `RefreshStateFlipbook`.
+
+**Movement/detection:** none. Do not add a patrol Tick, wall reversal or aggro
+box. The turtle is stationary scenery. It cannot be damaged by the player:
+`bInvulnerable=true` permanently, so `AnyDamage` and `Kill` are no-ops. Only a
+`BP_KillVolume` at the bottom of a pit destroys it (by `Enemy` tag). It is
+harmful only while `bSpikesOut`; contact damage is always `1.0`.
+
+**Why the timer, not `AnimFinished`:** `FLB_Turtle_SpikesOut/In` are 8 frames at
+12 fps (~0.67 s); a timer is deterministic and does not depend on the flipbook
+component broadcasting a finish delegate.
+
+---
+
+### 6.2 Rocks — `BP_Rock1` → `BP_Rock2` → `BP_Rock3`
+
+**Goal:** each rock splits into two; total live pieces capped at **8**.
+
+**`BP_RockBase` variables**
+
+| Name | Type | Default | Purpose |
+|---|---|---|---|
+| `RockTier` | Integer | `1` | 1 / 2 / 3 |
+| `ChildRockClass` | Class (Actor) | `BP_Rock2` on tier 1 | next tier |
+| `bCanSplit` | Boolean | `true` | tier 3 false |
+| `SplitImpulse` | Float | `250.0` | outward launch |
+| `SplitOffset` | Float | `30.0` | spawn X offset |
+| `MaxPieces` | Integer | `8` | global live cap |
+
+**Child defaults**
+
+| | `BP_Rock1` | `BP_Rock2` | `BP_Rock3` |
+|---|---|---|---|
+| `MaxHealth` | `3.0` | `2.0` | `1.0` |
+| `MoveSpeed` | `100` | `140` | `180` |
+| `ChaseSpeed` | `120` | `160` | `200` |
+| `RockTier` | `1` | `2` | `3` |
+| `ChildRockClass` | `BP_Rock2` | `BP_Rock3` | `None` |
+| `bCanSplit` | `true` | `true` | `false` |
+| `bAggroOnHit` | `true` | `true` | `true` |
+| `IdleFlipbook` | `FLB_Rock1_Idle` | `FLB_Rock2_Idle` | `FLB_Rock3_Idle` |
+| `HitFlipbook` | `FLB_Rock1_Hit` | `FLB_Rock2_Hit` | `FLB_Rock3_Hit` |
+| `DeathFlipbook` | `FLB_Rock1_Hit` | `FLB_Rock2_Hit` | `FLB_Rock3_Hit` |
+
+**Movement (21 Oct 2026 revision, keep-term 7 Nov):** patrol with the
+platform/ledge guard (`EnemyAI.md` §5); do **not** copy the turtle — it is now
+stationary. Rocks have **detection**: a horizontal rectangle
+(`AggroHalfWidth=700`, `AggroHalfHeight=500`), a same-platform gate, and
+`DeAggroTime=2.0`. The rectangle is **acquire-only**: once a rock is chasing,
+only the platform + `MaxChaseStepZ` check (the `Keep` term, `EnemyAI.md` §6.2)
+starts the de-aggro clock, so running along the platform no longer makes it give
+up. They chase horizontally on their own platform, stop at ledges, and return to
+patrol when the player leaves or becomes unreachable. Each tier keeps its own
+`MoveSpeed`/`ChaseSpeed`. `RefreshStateFlipbook` chooses `FLB_RockN_Run` when
+`Abs(GetVelocity.X) > 10`, else `FLB_RockN_Idle`. Split pieces run the same
+`Landed`/platform adoption as the parent.
+
+`bAggroOnHit=true` on all three tiers (A2 flips the CDOs): a rock that is shot
+chases for `DeAggroTime` even when the player is outside the rectangle, so a
+tier-1 hit does not immediately lose the player. It costs one checkbox per
+asset and adds no nodes — the base graph reads the flag.
+**Status (5 Nov 2026):** live on all three CDOs and verified by readback from the
+saved class default objects.
+
+**Status (7 Nov 2026):** the acquire/keep split that keeps a rock chasing past
+its own rectangle ships as a whole-graph paste,
+`Scripts/_bp_enemy_base_updateaggro_full_paste.txt` (`EnemyAI.md` §6.2) — the
+seven nodes are already in the asset, but UE's paste cannot link them to the
+nodes that were there before it, so six wires are still empty. Until it is
+applied, a rock that chases a player who runs further than `700` uu along the
+same platform still drops aggro after `DeAggroTime`; afterwards,
+`Scripts/_run_aggro_keep_check.py` must print `RESULT: PASS`.
+
+**`Die` override**
+
+```text
+Branch: bCanSplit AND ChildRockClass != None
+  False → Parent: Die
+  True  →
+    Get All Actors of Class (BP_RockBase) → Length
+    Branch: Length <= MaxPieces - 1        # self will disappear
+      False → Parent: Die
+      True  →
+        For each side in (-1, +1):
+          Spawn Actor from Class:
+            Class = ChildRockClass
+            Location = GetActorLocation + (side * SplitOffset, 0, 0)
+            Collision Handling Override = Always Spawn
+            → Return Value → Cast to BP_RockBase
+              → LaunchCharacter(side * SplitImpulse, 0, SplitImpulse * 0.5,
+                                bXYOverride = true, bZOverride = true)
+        Parent: Die
+```
+
+The `Length <= MaxPieces - 1` check reserves the slot the dying rock will free.
+If you want a hard cap even when a burst of rocks dies in one frame, replace it
+with a tiny `BP_RockManager` (global counter) later; the 7-piece natural tree
+(1 + 2 + 4) already stays under 8.
+
+**Art:** tier 1 38×34, tier 2 32×28, tier 3 22×18. The capsule sizes were set
+from those frame sizes.
+
+---
+
+### 6.3 Snail — `BP_Snail` → unkillable shell
+
+**Goal:** after death the body becomes a shell that sweeps the platform and
+cannot be killed.
+
+**Extra variables**
+
+| Name | Type | Default |
+|---|---|---|
+| `bShellPhase` | Boolean | `false` |
+| `ShellSpeed` | Float | `600.0` |
+| `ShellContactDamage` | Float | `1.0` |
+| `ShellLifetime` | Float | `8.0` |
+| `ShellIdleFlipbook` | Paper Flipbook | `FLB_Snail_ShellIdle` |
+| `ShellWallHitFlipbook` | Paper Flipbook | `FLB_Snail_ShellWallHit` |
+| `ShellTopHitFlipbook` | Paper Flipbook | `FLB_Snail_ShellTopHit` |
+| `WithoutShellFlipbook` | Paper Flipbook | `FLB_Snail_WithoutShell` |
+
+**Defaults:** `ChaseSpeed=250`, `AggroHalfWidth=0`, `AggroHalfHeight=0`,
+`bAggroOnHit=true`, `MaxHealth=2`, `MoveSpeed=50`, `ContactDamage=1`,
+`IdleFlipbook=FLB_Snail_Idle`, `HitFlipbook=FLB_Snail_Hit`,
+`DeathFlipbook=FLB_Snail_Hit`. The zero box is the point: the snail never
+detects on its own, and `bAggroOnHit` gives it the `DeAggroTime` hit window
+(`EnemyAI.md` §6.2) so a player who shoots it once has to deal with it. Leaving
+`ChaseSpeed=0` would make it deaf to hits as well.
+
+**Status (7 Nov 2026):** the four aggro overrides are live on `BP_Snail`
+(`ChaseSpeed=250`, both aggro halves `0`, `bAggroOnHit=true`). `ChaseSpeed` was
+`80` until the 7 Nov retune: the chase branch of `UpdateAggro` writes
+`MaxWalkSpeed = ChaseSpeed`, and `80` uu/s against the player's `1000` uu/s read
+as standing still, so a woken snail never reached the player. `250` is still
+escapable and is faster than the base walker `150` — exactly one knob to revisit
+if it feels too quick. **No proximity aggro was added on purpose:** the zero
+box means the snail ignores a player standing in front of it until it is shot.
+The remaining defaults above (`MaxHealth=2`, `MoveSpeed=50`, the snail
+flipbooks) are still inherited base values and remain A1b work; the PIE test can
+run on the aggro flip alone.
+
+**Normal state (21 Oct 2026 revision):** patrol left/right with
+`Add Movement Input` and the platform/ledge guard (`EnemyAI.md` §5). No
+detection box and no chase of its own; a hit opens the `DeAggroTime` window.
+`Event Hit` on a wall reverses `Facing`;
+`RefreshStateFlipbook` uses `FLB_Snail_Walk` when moving, otherwise
+`FLB_Snail_Idle`. The shell also uses the ledge guard: it sweeps its platform
+and never walks off an edge.
+
+**`Die` override**
+
+```text
+Branch: bShellPhase → True: return
+Set bShellPhase          = true
+Set bIsDead              = false       # keep overlap/contact alive
+Set bInvulnerable        = true        # unkillable shell
+Set bDealContactDamage   = true
+Set ContactDamage        = ShellContactDamage
+Set MoveSpeed            = ShellSpeed
+Set MaxWalkSpeed         = ShellSpeed
+Set bCanMove             = true
+Set bAggro               = false
+PlayStateFlipbook (ShellIdleFlipbook, true)
+Set Life Span (ShellLifetime)
+```
+
+Do **not** call `Parent: Die`: it would disable collision and destroy the actor.
+`bInvulnerable=true` makes base `AnyDamage` and `Kill` no-ops; `bIsDead=false`
+keeps the contact overlap working (bind it to `ContactBox`, not the blocking
+capsule). The shell remains a hazard.
+
+**Shell movement / wall reaction**
+
+The shell keeps the shared walker loop. `Die` sets `MoveSpeed=ShellSpeed`,
+`MaxWalkSpeed=ShellSpeed`, `bCanMove=true` and `bAggro=false`, so base
+`PatrolStep` sweeps the platform and `LedgeAhead` turns it at the edge. Do
+**not** add a second `Event Tick`; the base Tick is the only movement authority
+(`EnemyAI.md` §4.3).
+
+```text
+Event Hit  → Break Hit Result
+  Branch: Abs(Normal.X) > 0.7 AND OtherActor != Get Player Character(0)
+    True → SetFacing(-Facing)              # keep the normal wall reversal
+           Branch: bShellPhase
+             True  → PlayStateFlipbook(ShellWallHitFlipbook, false)
+                     Set Timer by Function Name("BackToShellIdle", 0.25, false)
+             False → RefreshStateFlipbook
+```
+
+`BackToShellIdle` → `PlayStateFlipbook(ShellIdleFlipbook, true)`.
+`ShellTopHitFlipbook` is optional: play it when the player lands on the shell
+(player Z above shell Z and falling), but the shell still kills on contact.
+
+`RefreshStateFlipbook` override: if `bShellPhase`, play `ShellIdleFlipbook`
+(loop); otherwise the normal walk/idle choice.
+
+---
+
+### 6.4 Ghost — `BP_Ghost` (rewritten 21 Oct 2026)
+
+**Goal:** starts **invisible and harmless**, becomes visible and starts chasing
+only when the player enters its sphere, then loops visible/hidden forever. It
+chases directly through walls.
+
+**Extra variables**
+
+| Name | Type | Default |
+|---|---|---|
+| `bInvisible` | Boolean | `true` |
+| `VisibleTime` | Float | `2.5` |
+| `InvisibleTime` | Float | `2.0` |
+| `FadeTime` | Float | `0.5` |
+| `AppearFlipbook` | Paper Flipbook | `FLB_Ghost_Appear` |
+| `DisappearFlipbook` | Paper Flipbook | `FLB_Ghost_Disappear` |
+
+**Defaults:** `bCanMove=false`, `ChaseSpeed=0`, `AggroRadius=550`,
+`MaxHealth=2`, `MoveSpeed=80`, `ContactDamage=1`,
+`IdleFlipbook=FLB_Ghost_Idle`, `HitFlipbook=FLB_Ghost_Hit`,
+`DeathFlipbook=FLB_Ghost_Hit`. `bAggro` and `AggroRadius` are inherited from
+`BP_EnemyBase`; do not add them again.
+
+**BeginPlay:** `InitEnemy`; start fully hidden and harmless:
+`bInvisible=true`, `Sprite0` visibility false, `CollisionCylinder` NoCollision,
+`bInvulnerable=true`, `bDealContactDamage=false`, `bAggro=false`. No appear/
+disappear timer yet.
+
+**Trigger:** `Event Tick` → if `NOT bAggro` and player is valid and
+`VSize(Player - Self) <= AggroRadius` → `StartAggro`. This is a **sphere** and
+there is **no de-aggro** branch.
+
+```text
+StartAggro:
+  Set bAggro = true
+  Set bInvisible = false
+  Sprite0 -> Set Visibility (true)
+  CollisionCylinder -> Set Collision Enabled (Query and Physics)
+  SetCollisionResponseToChannel(WorldStatic, Ignore)   # phase through walls
+  Set bInvulnerable = false
+  Set bDealContactDamage = true
+  PlayStateFlipbook(AppearFlipbook, false)
+  Set Timer by Function Name("StartDisappear", VisibleTime, false)
+```
+
+The visible/hidden loop is the old cycle, but it only starts after
+`StartAggro`:
+
+```text
+StartDisappear:
+  Set bDealContactDamage = false
+  PlayStateFlipbook(DisappearFlipbook, false)
+  Set Timer by Function Name("BecomeInvisible", FadeTime, false)
+
+BecomeInvisible:
+  Set bInvisible = true
+  Sprite0 -> Set Visibility (false)
+  CollisionCylinder -> Set Collision Enabled (No Collision)
+  Set bInvulnerable = true
+  Set Timer by Function Name("StartAppear", InvisibleTime, false)
+
+StartAppear:
+  Set bInvisible = false
+  Sprite0 -> Set Visibility (true)
+  CollisionCylinder -> Set Collision Enabled (Query and Physics)
+  SetCollisionResponseToChannel(WorldStatic, Ignore)
+  Set bInvulnerable = false
+  PlayStateFlipbook(AppearFlipbook, false)
+  Set Timer by Function Name("BecomeVisible", FadeTime, false)
+
+BecomeVisible:
+  Set bDealContactDamage = true
+  RefreshStateFlipbook
+  Set Timer by Function Name("StartDisappear", VisibleTime, false)
+```
+
+**Movement:** after `bAggro`, `Event Tick` gets the player, sets facing from
+`Player.X - Self.X`, and moves directly in X/Z:
+`Direction = Normalize(Player.Location - Self.Location)`, Y=0,
+`Add Movement Input(Direction, 1)`. It does **not** path around walls; it flies
+through them (`WorldStatic = Ignore`). The shell is `MOVE_Flying`, gravity 0.
+
+**Damage/contact:** hidden = no collision, no contact, no damage, and player
+bullets pass through. Disable **both** the capsule and the base `ContactBox`
+while hidden; re-enable the `ContactBox` (`QueryOnly`, `Pawn=Overlap`) in the
+visible phase. Visible = vulnerable, contact `1`. There is no
+`bInvulnerableWhileInvisible` toggle any more; hidden is always untouchable.
+
+`RefreshStateFlipbook` override: `Function Entry` → `PlayStateFlipbook
+(FLB_Ghost_Idle, loop)` **unconditionally** — no Branch, and it does *not* call
+the parent `Refresh State Flipbook`. `bInvisible` needs no gate: while hidden
+the sprite is not drawn, and `SetFlipbook` only resets `AccumulatedTime` when
+the sheet changes, so a refresh while hidden costs nothing. Optional VFX:
+`SPR_Ghost_Particles` on a second `PaperSpriteComponent`, toggled with the same
+state.
+
+---
+
+### 6.5 Toxic Slime — `BP_ToxicSlime`
+
+**Goal:** leaves toxic tracks that exist for 3 seconds.
+
+**Extra variables**
+
+| Name | Type | Default |
+|---|---|---|
+| `PuddleClass` | Class (Actor) | `BP_ToxicPuddle` |
+| `PuddleInterval` | Float | `0.75` |
+| `NextPuddleTime` | Float | `0.0` |
+| `PuddleOffset` | Vector | `(0, 0, -60)` |
+| `bLeaveTracks` | Boolean | `true` |
+
+**Defaults:** `ChaseSpeed=0`, `MaxHealth=3`, `MoveSpeed=70`, `ContactDamage=1`,
+`IdleFlipbook=FLB_Slime_IdleRun`, `HitFlipbook=FLB_Slime_Hit`,
+`DeathFlipbook=FLB_Slime_Hit`.
+
+**BeginPlay:** `InitEnemy`; `Set NextPuddleTime = Get Game Time in Seconds`.
+
+**Movement (21 Oct 2026 revision):** patrol left/right with the platform/ledge
+guard (`EnemyAI.md` §5). No detection and no chase. `RefreshStateFlipbook`
+plays `FLB_Slime_IdleRun` (the only locomotion art) while alive.
+
+**`Event Tick` — drop a track**
+
+```text
+Branch: bIsDead OR NOT bLeaveTracks → return
+Branch: Abs(GetVelocity.X) < 10 → return
+Branch: Get Game Time in Seconds < NextPuddleTime → return
+Spawn Actor from Class:
+  Class = PuddleClass
+  Location = GetActorLocation + PuddleOffset
+  Rotation = 0
+  Collision Handling Override = Always Spawn
+Set NextPuddleTime = Get Game Time in Seconds + PuddleInterval
+```
+
+`BP_ToxicPuddle` already has `InitialLifeSpan=3.0`, so the track disappears
+after three seconds without any graph in the slime. If the puddle reads too
+large/small, set `Spawn Transform → Scale` to `(0.75, 0.75, 0.75)`.
+
+`BP_ToxicPuddle` itself needs the `ToxicBox` overlap from §5.4; that is where
+the player is killed. Slime contact damage is the normal base `ContactBox`
+overlap (not the blocking capsule; see `EnemyAI.md` §9).
+
+---
+
+### 6.6 Rhino — `BP_Rhino` (rewritten 21 Oct 2026)
+
+**Goal:** a heavy charger with **4 wall health**. Player bullets do nothing;
+each wall impact removes 1 health and turns it around. It dies on the 4th wall
+hit or in a `BP_KillVolume`.
+
+**Extra variables**
+
+| Name | Type | Default |
+|---|---|---|
+| `bCharging` | Boolean | `false` |
+| `ChargeSpeed` | Float | `600.0` |
+| `ChargeDirection` | Float | `1.0` |
+| `WallHitCooldown` | Float | `0.5` |
+| `LastWallHitTime` | Float | `-1000.0` |
+| `RunFlipbook` | Paper Flipbook | `FLB_Rino_Run` |
+| `HitWallFlipbook` | Paper Flipbook | `FLB_Rino_HitWall` |
+
+**Defaults:** `MoveSpeed=120`, `ChaseSpeed=600`, `ChargeSpeed=600`,
+`MaxHealth=4`, `CurrentHealth=4`, `bUseHealth=true`,
+`bInvulnerable=true` (bullets/Kill no-op), `ContactDamage=1`,
+`IdleFlipbook=FLB_Rino_Idle`, `HitFlipbook=FLB_Rino_Hit`,
+`DeathFlipbook=FLB_Rino_HitWall`. `MoveSpeed` is inherited from
+`BP_EnemyBase`; do not add it again.
+
+**BeginPlay:** `InitEnemy`; `Set bInvulnerable=true`;
+`Set bDealContactDamage=true`; `SetFacing(ChargeDirection)`;
+`Set MaxWalkSpeed=MoveSpeed`; `PlayStateFlipbook(IdleFlipbook, true)`.
+The rectangle detection is the long one: `AggroHalfWidth=1200`,
+`AggroHalfHeight=500`, `DeAggroTime=2.0`. `ChaseSpeed=600` makes the base
+`ChaseStep` use charge speed. Override `UpdateAggro`, call
+`Parent: UpdateAggro`, then set `bCharging=bAggro`: on aggro it faces the
+player horizontally and charges; on de-aggro it resumes patrol. No vertical
+movement.
+
+**`Event Hit` — the only damage path**
+
+```text
+Break Hit Result
+Branch: OtherActor == Get Player Character(0) -> return   # contact kills player
+Branch: Abs(Normal.X) > 0.7
+  False -> return
+  True  ->
+    Branch: now - LastWallHitTime < WallHitCooldown -> return
+    Set LastWallHitTime = now
+    Set CurrentHealth = CurrentHealth - 1
+    SetFacing(-Facing)                       # turn around after wall
+    PlayStateFlipbook(HitWallFlipbook, false)
+    Branch: CurrentHealth <= 0
+      True  -> Set bInvulnerable = false
+               Die
+      False -> Set Timer by Function Name("EndWallHit", 0.3, false)
+```
+
+`EndWallHit` -> `bCharging=true` if the player is still aggro/reachable,
+otherwise `bCharging=false` and patrol; `RefreshStateFlipbook`.
+
+`RefreshStateFlipbook` override: `FLB_Rino_Run` while `bCharging`, otherwise
+`FLB_Rino_Idle`. Because `bInvulnerable=true`, player bullets and `Kill` never
+reduce health; the wall event is the only path. Falling into a `BP_KillVolume`
+still destroys it by `Enemy` tag.
+
+---
+
+### 6.7 Floating Skull — `BP_FloatingSkull`
+
+**Goal (21 Oct 2026 revision):** bounces like a slow bullet. It toggles ON/OFF
+when it hits a wall or floor; ON = cannot take damage, OFF = cannot deal damage.
+It has no detection and no chase; it just bounces until killed or it falls into
+a `BP_KillVolume`.
+
+**Extra variables**
+
+| Name | Type | Default |
+|---|---|---|
+| `bPoweredOn` | Boolean | `true` |
+| `OnIdleFlipbook` | Paper Flipbook | `FLB_Skull_Idle01` |
+| `OffIdleFlipbook` | Paper Flipbook | `FLB_Skull_Idle02` |
+| `HitWallFlipbookA` | Paper Flipbook | `FLB_Skull_HitWall01` |
+| `HitWallFlipbookB` | Paper Flipbook | `FLB_Skull_HitWall02` |
+| `bUseWallAlternate` | Boolean | `false` |
+| `BounceSpeed` | Float | `300.0` |
+
+**Defaults:** `bCanMove=false`, `ChaseSpeed=0`, `MaxHealth=2`,
+`ContactDamage=1`, `MoveSpeed=300`,
+`HitFlipbook=FLB_Skull_Hit`, `DeathFlipbook=FLB_Skull_Hit`.
+
+**BeginPlay:** `InitEnemy`; `Set bPoweredOn=true`;
+`Set bInvulnerable=true`; `Set bDealContactDamage=true`;
+`PlayStateFlipbook(OnIdleFlipbook,true)`;
+`LaunchCharacter((Facing * BounceSpeed, 0, 1.0 * BounceSpeed), true, false)`
+— XY override on, Z override **off**, which is what the asset actually does; this
+sheet's earlier `BounceSpeed * 0.5` / `Z override true` was never built.
+The shell is already `MOVE_Flying`, gravity 0, `MaxFlySpeed=350`.
+
+> **9 Nov 2026 — the mode does not survive the launch.** `LaunchCharacter` calls
+> `UCharacterMovementComponent::Launch`, which does
+> `SetMovementMode(MOVE_Falling)` for any character that is not already falling.
+> From the first frame of `BeginPlay` the skull is therefore `MOVE_Falling`
+> (`Character Movement -> Is Flying` reads `false`), and every `Hit` reflect
+> re-enters `Falling` the same way. Only `gravity 0` and `MaxFlySpeed` survive as
+> tuning; the movement *mode* does not. Consequence: `BP_EnemyBase`'s flyer
+> guards (`TryRescue`, `FindHomePlatform`) do not apply to it, so it must carry
+> `bIsFlyer = true` once that flag exists — see `EnemyWorkPlan.md` A2e, 9 Nov
+> 2026. Do not "fix" this by switching back to `MOVE_Flying` on every bounce:
+> `PhysFlying` applies `BrakingDecelerationFlying` (default `2048`), which stops
+> a 300 uu/s skull in about 0.15 s and kills the bounce.
+
+**`Event Hit` — toggle + reflect**
+
+```text
+Break Hit Result
+Branch: Abs(Normal.X) > 0.5 OR Abs(Normal.Z) > 0.5
+  False → return
+  True  →
+    PlayStateFlipbook(bUseWallAlternate ? HitWallFlipbookA : HitWallFlipbookB,
+                      false)
+    Set bUseWallAlternate = NOT bUseWallAlternate
+    TogglePower
+    Set Timer by Function Name("BackToSkullIdle", 0.35, false)
+    Reflect velocity:
+      Break Vector (GetVelocity)
+      X' = Abs(Normal.X) > 0.5 ? -X : X
+      Z' = Abs(Normal.Z) > 0.5 ? -Z : Z
+      LaunchCharacter(MakeVector(X', 0, Z'), true, true)
+```
+
+**`TogglePower`**
+
+```text
+Set bPoweredOn          = NOT bPoweredOn
+Set bInvulnerable       = bPoweredOn
+Set bDealContactDamage  = bPoweredOn
+Set Sprite0 Sprite Color = bPoweredOn ? Orange : Red   (optional)
+RefreshStateFlipbook
+```
+
+`RefreshStateFlipbook` override: play `OnIdleFlipbook` when powered, otherwise
+`OffIdleFlipbook`; loop true.
+
+Base `AnyDamage` and `Kill` both check `bInvulnerable`, so ON ignores bullets;
+OFF is vulnerable and harmless. Ordinary traps never call `Kill` on it. A
+`BP_KillVolume` at a pit bottom destroys `Enemy`-tagged actors directly, so even
+an ON skull dies if it falls out of the world. The projectile's damage-frame
+guard still applies on OFF, so it takes multiple hits.
+
+Optional particles: `SPR_Skull_OrangeParticle` / `SPR_Skull_RedParticle`
+(16×16) can be a second `PaperSpriteComponent` toggled with the state. That
+component is hand-added; Python cannot add SCS components.
+
+**Stuck-bounce fallback — `UnstuckBounce` (9 Nov 2026, hand work)**
+
+A bounced skull has no movement intent, so nothing notices when it is wedged: a
+corner, the seam of two platforms, a V-shaped crevice between terrain pieces, or
+any contact whose normal is oblique enough for the `|Nx|, |Nz| >= 0.5` gate to
+reject. The hit event re-fires, `LaunchCharacter` rewrites the velocity from the
+contact normal, the capsule never leaves the contact point, and the `bLoop=false`
+wall book restarts every frame — the `0.35 s` `BackToSkullIdle` timer never gets to
+run, which is the "frozen on `FLB_Skull_HitWall02`" look. No rescue is involved:
+Simulate on 9 Nov 2026 reads the level-placed skull at `(-1758.8, 13.0, 610.0)` as
+`vel=(0,0,-0)`, `mode=MOVE_Falling`, power ON, sprite
+`FLB_Skull_HitWall01 pos=0.583 playing=False` — parked on its own spawn point and
+never moving again.
+
+**Do not test the velocity.** A pinned skull still reports `±300` uu/s, because
+the hit event recomputes it from `Normal * BounceSpeed` every frame. Test the
+**displacement**, in 2D: `VSize2D`, so a floor/ceiling wedge that only moves in
+`Z` still counts as stuck.
+
+**9 Nov 2026 — the level-placed skull was not wedged, it was *inside* the
+level.** Simulate reads it frozen at its spawn `(-1758.8, 13, 610)` with
+`mode=MOVE_Flying`, `vel=(0,0,0)` and the location unchanged to 0.1 uu for
+minutes, while `StuckTime` cycles `0 -> 1 s` and `StuckCount` climbs `1, 2, 3,
+…`: the watchdog fires every second and **every launch is swallowed**. Measure
+the clearance before touching the graph:
+
+- `Scripts/_probe_level_clearance.py` — the slot at that spawn is `90` uu above
+  the capsule centre and `120` below, while the capsule is `150 / 150`. The
+  capsule therefore starts the frame penetrating, and
+  `SafeMoveUpdatedComponent` performs **no move at all** (the launch is not
+  slowed down, it never runs).
+- `Scripts/_probe_hit_owner2.py` — switching `TM_Background`'s collision off
+  frees the traces, so the level's `PaperTileMapActor` is what it spawns inside,
+  not a platform seam.
+- `Scripts/_sample_skull_stuck.py` (`Scripts/_watch_pie_skull.py` polls it once
+  a second) — prints `mode / isFlying / StuckCount / StuckTime /
+  LastMoveLocation / HomeLocation` next to the capsule figures, which is the
+  whole diagnosis in one shot.
+
+Engine trail, UE 4.27 `CharacterMovementComponent.cpp`: `Launch()` only stores
+`PendingLaunchVelocity`; `HandlePendingLaunch()` copies it into `Velocity` and
+calls `SetMovementMode(MOVE_Falling)`; `PhysFalling` asks
+`SafeMoveUpdatedComponent` for the move; `SetPostLandedPhysics` returns the
+skull to `DefaultLandMovementMode = MOVE_Flying` as soon as it touches a floor,
+and `PhysFlying` applies fluid friction (`0.5 * MaxFlySpeed`) to the velocity
+*before* it moves. That is why the skull sits in `MOVE_Flying` with a velocity
+of exactly `0` although it is launched every second, and why the two launches
+are useless inside geometry while the `>= 3` reset is the only thing that can
+still save it — provided `HomeLocation` is a point the capsule fits in.
+
+Fix applied 9 Nov 2026: the instance moved to `(-1258.8, 13, 730)` in memory
+(`Scripts/_apply_skull_respawn_fix.py`, level **not** saved; the target is the
+nearest scanned point with `>= 500` uu free vertically and `>= 350` uu on every
+horizontal axis per `Scripts/_probe_skull_respawn_scan.py`). Simulate then reads
+`vel=(±300, 0, ±300)`, `mode=MOVE_Falling`, `StuckCount = 0`, and
+`Scripts/_pie_skull_wedge_test.py` — which teleports the skull back into the
+tile block — reproduces `StuckCount 1 -> 3 -> reset to HomeLocation -> flying
+again`.
+
+**Rule:** `HomeLocation` must be a spot the capsule fits in. The reset is the
+only escape from a pocket with no exit, so a spawn that embeds the capsule makes
+both halves of the fallback dead. Screen a placement with
+`Scripts/_probe_skull_respawn_scan.py` (grid of vertical clearances around the
+current spawn) or point `Scripts/_apply_skull_respawn_fix.py` at a candidate
+with `X=.. Y=.. Z=..` — it traces all six directions and refuses to move anything
+unless each one has `>= 170` uu free. The watchdog cannot rescue a spawn: it is
+a recovery from *soft* wedges, not from geometry the capsule never fit in.
+Verify a placement with `Scripts/_probe_clearance_6.py` (read-only, traces the
+six axes and prints `VERDICT FITS`) before it is saved, and remember that the
+editor world is not the map file: run `Scripts/_save_level.py` or the placement
+dies with the session, which is how the embedding spawn at `(-1758.8, 13, 610)`
+outlived every "fixed" claim — it was committed to the map, not just in memory.
+
+**Extra variables** (own; the seven above are unchanged)
+
+| Name | Type | Default | Purpose |
+|---|---|---|---|
+| `LastMoveLocation` | Vector | `0,0,0` | last position where the skull actually travelled |
+| `StuckTime` | Float | `0.0` | seconds since that position last changed |
+| `StuckCount` | Integer | `0` | escapes since then; escalation counter |
+| `HomeLocation` | Vector | `0,0,0` | spawn position, captured at `BeginPlay` |
+
+`BeginPlay`, appended after the `LaunchCharacter`: `Set HomeLocation =
+Get Actor Location`; `Set LastMoveLocation = HomeLocation` (read the variable
+back — do not call `Get Actor Location` twice).
+
+`Event Tick` - append after the existing `SetFacing` call, whose `then` pin is
+otherwise free. Node titles below are what the graph shows after you drop them
+from the palette (search text in the first column, quotes included where the
+search needs them); `->` is a wire:
+
+| # | Palette search | Node | Exec in from | Exec out to |
+|---|---|---|---|---|
+| 1 | `Branch` | Branch | `SetFacing`.`then` | `then` -> 3 |
+| 2 | `NOT Boolean` | NOT Boolean | (pure) | (see data below) |
+| 3 | `Branch` | Branch | 1.`then` | `else` -> 7 `execute`, `then` -> 11 `execute` |
+| 4 | `VSize2D` | VSize2D | (pure) | (data below) |
+| 5 | `vector - vector` | Vector - Vector | (pure) | (data below) |
+| 6 | `float < float` | Float < Float | (pure) | (data below) |
+| 7 | `Set LastMoveLocation` | Set LastMoveLocation | 3.`else` | `then` -> 8 |
+| 8 | `Set StuckTime` | Set StuckTime | 7.`then` | `then` -> 9 |
+| 9 | `Set StuckCount` | Set StuckCount | 8.`then` | - |
+| 10 | `float + float` | Float + Float | (pure) | (data below) |
+| 11 | `Set StuckTime` | Set StuckTime | 3.`then` | `then` -> 13 |
+| 12 | `float >= float` | Float >= Float | (pure) | (data below) |
+| 13 | `Branch` | Branch | 11.`then` | `then` -> 14 |
+| 14 | `Set StuckTime` | Set StuckTime | 13.`then` | `then` -> 15 |
+| 15 | `Set LastMoveLocation` | Set LastMoveLocation | 14.`then` | `then` -> 16 |
+| 16 | `UnstuckBounce` | UnstuckBounce | 15.`then` | - |
+
+Data wires and literal values:
+
+| Node | Pin <- / value |
+|---|---|
+| 2 NOT Boolean | `A` <- `Get bIsDead` |
+| 1 Branch | `Condition` <- 2.`ReturnValue` |
+| 5 Vector - Vector | `A` <- `Get Actor Location`.`ReturnValue`; `B` <- `Get LastMoveLocation` |
+| 4 VSize2D | `A` <- 5.`ReturnValue` |
+| 6 Float < Float | `A` <- 4.`ReturnValue`; `B` = `20.0` |
+| 3 Branch | `Condition` <- 6.`ReturnValue` |
+| 8 Set StuckTime | `StuckTime` = `0.0` (type the literal in the pin) |
+| 9 Set StuckCount | `StuckCount` = `0` |
+| 10 Float + Float | `A` <- `Get StuckTime`; `B` <- `ReceiveTick`.`DeltaSeconds` |
+| 11 Set StuckTime | `StuckTime` <- 10.`ReturnValue` |
+| 12 Float >= Float | `A` <- 10.`ReturnValue`; `B` = `1.0` |
+| 14 Set StuckTime | `StuckTime` = `0.0` |
+| 15 Set LastMoveLocation | `LastMoveLocation` <- `Get Actor Location`.`ReturnValue` |
+
+Feed 12 from 10's `ReturnValue`, not from a fresh `Get StuckTime`: the total is
+then unambiguous instead of depending on whether the setter has run yet.
+
+New function (`My Blueprint` -> `Functions` -> `+`, name it `UnstuckBounce`, no
+inputs, no return value). The entry node's `then` feeds step 1:
+
+| # | Palette search | Node | Exec in from | Data pins |
+|---|---|---|---|---|
+| 1 | `Set StuckCount` | Set StuckCount | entry `then` | `StuckCount` <- 2.`ReturnValue` |
+| 2 | `integer + integer` | Integer + Integer | (pure) | `A` <- `Get StuckCount`; `B` = `1` |
+| 3 | `integer >= integer` | Integer >= Integer | (pure) | `A` <- 1.`Output_Get`; `B` = `3` |
+| 4 | `Select` | Select | (pure) | `Index` <- 3.`ReturnValue`; `Option 0` <- `Get Actor Location`.`ReturnValue`; `Option 1` <- `Get HomeLocation` |
+| 5 | `SetActorLocation` | Set Actor Location | 1.`then` | `NewLocation` <- 4.`ReturnValue`; `bSweep` = `false`; `bTeleport` = `true` |
+| 6 | `integer * integer` | Integer * Integer | (pure) | `A` <- `Get Facing`; `B` = `-1` |
+| 7 | `Set Facing` | Set Facing | 5.`then` | `Facing` <- 6.`ReturnValue` |
+| 8 | `integer * float` | Integer * Float | (pure) | `A` <- `Get Facing`; `B` <- `Get BounceSpeed` |
+| 9 | `MakeVector` | MakeVector | (pure) | `X` <- 8.`ReturnValue`; `Y` = `0.0`; `Z` <- `Get BounceSpeed` |
+| 10 | `LaunchCharacter` | Launch Character | 7.`then` | `LaunchVelocity` <- 9.`ReturnValue`; `bXYOverride` = `true`; `bZOverride` = `true` (both ticked) |
+| 11 | `BackToSkullIdle` | BackToSkullIdle | 10.`then` | - |
+
+`Select` counts from zero and `Index` is a bool here: `Option 0` is returned when
+`Index` is false (stay put), `Option 1` when it is true (3rd escape -> `HomeLocation`).
+An `Index` that stays `int` behind a `Conv_BoolToInt` behaves the same way and the
+current asset does that — fine, no need to rewire it.
+Step 3 reads step 1's `Output_Get` pin (the setter's own output) so the comparison
+sees the incremented value, not a race with a fresh getter.
+
+Steps 8-10 are the same three nodes the spawn launch already uses; copying them
+from `BeginPlay` and reticking only `bZOverride` is quicker than placing new ones.
+
+Do **not** reset `Stuck Count` here. The tick's "moving" leg (step 9 above) owns
+that reset; zeroing it inside the function would make every escape look like the
+first one, and the `>= 3` branch could never fire.
+
+`UnstuckBounce` flips `Facing`, which is a true `±1` here: `BP_EnemyBase` defaults
+it to `1` and `InitEnemy` calls `SetFacing(1)`. If a future change ever left it at
+`0`, the escape would degenerate into a vertical relaunch — which is exactly why
+the third try resets to `HomeLocation` instead of trusting the flip again.
+
+Why these numbers: `20` uu is about 1/15 s of travel at `BounceSpeed = 300`, so an
+ordinary bounce clears the test on the first frame after it moves; `1.0` s is long
+enough that a slow bounce off a slope is not mistaken for a stuck one. Three
+consecutive escapes inside one "no real movement" window mean the pocket has no
+exit, hence the reset to the skull's **own** spawn — never `PlayerStart`, which is
+the A2e bug — because a reset the player can see beats a contact-lethal enemy
+vibrating invisibly inside terrain.
+
+The watchdog is a safety net, **not** a substitute for A2e defects 4–5
+(`HitCooldown`, and the hit event's unconnected oblique-normal `else` pin): those
+are the reasons it gets pinned. `BP_Bat` and `BP_Ghost` must not copy this
+function — their `Tick` moves them under AI control, so "no displacement for 1 s"
+is a normal state for them.
+
+Three wires in this recipe are easy to get wrong and the blueprint compiles
+anyway:
+
+- **the distance branch's `then`/`else`**: `then` is the *not-moving* leg (add
+  `DeltaSeconds`), `else` is the moving leg (reset). Swapped, the skull counts
+  while it travels and calls the escape every frame while it sits still.
+- **unlinked vector pins**: a fresh `Set LastMoveLocation` writes `(0,0,0)`, so
+  the distance check silently becomes "distance to the world origin".
+- **the `1.0` gate** must hang off the counting leg (the `Set StuckTime` that
+  reads `Float + Float`). Anywhere else and either the escape never fires or it
+  fires every tick. It also needs **exactly one** exec input: leaving the reset
+  row's `Set StuckCount` wired into it too looks harmless because `StuckTime` was
+  just zeroed, but `0 + DeltaSeconds >= 1.0` turns true on any frame longer than
+  a second and bounces a skull that was only walking.
+
+Check the hand work with `py -3 Scripts/_verify_skull_fallback.py`. It re-exports
+the asset and prints 14 PASS/FAIL/PENDING rules: the four variables; the
+`UnstuckBounce` graph plus its launch / idle / teleport / flip nodes; and eight
+watchdog rules — the `VSize2D(Location - LastMoveLocation)` displacement wiring,
+the two branch legs, the `1.0` gate behind the accumulated time, that gate
+having a single exec source, both watchdog resets reading `Get Actor Location`,
+the `NOT bIsDead` guard, and the `UnstuckBounce` call actually sitting on the
+exec path out of `ReceiveTick` rather than floating in the graph. It reads
+`EventGraph` (and the T3D variable table) because the T3D export in this build
+does not carry the compiler ubergraph, and a swapped `then`/`else` or an
+unlinked pin looks fine in a screenshot — which is why those have rules of their
+own.
+
+The pin names in those tables were read straight out of the asset with
+`py -3 Scripts/_t3d_node_pins.py <file.T3D> [--graph EventGraph] [regex]`. It
+prints every live node with its exact pin names, directions, types, defaults and
+links, which is the fastest way to settle "what is this pin called" — or to see
+why a wire was refused.
+
+---
+
+### 6.8 Bat — `BP_Bat`
+
+**Goal (21 Oct 2026 revision):** hangs until the player enters its **trigger
+sphere** (1000), then chases directly like the Ghost but **collides with walls
+and floors**. No de-aggro once triggered.
+
+**Extra variables**
+
+| Name | Type | Default |
+|---|---|---|
+| `bTriggered` | Boolean | `false` |
+| `bChasing` | Boolean | `false` |
+| `TriggerRadius` | Float | `1000.0` |
+| `CeilingInFlipbook` | Paper Flipbook | `FLB_Bat_CeilingIn` |
+| `CeilingOutFlipbook` | Paper Flipbook | `FLB_Bat_CeilingOut` |
+| `FlyingFlipbook` | Paper Flipbook | `FLB_Bat_Flying` |
+| `HangingFlipbook` | Paper Flipbook | `FLB_Bat_Idle` |
+
+**Defaults:** `bCanMove=false`, `ChaseSpeed=1000`, `TriggerRadius=1000`,
+`KnockbackForce=0`, `MaxHealth=2`, `ContactDamage=1`, `HitFlipbook=FLB_Bat_Hit`,
+`DeathFlipbook=FLB_Bat_Hit`. The zero knockback keeps a hit from launching the
+flying Bat along the ceiling. `bAggroOnHit` is a walker-only flag: the Bat's own
+Tick replaces the base walker loop, so the base flag is never read. The Bat needs
+the Bat-specific hit branch in `RefreshStateFlipbook`: on a valid hit
+(`bWasKnockedBack`), clear the flag, set `bTriggered`, `bChasing` and
+`bDealContactDamage`, then call the parent so the Flying flipbook is selected.
+`ChaseSpeed` is inherited from `BP_EnemyBase`; do not add it again.
+
+**Status (5 Nov 2026 — three playtest bugs):** all three are verified fixed
+in PIE. The live `RefreshStateFlipbook` contains the 13-node hit branch
+from `Scripts/_bp_bat_hit_aggro_only.txt` (Entry → `IfThenElse_1`; true sets the
+four flags, false joins the parent), plus a manual `Set MaxFlySpeed =
+ChaseSpeed` node in the true path before the parent call. The EventGraph
+`HangIdle` custom event is gated on `bTriggered`. The full 17-node replacement
+remains staged in `Scripts/_bp_bat_refresh_modified_v2.txt` for a clean
+re-paste; it also contains the hit-path `K2_ClearTimer("HangIdle")`. The three
+bugs were distinct:
+
+1. **No aggro after a hit** — without that Entry → branch wire the whole hit
+   branch is dead, so a shot from outside `TriggerRadius=1000` leaves the Bat
+   hanging.
+2. **Slow chase after a hit** — setting `bChasing=true` alone does not change
+   `CharacterMovement.MaxFlySpeed`; it stays at the flying default `400` until
+   `StartChase` runs. A hit before the normal trigger path therefore chases at
+   `400`, not `1000`. The hit chain now writes
+   `MaxFlySpeed = ChaseSpeed` at its end (plus the
+   `CharacterMovement`/`ChaseSpeed` getters); `MaxAcceleration=8192` makes
+   the change immediate.
+3. **Idle animation while chasing** — the `BeginPlay` `HangIdle` timer is `0.6 s`
+   while the normal `StartChase` timer is `0.5 s`. If the player enters the
+   sphere very soon after BeginPlay (or a hit fires the hit branch), the
+   `HangIdle` callback can land **after** `StartChase` and overwrite
+   `FLB_Bat_Flying` with `FLB_Bat_Hanging`. **Applied fix:** the live
+   EventGraph `HangIdle` custom event is gated on `bTriggered` (optionally
+   `bTriggered OR bIsDead`) and returns without playing the hanging flipbook
+   once the Bat has been triggered. This fixes both the normal and hit paths
+   without relying on timer ordering. Alternative: call
+   `K2_ClearTimer("HangIdle")` on the hit chain and shorten the `BeginPlay`
+   timer to `0.3 s`. Do not remove the timer: it is what starts the hanging
+   idle loop.
+
+**BeginPlay:** `InitEnemy`; `Set bDealContactDamage=false`;
+`PlayStateFlipbook(CeilingInFlipbook,false)`;
+`Set Timer by Function Name("HangIdle", 0.6, false)`.
+
+`HangIdle` → Branch `bTriggered` (live; optionally `bTriggered OR
+bIsDead`); false → `PlayStateFlipbook(HangingFlipbook,true)`; true → return.
+The older alternative keeps the unconditional play and relies on the `0.3 s`
+timer plus `K2_ClearTimer("HangIdle")` on the hit chain.
+
+**`Event Tick` — trigger**
+
+```text
+Branch: bTriggered OR bIsDead
+  True  → if bChasing and player valid: Chase step (below); return
+  False →
+    Get Player Character(0) → Is Valid? → false: return
+    Distance(Self, Player) <= TriggerRadius
+      False → return
+      True  →
+        Set bTriggered = true
+        Set bDealContactDamage = true
+        PlayStateFlipbook(CeilingOutFlipbook, false)
+        Set Timer by Function Name("StartChase", 0.5, false)
+```
+
+`StartChase` → `Set bChasing=true`;
+`Set MaxFlySpeed = ChaseSpeed`;
+`PlayStateFlipbook(FlyingFlipbook,true)`.
+
+**Chase step** (inside Tick or a 0.1 s timer):
+
+```text
+Get Player Character(0) → Is Valid? → false: return
+Direction = Normalize(Player.Location - Self.Location)  (X/Z plane; set Y=0)
+SetFacing(Direction.X)
+Add Movement Input(Direction, 1)
+```
+
+The shell is already `MOVE_Flying`, gravity 0, `MaxFlySpeed=400`; `StartChase`
+sets it to `ChaseSpeed` (1000). `CharacterMovement.MaxAcceleration=8192` makes
+the Bat reach that speed immediately instead of drifting slowly after a hit.
+`FLB_Bat_Flying` loops.
+
+`RefreshStateFlipbook` override: `FlyingFlipbook` while `bChasing`, otherwise
+`HangingFlipbook`.
+
+The bat is a normal health enemy: `AnyDamage` / `Kill` from the base. Contact
+damage is enabled only after the trigger, so a hanging bat is safe to touch.
+
+**Status (7 Nov 2026 — "still slows / turns invisible after a hit"):** the saved
+`BP_Bat` itself is intact — a headless T3D export shows the 17-node
+`RefreshStateFlipbook` (`bWasKnockedBack` → clear + `bTriggered`/`bChasing`/
+`bDealContactDamage` → `MaxFlySpeed = ChaseSpeed` → parent), the EventGraph
+`HangIdle` gate on `bTriggered OR bIsDead`, and the live CDO still has
+`ChaseSpeed=1000`, `KnockbackForce=0`, `TriggerRadius=1000`. The playtest
+symptoms are explained by the **Level 1 instance**: it was placed at `Y=-100`,
+while the terrain (`TM_Background`, `collision_thickness=200`, BlockAll) and
+every other character are on `Y=0`. Its sprite therefore rendered behind the
+terrain plane (hidden under floor/wall tiles) and its capsule sat ~70 uu inside
+the collision slab, so collision resolution could stop it (looks slow) or push
+it behind a wall while it kept chasing. The instance is now at `Y=0`. Keep
+flyers on the terrain plane — see `EnemyPlacement.md` §2.
+
+**Status (7 Nov 2026 — second pass, "still slow after a hit", FIXED):** the `Y`
+fix only removed the *invisible* half. The remaining slowdown was the **shared
+knockback**. `BP_EnemyBase.Event AnyDamage` called
+`LaunchCharacter((±KnockbackForce, 0, 0), bXYOverride=true, bZOverride=false)`.
+Because `bZOverride=false` carries the Bat's own vertical velocity, the launch
+vector is **not** zero even though `KnockbackForce=0`; `Launch()` stores it and
+`HandlePendingLaunch()` calls `SetMovementMode(MOVE_Falling)`. In `Falling`,
+`GetMaxSpeed()` returns `MaxWalkSpeed`, which the same handler just wrote as
+`MoveSpeed` (`100`), and lateral input is scaled by `AirControl` (`0.05`) and
+loses Z. The Bat therefore crawls at ≤100 uu/s towards the player until it
+lands and then keeps walking at `MaxWalkSpeed=100`; `MaxFlySpeed=1000` never
+applies while it is not in `MOVE_Flying`. This also explains the intermittency:
+a hit with `Vz ≈ 0` (Bat exactly level with the player) leaves the mode alone.
+`BP_Bat` is the only enemy with `KnockbackForce=0` (every other CDO was `200`
+when this was diagnosed; retuned to `1200` later the same day — §4.2), so the
+base pin change is a Bat-only behaviour change in practice.
+
+Two fixes exist, either one is enough, and `Scripts/_check_bat_hit_knockback.py`
+reports PASS on either and FAIL when neither is in the asset:
+
+1. **Root cause (`BP_EnemyBase`, A1) — APPLIED 7 Nov 2026:** `LaunchCharacter →
+   Z Override` = `true`. Live export: `K2Node_CallFunction_28`,
+   `bZOverride='true'`; checker `RESULT: PASS (A: bZOverride=true)`;
+   `_verify_enemy_base.py` still `45 PASS / 0 FAIL`. A zero
+   `KnockbackForce` now sends a zero vector and `HandlePendingLaunch()`
+   returns early. Walkers keep their knockback: their arc comes from the
+   authored `MakeVector.Z` lift (`KnockbackForce × 0.4`, §4.2) rather than from
+   the `Vz ≈ 0` they used to inherit, so the pin flip and the retune agree.
+2. **Bat only (A2) — not needed now:** `BP_Bat` Event Graph,
+   `ReceiveTick → Set Movement Mode (Flying) → Bat Tick Logic`. The pre-wired
+   node is in `Scripts/_bp_bat_flying_guard_paste.txt` (paste it into the Event
+   Graph). The Bat re-asserts its shell mode every frame; `SetMovementMode`
+   early-outs when the mode is unchanged, so the cost is one enum compare. This
+   also covers a future non-zero knockback or any other `LaunchCharacter` on the
+   Bat.
+
+The `RefreshStateFlipbook` hit branch (`MaxFlySpeed = ChaseSpeed`) is necessary
+but not sufficient — it fixes the *cap*, not the movement mode.
+
+---
+
+## 7. Build order, verification, test matrix
+
+### 7.1 Build order (do not skip ahead)
+
+> **Parallel split (24 Oct 2026; A split 27 Oct 2026; B retired 4 Nov 2026):**
+> `Docs/EnemyWorkPlan.md` assigns this order to three slots (A1/A2/C); B's
+> stationary/flyers are A2's now. The "do not skip ahead" rule still applies to
+> **walkers**: they waited for the M1 `BP_EnemyBase` gate, which went green on
+> 8 Nov 2026 (`EnemyWorkPlan.md` §10) — walker graphs and walker PIE are now
+> unblocked. Stationary/flyer children
+> (`SpikeTurtle`, `Ghost`, `Bat`, `FloatingSkull`) and the projectile/puddle/
+> shooter support may be built in parallel because they do not read the walker
+> AI.
+
+0. **Trap contract first (DONE - 14 PASS).** `Docs/TrapTriggers.md` §4.0
+   audits the live graphs: `BP_TrapBase`, `BP_Trap_Spikes`, `BP_Trap_FakeFloor`
+   and `BP_Trap_FallPlat` are player-only and **PASS**. `BP_KillVolume` passes
+   both branches (`BPI_Killable` player `Kill`; `Enemy`-tagged `Destroy Actor`
+   with `Target = OtherActor`). `BP_EnemyBase` implements `BPI_Killable`. Run
+   `py -3 Scripts\_verify_traps.py` to confirm 14 PASS before enemy behaviour
+   work.
+0a. **DONE — contact fix (24 Oct 2026; capsule follow-up 25 Oct).**
+    `ContactBox` is on `BP_EnemyBase` (`Pawn=Overlap`, all else `Ignore`,
+    generate overlaps), its `On Component Begin Overlap` is bound to the
+    contact chain, and `CollisionCylinder` is now `Pawn=Overlap` on all four
+    classes so the player cannot stand on the enemy. The verifiers report
+    **52 PASS / 0 FAIL** and **4 PASS / 0 FAIL**. See `EnemyAI.md` §9.
+0b. **DONE — `BP_EnemyPlatform`** — box marker (no collision, hidden in game);
+    seven auto zones exist in `L_Level_01`. The boolean is `bEnabled=true`; the
+    old `bEnable` name is gone (live check 24 Oct 2026: `Zone` extent
+    `(50,50,20)`, `NoCollision`, hidden, `PatrolInset=80`). See
+    `EnemyPlacement.md` for per-enemy minimum widths.
+1. **`BP_EnemyBase` — shared health block DONE; AI core NEXT.** Class Settings
+   already implements `BPI_Killable`; `InitEnemy`, `AnyDamage`, `Kill`, contact
+   overlap, `Die`, `PlayStateFlipbook`, `SetFacing`, `ClearIFrames`,
+   `RecoverFromHit` and `RefreshStateFlipbook` are verified. Add the
+   `EnemyAI.md` §4–7 variables and helpers next. Compile + save.
+
+   **Harness ready (19 Oct, contact check added 24 Oct):**
+   `py -3 Scripts\_verify_enemy_base.py` checks this whole block from a fresh
+   T3D + live CDO + a transient spawned instance. It now also verifies the
+   compiled `ContactBox` and its `On Component Begin Overlap` chain. Expected
+   once the box's non-Pawn responses are `Ignore`: **52 PASS / 0 FAIL / 0
+   PENDING**.
+2. **`BP_EnemyProjectile`** — add `SphereCollision` + `ProjectileMovement`;
+   add `InitProjectile`, `BeginPlay`, `On Component Hit`. Compile + save the
+   `_Wood` child. `_Pea` is unused and can remain a shell.
+3. **`BP_ToxicPuddle`** — add `ToxicBox` (OverlapAllDynamic) and the overlap
+   kill. Compile + save.
+4. **`BP_ShooterEnemyBase`** — fire timer, `TryFire`, `EndAttack`; compile.
+   Then `BP_WoodLog` only (Class Defaults + rectangular detection/de-aggro +
+   horizontal attack); `BP_PeaPlant` is not used.
+5. **`BP_SpikeTurtle`** — spike cycle and idle alternation only. **No patrol**
+   and no detection; `bInvulnerable=true`, `bUseHealth=false`.
+6. **`BP_Rock1/2/3`** — patrol + rectangular detection/chase + `Die` split
+   override; set `ChildRockClass`. Pieces adopt their landing platform.
+7. **`BP_Snail`** — normal ledge-bound patrol, `Die` shell override, shell
+   ledge-bound wall reaction. No detection.
+8. **`BP_Ghost`** — invisible start, sphere aggro, visible/hidden loop, direct
+   through-wall chase, no de-aggro. Hidden = no collision/contact/hits.
+9. **`BP_ToxicSlime`** — ledge-bound patrol + puddle timer. No detection.
+10. **`BP_Rhino`** — long rectangle detection, charge, **4 wall health**,
+    turn after each wall, bullets no-op.
+11. **`BP_FloatingSkull`** — slow bullet-like bounce + `Event Hit` toggle.
+12. **`BP_Bat`** — hang → smaller-sphere trigger → direct chase with collision;
+    no de-aggro.
+
+After each asset: **Compile + Save** (Ctrl+S). A red compile error in a child is
+usually a missing variable/function in the parent — fix the parent first.
+
+### 7.2 Automated verification (already run)
+
+```bat
+py -3 Scripts\_make_enemies.py                    :: create missing shells
+py -3 Scripts\_make_enemies.py --update-defaults  :: re-assert CDO defaults
+py -3 Scripts\_verify_enemies.py                  :: fresh-load verification
+py -3 Scripts\_verify_enemy_base.py               :: step 1 graph/interface audit
+```
+
+Current result: **196 PASS / 0 FAIL / 0 WARN / 19 assets**. The shell verifier
+checks asset existence, T3D `ParentClass`, inherited idle flipbook or sprite,
+capsule radius/half-height, movement defaults, tags, `InitialLifeSpan`, and the
+base `AutoPossessAI`. It does **not** test event graphs.
+
+`_verify_enemy_base.py` is the step-1 graph audit. It re-exports
+`BP_EnemyBase`, reads the live CDO + `BPI_Killable`, spawns a transient
+instance for SCS components, and checks every §3.2 variable (type/default),
+§3.3 function signature, `Kill` event binding, the §4 event/helper graphs, and
+the `ContactBox` collision setup. `PENDING` means not built yet; `FAIL` means
+present but mis-wired. Expected baseline once `ContactBox` is compiled and its
+non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
+`UpdateAggro` acquire/keep paste lands (`EnemyAI.md` §6.2), then **46 PASS /
+0 FAIL / 0 PENDING**.
+
+---
+
+
+### 7.3 PIE test matrix
+
+| Enemy | Test | Expected |
+|---|---|---|
+| Any enemy | Touch the player | player dies once; `ContactBox`/`Pawn=Overlap` fires; no enemy-vs-enemy kill |
+| Any walker | Patrol on a floating platform | turns before the edge; never steps down |
+| Any walker | Player on platform above/below | no aggro; no chase |
+| Any walker | Player jumps over it on the same platform | walker turns, does not jump or step off |
+| Any walker | Player drops to a lower platform | walker stops at the edge; after `DeAggroTime` resumes patrol |
+| Any walker | Player runs along the same platform, past `AggroHalfWidth` | keeps chasing, `UnreachableTime` stays `0`; only leaving the platform starts the clock (`EnemyAI.md` §6.2) |
+| Any walker | Player returns to its platform | walker re-aggros and chases |
+| Any walker | Shoot it off the platform | lands on the lower broad platform and adopts it as home |
+| Any walker | Knock it into a stair step | `Stranded` idle; drops to nearest lower `BP_EnemyPlatform` if one exists; otherwise stays put |
+| Spike Turtle | Shoot while spikes are out or in | no damage ever; `Kill`/point damage ignored |
+| Spike Turtle | Walk through an active spike trap | no damage, no retrigger; enemy is trap-neutral |
+| Spike Turtle | Let it fall into `BP_KillVolume` | destroyed by `Enemy` tag |
+| Any enemy | Stand on `BP_Trap_FakeFloor` | floor does **not** drop for an enemy |
+| Any enemy | Player drops the floor under it | enemy falls; if it reaches `BP_KillVolume`, it dies |
+| Any enemy | Touch a spike trap before the player | spikes do **not** pop; player-only gate |
+| Pea Plant (optional, unused) | Stand in range | `FLB_Plant_Attack`, pea spawns, travels, kills player |
+| Wood Log | Watch patrol + range | patrols platform, stops inside `1400×500`, fires only horizontally, de-aggros and resumes |
+| Snail | Kill it | body → shell, no destruction; shell sweeps its platform |
+| Snail | Shoot the shell | no damage; contact `1` still kills player |
+| Snail | Shell hits wall/edge | reverses at wall/edge, `ShellWallHit`; destroys after 8 s |
+| Ghost | Before trigger | invisible, no collision, no contact, no chase |
+| Ghost | Enter the 550 sphere | visible → chase through walls; visible/hidden loop starts; no de-aggro |
+| Ghost | Shoot while hidden | no hit; collision is off |
+| Rocks | Kill Rock1 | 2× Rock2; kill both → 4× Rock3; cap ≤ 8 live |
+| Rocks | Kill Rock3 | no split; normal death |
+| Rocks | Player enters 700×500 on same platform | chases; stops at ledge; de-aggros after 2 s unreachable |
+| Toxic Slime | Walk around | puddles spawn; each disappears after 3 s; no detection |
+| Toxic Slime | Step in puddle | player killed by `BP_ToxicPuddle` |
+| Rhino | Shoot repeatedly | no damage (`bInvulnerable=true`) |
+| Rhino | Lead it into a wall | `-1` health, turn around, `FLB_Rino_HitWall`; 4th wall hit dies |
+| Rhino | Touch it | player dies; rhino continues |
+| Floating Skull | Shoot while ON | no damage |
+| Floating Skull | Let it hit wall/floor | toggles OFF; `HitWall01/02`; bounces slower (~300) |
+| Floating Skull | Touch while OFF | no damage; shoot it to kill |
+| Bat | Stand outside 1000 sphere | hangs in `CeilingIn`/`Idle`; safe |
+| Bat | Enter 1000 sphere | `CeilingOut` → `Flying` → direct chase with collision; contact kills; no de-aggro |
+| Bat | Shoot twice | 2 hits kills; `FLB_Bat_Hit` |
+| Enemy projectile | Fire near a wall | destroys on wall, no self-hit, 5 s lifespan |
+| Toxic puddle | Spawn and wait | destroyed at 3 s via `InitialLifeSpan` |
+
+---
+
+
+### 7.4 Known limits and deliberate decisions
+
+- **No graph authoring from Python.** Event graphs, functions, variables,
+  interfaces and SCS components are hand work in this UE 4.27.2 build. The
+  generator only creates/configured the shells.
+- **`BP_EnemyBase` health/contact block is complete (44 PASS, 24 Oct).** `Kill`,
+  `AnyDamage`/health, the `ContactBox` overlap chain, `Die` and the helper
+  bodies are in place, so bullets damage enemies and `BP_KillVolume` can still
+  identify and destroy them. The AI core (patrol/aggro/knockback) is the next
+  block, not part of this completed health work. Ordinary traps must **never**
+  damage enemies.
+- **`bCanMove` is a shared-AI gate.** It is a Blueprint boolean, not a
+  `CharacterMovement` property. Walkers keep it true (Wood Log temporarily
+  false while firing); stationary/flyers set it false so the base walker loop
+  is skipped while their own Tick/Launch moves them. See `EnemyAI.md` §4.3.
+- **Wood Log is the only shooter; Pea Plant is intentionally unused.** The
+  `BP_PeaPlant` and `BP_EnemyProjectile_Pea` assets remain in the project but
+  are not part of the build order or required PIE tests. Wood Log now uses a
+  **finite horizontal rectangle** (`1400×500`), same-platform/de-aggro and
+  horizontal-only fire; it no longer shoots from anywhere in the level. See
+  `EnemyAI.md` §8.9.
+- **`BP_EnemyProjectile` and `BP_ToxicPuddle` have no collision/movement**
+  until the hand-added components in §5.2/§5.4.
+- **`ContactBox` contact fix is done (24 Oct; capsule follow-up 25 Oct).** The
+  box is on `BP_EnemyBase` (`Pawn=Overlap`, all other channels `Ignore`,
+  generate overlaps) and its `On Component Begin Overlap` is bound to the
+  contact chain. `CollisionCylinder` is now `Pawn=Overlap` on all four classes,
+  so the player falls through the enemy and cannot stand on it; `WorldStatic` /
+  `WorldDynamic` remain `Block`. The verifiers hold 52 PASS / 0 FAIL and
+  4 PASS / 0 FAIL. See `EnemyAI.md` §9.
+- **Player has no health.** Contact and projectiles call `Kill`; add health to
+  `BP_Player` later if you want multi-hit damage. `ContactDamage` is `1.0`
+  everywhere; the old `2.0` turtle/shell values are removed.
+- **`Kill` time guard is 0.05 s.** It exists because `BP_Projectile` sends
+  `ApplyPointDamage` then `Kill` in the same frame. If you add the one-node
+  `Actor Has Tag("Enemy")` gate to `BP_Projectile`, remove the guard.
+- **Capsule sizes are art-derived, not gameplay-tuned.** They fit the frame
+  sizes but are narrower than the widest art (a capsule cannot be flat/wide);
+  tune per enemy after the first PIE pass.
+- **Toxic puddle art is a placeholder.** `SPR_Slime_Particles` is a 64×16
+  particle strip, not a purpose-made puddle. Replace it when the art exists.
+- **Rock cap is best-effort.** `Get All Actors of Class` is not atomic across
+  simultaneous deaths; the natural 1 → 2 → 4 tree stays at 7 live pieces.
+- **Rhino uses 4 wall health, not player damage.** `bInvulnerable=true` makes
+  `AnyDamage`/`Kill` no-ops; each wall `Event Hit` subtracts 1, turns it around,
+  and the 4th hit calls `Die`. `BP_KillVolume` can still remove it by tag.
+- **Snail shell is invulnerable, not `bIsDead`.** It keeps `bIsDead=false` so
+  contact overlap still runs; `bInvulnerable=true` blocks `AnyDamage` and
+  `Kill`. Its `Die` override returns immediately while `bShellPhase`. Shell
+  contact is `1.0`.
+- **Ghost hidden phase is fully intangible.** Hidden = sprite off, collision
+  off, `bInvulnerable=true`, contact off. Visible = vulnerable and contact `1`;
+  it phases through `WorldStatic` walls. There is no optional invisibility
+  toggle and no de-aggro after the sphere trigger.
+- **Skull ON is fully invulnerable** because base `AnyDamage` and `Kill` both
+  read `bInvulnerable`; OFF is vulnerable and harmless. Bounce speed is ~300,
+  slower than the 900 bullet.
+- **Spike Turtle is stationary scenery.** No patrol, no detection; it is
+  permanently invulnerable to the player and dies only via `BP_KillVolume`.
+  Contact is harmful only while spikes are out.
+- **Walkers use authored `BP_EnemyPlatform` zones.** If a platform has no zone,
+  enemies will not patrol there. Stairs are deliberately not zones; a knockback
+  into a stair step makes the enemy `Stranded`, and it drops to the nearest
+  lower zone only if one is authored. If none exists it **stays put** instead
+  of jumping into a pit. See `EnemyAI.md` §3 and §7.
+- **No navmesh/pathfinding.** Walkers turn at walls; Bat can stick on a wall.
+  This is accepted for the current scope.
+- **Enemies are not placed for production yet.** Only `BP_Snail` is currently
+  in `L_Level_01` at `(-451, 9, 225)`; it does not match an auto zone, so treat
+  it as a leftover test instance. Drag production instances into `L_Level_01`
+  (or a test map), place a `BP_EnemyPlatform` under walkers, and set their Class
+  Defaults.
+- **Auto Possess AI is enabled** (`Placed In World Or Spawned`) so
+  `Add Movement Input` works without a custom AI controller. There is still no
+  Behavior Tree, perception, or navmesh logic.
+- **No C++.** This remains a Blueprint-only project.
+
+### 7.5 Files touched by this work
+
+| Path | What |
+|---|---|
+| `Content/DontTrustTheLevels/Enemies/Blueprints/BP_*.uasset` | 19 new shells |
+| `Content/DontTrustTheLevels/Player/Blueprints/BP_DamageType_Dash.uasset` | dash marker used by `AnyDamage` to skip knockback |
+| `Docs/Enemies.md` | this build sheet |
+| `Docs/EnemyAI.md` | 21 Oct movement/detection/platform/stairs revision |
+| `Docs/EnemyPlacement.md` | shared level-placement guide for all enemy types |
+| `Docs/EnemyWorkPlan.md` | three-slot execution split (A1/A2/C), gates and work cards |
+| `Docs/Structure.md` | enemy tree/ownership now points here |
+| `README.md` | enemy status + guide link |
+| `Scripts/_make_enemies.py` | local-only generator (gitignored) |
+| `Scripts/_verify_enemies.py` | local-only verifier (gitignored) |
+| `Scripts/_make_enemies_out.json`, `_verify_enemies_out.json` | local audit output |
+| `Scripts/_verify_enemies_t3d/` | local T3D export used for parent checks |
+
+---
+

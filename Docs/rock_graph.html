@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>BP_RockBase BeginPlay - step 3 wired graph</title>
+<style>
+ body{margin:0;background:#15171b;color:#d7dbe0;font:13px/1.5 "Segoe UI",Arial,sans-serif}
+ .wrap{padding:10px 12px}
+ .note{padding:8px 12px;background:#1c1f24;border-left:3px solid #3f7d5c;margin:0 0 10px;max-width:1100px}
+ code{background:#22262c;padding:1px 4px;border-radius:3px}
+ .legend{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 10px;color:#9aa0a8;font-size:12px}
+ .legend i{display:inline-block;width:18px;height:2px;vertical-align:middle;margin-right:5px}
+</style></head>
+<body><div class="wrap">
+<p class="note">Exact paste-able text for this graph: <code>Docs/step3_rock_ignore.txt</code>.
+ The only wire not in the paste is <code>ReceiveBeginPlay.then &rarr; Parent: Receive Begin Play.execute</code>
+ (that event stub already exists in <code>BP_RockBase</code>).</p>
+<div class="legend"><span><i style="background:#d6d6d6"></i>exec</span><span><i style="background:#7cb3ff"></i>object</span><span><i style="background:#e06c6c"></i>bool</span><span><i style="background:#3f7d5c"></i>pure node</span></div>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2203 444" width="2203" height="444" font-family="Segoe UI, Arial, sans-serif">
+<rect x="0" y="0" width="2203" height="444" fill="#15171b"/>
+<g transform="translate(24,24)">
+<path d="M230,61 L252,61 L252,43 L275,43" fill="none" stroke="#d6d6d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M505,61 L527,61 L527,43 L550,43" fill="none" stroke="#d6d6d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M505,133 L527,133 L527,61 L550,61" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M780,79 L802,79 L802,43 L825,43" fill="none" stroke="#d6d6d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M780,97 L802,97 L802,305 L825,305" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M780,97 L802,97 L802,162 L1078,162 L1078,61 L1100,61" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M780,97 L802,97 L802,175 L1903,175 L1903,79 L1925,79" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M505,287 L527,287 L527,323 L825,323" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M505,287 L527,287 L527,188 L1628,188 L1628,79 L1650,79" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M1055,341 L1077,341 L1077,201 L803,201 L803,61 L825,61" fill="none" stroke="#e06c6c" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M1055,79 L1077,79 L1077,43 L1100,43" fill="none" stroke="#d6d6d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M1330,79 L1352,79 L1352,214 L1628,214 L1628,43 L1650,43" fill="none" stroke="#d6d6d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M1330,115 L1352,115 L1352,61 L1375,61" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M1605,43 L1627,43 L1627,61 L1650,61" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M1880,115 L1902,115 L1902,43 L1925,43" fill="none" stroke="#d6d6d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<path d="M1880,287 L1902,287 L1902,61 L1925,61" fill="none" stroke="#7cb3ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.92"/>
+<rect x="0" y="0" width="230" height="100" rx="7" fill="#23262c" stroke="#4a5058" stroke-width="1.5"/>
+<path d="M0,34 V7 a7,7 0 0 1 7,-7 H223 a7,7 0 0 1 7,7 V34 z" fill="#2b2f36"/>
+<text x="10" y="22" fill="#f2f2f2" font-size="13" font-weight="600">Parent: Receive Begin Play</text>
+<text x="14" y="47" fill="#d7dbe0" font-size="11" text-anchor="start">execute</text>
+<rect x="0" y="39" width="8" height="8" fill="#d6d6d6"/>
+<text x="216" y="65" fill="#d7dbe0" font-size="11" text-anchor="end">then</text>
+<rect x="222" y="57" width="8" height="8" fill="#d6d6d6"/>
+<text x="14" y="83" fill="#8b9199" font-size="11" text-anchor="start">self</text>
+<circle cx="0" cy="79" r="4" fill="#7cb3ff"/>
+<rect x="275" y="0" width="230" height="154" rx="7" fill="#23262c" stroke="#4a5058" stroke-width="1.5"/>
+<path d="M275,34 V7 a7,7 0 0 1 7,-7 H498 a7,7 0 0 1 7,7 V34 z" fill="#2b2f36"/>
+<text x="285" y="22" fill="#f2f2f2" font-size="13" font-weight="600">Get All Actors Of Class</text>
+<text x="289" y="47" fill="#d7dbe0" font-size="11" text-anchor="start">execute</text>
+<rect x="275" y="39" width="8" height="8" fill="#d6d6d6"/>
+<text x="491" y="65" fill="#d7dbe0" font-size="11" text-anchor="end">then</text>
+<rect x="497" y="57" width="8" height="8" fill="#d6d6d6"/>
+<text x="289" y="83" fill="#8b9199" font-size="11" text-anchor="start">self</text>
+<circle cx="275" cy="79" r="4" fill="#7cb3ff"/>
+<text x="289" y="101" fill="#8b9199" font-size="11" text-anchor="start">WorldContextObject</text>
+<circle cx="275" cy="97" r="4" fill="#7cb3ff"/>
+<text x="289" y="119" fill="#d7dbe0" font-size="11" text-anchor="start">ActorClass = BP Rock Base</text>
+<circle cx="275" cy="115" r="4" fill="#7cb3ff"/>
+<text x="491" y="137" fill="#d7dbe0" font-size="11" text-anchor="end">OutActors</text>
+<circle cx="505" cy="133" r="4" fill="#7cb3ff"/>
+<rect x="550" y="0" width="230" height="154" rx="7" fill="#23262c" stroke="#4a5058" stroke-width="1.5"/>
+<path d="M550,34 V7 a7,7 0 0 1 7,-7 H773 a7,7 0 0 1 7,7 V34 z" fill="#2b2f36"/>
+<text x="560" y="22" fill="#f2f2f2" font-size="13" font-weight="600">For Each Loop</text>
+<text x="564" y="47" fill="#d7dbe0" font-size="11" text-anchor="start">Exec</text>
+<rect x="550" y="39" width="8" height="8" fill="#d6d6d6"/>
+<text x="564" y="65" fill="#d7dbe0" font-size="11" text-anchor="start">Array</text>
+<circle cx="550" cy="61" r="4" fill="#7cb3ff"/>
+<text x="766" y="83" fill="#d7dbe0" font-size="11" text-anchor="end">LoopBody</text>
+<rect x="772" y="75" width="8" height="8" fill="#d6d6d6"/>
+<text x="766" y="101" fill="#d7dbe0" font-size="11" text-anchor="end">Array Element</text>
+<circle cx="780" cy="97" r="4" fill="#7cb3ff"/>
+<text x="766" y="119" fill="#d7dbe0" font-size="11" text-anchor="end">Array Index</text>
+<circle cx="780" cy="115" r="4" fill="#6ee7a8"/>
+<text x="766" y="137" fill="#d7dbe0" font-size="11" text-anchor="end">Completed</text>
+<rect x="772" y="129" width="8" height="8" fill="#d6d6d6"/>
+<rect x="275" y="244" width="230" height="64" rx="7" fill="#23262c" stroke="#3f7d5c" stroke-width="1.5"/>
+<path d="M275,278 V251 a7,7 0 0 1 7,-7 H498 a7,7 0 0 1 7,7 V278 z" fill="#24402f"/>
+<text x="285" y="266" fill="#f2f2f2" font-size="13" font-weight="600">Self</text>
+<text x="491" y="291" fill="#d7dbe0" font-size="11" text-anchor="end">self</text>
+<circle cx="505" cy="287" r="4" fill="#7cb3ff"/>
+<rect x="825" y="244" width="230" height="118" rx="7" fill="#23262c" stroke="#3f7d5c" stroke-width="1.5"/>
+<path d="M825,278 V251 a7,7 0 0 1 7,-7 H1048 a7,7 0 0 1 7,7 V278 z" fill="#24402f"/>
+<text x="835" y="266" fill="#f2f2f2" font-size="13" font-weight="600">Not Equal (Object)</text>
+<text x="839" y="291" fill="#8b9199" font-size="11" text-anchor="start">self</text>
+<circle cx="825" cy="287" r="4" fill="#7cb3ff"/>
+<text x="839" y="309" fill="#d7dbe0" font-size="11" text-anchor="start">A</text>
+<circle cx="825" cy="305" r="4" fill="#7cb3ff"/>
+<text x="839" y="327" fill="#d7dbe0" font-size="11" text-anchor="start">B</text>
+<circle cx="825" cy="323" r="4" fill="#7cb3ff"/>
+<text x="1041" y="345" fill="#d7dbe0" font-size="11" text-anchor="end">ReturnValue</text>
+<circle cx="1055" cy="341" r="4" fill="#e06c6c"/>
+<rect x="825" y="0" width="230" height="118" rx="7" fill="#23262c" stroke="#4a5058" stroke-width="1.5"/>
+<path d="M825,34 V7 a7,7 0 0 1 7,-7 H1048 a7,7 0 0 1 7,7 V34 z" fill="#2b2f36"/>
+<text x="835" y="22" fill="#f2f2f2" font-size="13" font-weight="600">Branch</text>
+<text x="839" y="47" fill="#d7dbe0" font-size="11" text-anchor="start">execute</text>
+<rect x="825" y="39" width="8" height="8" fill="#d6d6d6"/>
+<text x="839" y="65" fill="#d7dbe0" font-size="11" text-anchor="start">Condition</text>
+<circle cx="825" cy="61" r="4" fill="#e06c6c"/>
+<text x="1041" y="83" fill="#d7dbe0" font-size="11" text-anchor="end">then</text>
+<rect x="1047" y="75" width="8" height="8" fill="#d6d6d6"/>
+<text x="1041" y="101" fill="#d7dbe0" font-size="11" text-anchor="end">else</text>
+<rect x="1047" y="93" width="8" height="8" fill="#d6d6d6"/>
+<rect x="1100" y="0" width="230" height="154" rx="7" fill="#23262c" stroke="#4a5058" stroke-width="1.5"/>
+<path d="M1100,34 V7 a7,7 0 0 1 7,-7 H1323 a7,7 0 0 1 7,7 V34 z" fill="#2b2f36"/>
+<text x="1110" y="22" fill="#f2f2f2" font-size="13" font-weight="600">Cast To BP_RockBase</text>
+<text x="1114" y="47" fill="#d7dbe0" font-size="11" text-anchor="start">execute</text>
+<rect x="1100" y="39" width="8" height="8" fill="#d6d6d6"/>
+<text x="1114" y="65" fill="#d7dbe0" font-size="11" text-anchor="start">Object</text>
+<circle cx="1100" cy="61" r="4" fill="#7cb3ff"/>
+<text x="1316" y="83" fill="#d7dbe0" font-size="11" text-anchor="end">then</text>
+<rect x="1322" y="75" width="8" height="8" fill="#d6d6d6"/>
+<text x="1316" y="101" fill="#d7dbe0" font-size="11" text-anchor="end">CastFailed</text>
+<rect x="1322" y="93" width="8" height="8" fill="#d6d6d6"/>
+<text x="1316" y="119" fill="#d7dbe0" font-size="11" text-anchor="end">As BP Rock Base</text>
+<circle cx="1330" cy="115" r="4" fill="#7cb3ff"/>
+<text x="1316" y="137" fill="#8b9199" font-size="11" text-anchor="end">bSuccess</text>
+<circle cx="1330" cy="133" r="4" fill="#e06c6c"/>
+<rect x="1375" y="0" width="230" height="82" rx="7" fill="#23262c" stroke="#3f7d5c" stroke-width="1.5"/>
+<path d="M1375,34 V7 a7,7 0 0 1 7,-7 H1598 a7,7 0 0 1 7,7 V34 z" fill="#24402f"/>
+<text x="1385" y="22" fill="#f2f2f2" font-size="13" font-weight="600">Get Capsule Component</text>
+<text x="1591" y="47" fill="#d7dbe0" font-size="11" text-anchor="end">CapsuleComponent</text>
+<circle cx="1605" cy="43" r="4" fill="#7cb3ff"/>
+<text x="1389" y="65" fill="#d7dbe0" font-size="11" text-anchor="start">self</text>
+<circle cx="1375" cy="61" r="4" fill="#7cb3ff"/>
+<rect x="1650" y="0" width="230" height="136" rx="7" fill="#23262c" stroke="#4a5058" stroke-width="1.5"/>
+<path d="M1650,34 V7 a7,7 0 0 1 7,-7 H1873 a7,7 0 0 1 7,7 V34 z" fill="#2b2f36"/>
+<text x="1660" y="22" fill="#f2f2f2" font-size="13" font-weight="600">Ignore Actor When Moving</text>
+<text x="1664" y="47" fill="#d7dbe0" font-size="11" text-anchor="start">execute</text>
+<rect x="1650" y="39" width="8" height="8" fill="#d6d6d6"/>
+<text x="1664" y="65" fill="#d7dbe0" font-size="11" text-anchor="start">self</text>
+<circle cx="1650" cy="61" r="4" fill="#7cb3ff"/>
+<text x="1664" y="83" fill="#d7dbe0" font-size="11" text-anchor="start">Actor</text>
+<circle cx="1650" cy="79" r="4" fill="#7cb3ff"/>
+<text x="1664" y="101" fill="#d7dbe0" font-size="11" text-anchor="start">bShouldIgnore = true</text>
+<circle cx="1650" cy="97" r="4" fill="#e06c6c"/>
+<text x="1866" y="119" fill="#d7dbe0" font-size="11" text-anchor="end">then</text>
+<rect x="1872" y="111" width="8" height="8" fill="#d6d6d6"/>
+<rect x="1650" y="244" width="230" height="82" rx="7" fill="#23262c" stroke="#3f7d5c" stroke-width="1.5"/>
+<path d="M1650,278 V251 a7,7 0 0 1 7,-7 H1873 a7,7 0 0 1 7,7 V278 z" fill="#24402f"/>
+<text x="1660" y="266" fill="#f2f2f2" font-size="13" font-weight="600">Get Capsule Component</text>
+<text x="1866" y="291" fill="#d7dbe0" font-size="11" text-anchor="end">CapsuleComponent</text>
+<circle cx="1880" cy="287" r="4" fill="#7cb3ff"/>
+<text x="1664" y="309" fill="#8b9199" font-size="11" text-anchor="start">self</text>
+<circle cx="1650" cy="305" r="4" fill="#7cb3ff"/>
+<rect x="1925" y="0" width="230" height="136" rx="7" fill="#23262c" stroke="#4a5058" stroke-width="1.5"/>
+<path d="M1925,34 V7 a7,7 0 0 1 7,-7 H2148 a7,7 0 0 1 7,7 V34 z" fill="#2b2f36"/>
+<text x="1935" y="22" fill="#f2f2f2" font-size="13" font-weight="600">Ignore Actor When Moving</text>
+<text x="1939" y="47" fill="#d7dbe0" font-size="11" text-anchor="start">execute</text>
+<rect x="1925" y="39" width="8" height="8" fill="#d6d6d6"/>
+<text x="1939" y="65" fill="#d7dbe0" font-size="11" text-anchor="start">self</text>
+<circle cx="1925" cy="61" r="4" fill="#7cb3ff"/>
+<text x="1939" y="83" fill="#d7dbe0" font-size="11" text-anchor="start">Actor</text>
+<circle cx="1925" cy="79" r="4" fill="#7cb3ff"/>
+<text x="1939" y="101" fill="#d7dbe0" font-size="11" text-anchor="start">bShouldIgnore = true</text>
+<circle cx="1925" cy="97" r="4" fill="#e06c6c"/>
+<text x="2141" y="119" fill="#d7dbe0" font-size="11" text-anchor="end">then</text>
+<rect x="2147" y="111" width="8" height="8" fill="#d6d6d6"/>
+</g>
+<text x="24" y="434" fill="#8b9199" font-size="12">BP_RockBase EventGraph / step 3 - same table as Docs/step3_rock_ignore.txt (11 nodes, 16 wires)</text>
+</svg>
+</div></body></html>
