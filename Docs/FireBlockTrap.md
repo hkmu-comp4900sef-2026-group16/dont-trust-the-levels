@@ -1,8 +1,10 @@
 # BP_Trap_Fire - fire block - build guide
 
-**Status (18 Nov 2026):** design/build guide. The art is imported; the
-Blueprint is not built yet. This trap inherits `BP_TrapBase` and uses the
-inherited player-only `Trigger` for damage.
+**Status (20 Nov 2026)** — In the local Blueprint, PIE confirmed that player
+overlap starts the fire cycle, bullets leave it idle, and the player can trigger
+it again after it switches off. Recheck the 0.5-second timing and Y alignment
+after applying the settings below. This trap inherits `BP_TrapBase` and uses
+its player-only `Trigger` for damage.
 
 ---
 
@@ -11,7 +13,7 @@ inherited player-only `Trigger` for damage.
 The block is idle (off). When the player steps on it:
 
 1. `FLB_Fire_Hit` plays immediately (the "ignition" telegraph).
-2. After `Delay` seconds (default **1.0**), `FLB_Fire_On` starts and loops.
+2. After `Delay` seconds (default **0.5**), `FLB_Fire_On` starts and loops.
 3. Fire stays on for `FireDuration` seconds (default **2.0**), then the block
    returns to the off state.
 4. If the player steps on the block while the fire is on, the inherited
@@ -84,10 +86,11 @@ player death.
 
 | # | Name | Type | Default | Instance editable | Meaning |
 |---|---|---|---|---|---|
-| 1 | `Delay` | Float | `1.0` | yes | Seconds between the step and `Fire_On`. |
+| 1 | `Delay` | Float | `0.5` | yes | Seconds between the step and `Fire_On`. |
 | 2 | `FireDuration` | Float | `2.0` | yes | Seconds the fire stays on. |
 | 3 | `bCycleActive` | Boolean | `false` | no | Internal. True from step until the fire goes off. |
 | 4 | `bBurning` | Boolean | `false` | no | Internal. True while `Fire_On` is active. |
+| 5 | `GameplayPlaneY` | Float | `0.0` | yes | World Y of the player lane. Set a per-instance value for levels that use a different lane. |
 
 Compile after adding them.
 
@@ -203,12 +206,32 @@ cancel; for a short one-shot sequence the default behaviour is acceptable.
 
 ## 6. Per-instance setup
 
-1. Set `Delay` and `FireDuration` on the placed actor (defaults `1.0` /
-   `2.0`).
-2. Place the actor so its origin is the **bottom centre** of the block.
-3. Size `StepBox`/`Trigger` to the block footprint. For one tile:
-   location `(0,0,50)`, extent `(50,50,50)`.
-4. `Sprite` stays at `(-50,0,200)`, scale `1.0` for a 100x200 flame. For a
+### 6.1 Align newly placed fire blocks to the player lane
+
+In `BP_Trap_Fire`, open **Construction Script**. Connect its entry to
+**Set Actor Location** with `Target = Self`. If the graph already calls its
+parent, connect the new node after that call.
+
+1. Add **Get Actor Location** with `Target = Self`. Right-click its
+   `Return Value` and choose **Split Struct Pin**.
+2. Split **Set Actor Location.New Location**. Connect the actor's current X
+   to X and current Z to Z. Connect **Get GameplayPlaneY** to Y. Leave
+   **Sweep** unchecked.
+3. Compile and drag a new Fire Block into the level. In Details, confirm
+   its Y matches `GameplayPlaneY`. X and Z follow the placement.
+4. Set the placed actor's `GameplayPlaneY` in Details if the level's player
+   lane uses a Y other than the class default of `0.0`.
+
+### 6.2 Place and tune each fire block
+
+1. Use `Delay = 0.5` and `FireDuration = 2.0` as the class defaults. For
+   a previously placed actor with a timing override, reset its `Delay` in
+   Details or enter `0.5` explicitly.
+2. Place the actor's origin at the **bottom centre** of the block, on the
+   surface of the level floor. The floor supports the player.
+3. Size `StepBox` and `Trigger` to the block footprint. For one tile, use
+   location `(0,0,50)` and extent `(50,50,50)`.
+4. `Sprite` stays at `(-50,0,200)` and scale `1.0` for a 100x200 flame. For a
    larger block, scale the actor uniformly so `Trigger` grows with the art.
 
 ---
@@ -217,7 +240,7 @@ cancel; for a short one-shot sequence the default behaviour is acceptable.
 
 1. Step on the block -> `Fire_Hit` plays, then after `Delay` the `Fire_On`
    loop starts, then returns to off after `FireDuration`.
-2. Set `Delay = 0.5`, `FireDuration = 1.0` -> timing follows the variables.
+2. With class defaults, verify ignition after 0.5 seconds and extinguishing after another 2.0 seconds. Then test an instance with `Delay = 0.25` and `FireDuration = 1.0`.
 3. Step on while the fire is on -> player dies once.
 4. Step on during Hit/Delay -> no death from the fire yet; the cycle continues.
 5. Stand still on the block when `FireOn` happens -> player dies (see 5.3).
@@ -226,6 +249,9 @@ cancel; for a short one-shot sequence the default behaviour is acceptable.
 8. Wait for `FireOff`, step off and back on -> the cycle repeats.
 9. Die/respawn -> the block returns to off and can trigger again.
 10. Compile -> `Compile of BP_Trap_Fire successful`.
+11. Drag a fresh actor into the level from the Content Browser. Confirm its
+    Y matches `GameplayPlaneY` and the player can trigger it. Check that a
+    placement on another lane follows its instance override.
 
 ---
 
