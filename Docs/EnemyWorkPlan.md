@@ -1864,24 +1864,37 @@ platform remains valid.
 
 - [ ] Add only the unique variables: `bCharging`, `ChargeSpeed`,
       `ChargeDirection`, `WallHitCooldown`, `LastWallHitTime`, `RunFlipbook`,
-      `HitWallFlipbook`. **Do not** declare `MoveSpeed`; inherit it.
+      `HitWallFlipbook`, `TurnDelay` (`2.0`), and `PlayerBehindSince` (`-1.0`).
+      Inherit `MoveSpeed`.
 - [ ] Class Defaults: `MoveSpeed=120`, `ChaseSpeed=600`, `ChargeSpeed=600`,
       `MaxHealth=4`, `CurrentHealth=4`, `bUseHealth=true`,
       `bInvulnerable=true`, `ContactDamage=1`, `AggroHalfWidth=1200`,
       `AggroHalfHeight=500`, `DeAggroTime=2.0`.
 - [ ] `BeginPlay`: `InitEnemy`; keep `bInvulnerable=true`; contact on;
       `SetFacing(ChargeDirection)`; `MaxWalkSpeed=MoveSpeed`; idle loop.
-- [ ] Override `UpdateAggro`: call `Parent: UpdateAggro`, then set
-      `bCharging=bAggro` (do not duplicate detection).
-- [ ] `Event Hit`: ignore the player; require `Abs(Normal.X)>0.7`; enforce
-      `WallHitCooldown`; subtract 1 health; `SetFacing(-Facing)`; play
-      `HitWallFlipbook`; if health `<=0`, `bInvulnerable=false` then `Die`;
-      else `EndWallHit` (`0.3`).
+- [ ] Keep the Rhino-specific `ChaseStep` and `TurnDelay=2.0`. While charging,
+      wait until the player has stayed behind for 2 seconds before turning
+      toward them on the same platform.
+- [ ] In `UpdateAggro`, continue the charge in the current direction for up
+      to 2 seconds when the player moves to another platform. Use the
+      inherited `UnreachableTime` and keep parent detection and patrol.
+      Both charge paths use `MoveInFacingDirection` and its ledge check.
+      After the parent update, sync `bCharging` and refresh the flipbook
+      when it changes.
+- [ ] On capsule hit, ignore dead Rhino and the player. Require
+      `Abs(Normal.X)>0.7` and a valid `WorldStatic` component. Apply the
+      separate `WallHitCooldown=0.5`, subtract 1 health, turn immediately,
+      reset `PlayerBehindSince`, then play `HitWallFlipbook`. If health
+      `<=0`, set `bInvulnerable=false` and call `Die`; otherwise call
+      `EndWallHit` after `0.3` seconds.
 - [ ] `EndWallHit` resumes charge/patrol and refreshes the flipbook.
 - [ ] Override `RefreshStateFlipbook`: `RunFlipbook` while `bCharging`, else idle.
 
 **Done when:** test 15 passes: bullets do nothing; 4 wall hits kill; it turns
 after each hit; contact kills the player; `KillVolume` still destroys it.
+Also test the two charge cases away from walls. Crossing behind Rhino keeps
+its direction for 2 seconds. Moving onto another platform lets it continue
+for 2 seconds before de-aggro. Re-entering chase restores the run flipbook.
 
 **Do not:** add health damage from bullets, vertical movement, or a second
 detection box.

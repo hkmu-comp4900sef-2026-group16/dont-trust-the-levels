@@ -11,7 +11,7 @@ position onto the rail, starts `SweepProgress` at that phase, and lets the tick
 take over, so a saw placed anywhere on (or beside) the rail slides away from
 where the designer put it. `bSweepTowardEnd` picks which way the first leg
 goes. The activation snap that produced the "teleports to `SweepStart`" bug is
-deleted; the only code that writes `SawRoot`'s location is the tick's `VLerp`.
+deleted; the only code that writes `TrapRoot`'s location is the tick's `VLerp`.
 
 The two older defects are closed:
 
@@ -29,7 +29,7 @@ material and `TargetOffset` were dropped; the chase mode is retired in favour
 of the rail sweep, and `bChasePlayer` is left in the asset unused.
 
 **Final verification:** the PIE probe (`Scripts/_probe_saw_speed.py`) sampled
-`SawRoot` every tick and showed a monotonic glide between the two gizmos with no
+`TrapRoot` every tick and showed a monotonic glide between the two gizmos with no
 per-frame reversals, and the reveal was checked by eye: the blade stays put on
 activation and then starts sliding. The earlier failure mode (reversals every
 ~10 ms) is what proved the morph composite was broken.
@@ -98,7 +98,7 @@ parked on a gizmo starts from that end. Nothing moves at activation.
 only. Do **not** add a second `Kill` or `Apply Damage` to the child. Enemies and
 bullets must not trigger or damage it (`Docs/TrapTriggers.md` section 2).
 
-Because `Trigger` is a child of `SawRoot`, it travels and scales with the
+Because `Trigger` is a child of `TrapRoot`, it travels and scales with the
 blade: a sweeping saw kills anywhere along its line, not just at the point
 where the actor was placed.
 
@@ -140,22 +140,22 @@ reparent inherited components in a child Blueprint:
 nodes and for the default root. Dragging inherited `Sprite`/`Trigger` in
 `BP_Trap_Saw_New` therefore cannot work.
 
-If you already added `SawRoot` in the child, delete that local component first.
+If you already added `TrapRoot` in the child, delete that local component first.
 It cannot parent inherited components and would collide with the inherited
 name.
 
 Create the pivot once in the parent, where `Sprite` and `Trigger` are local:
 
 1. Open `Content/DontTrustTheLevels/Traps/Blueprints/BP_TrapBase`.
-2. Components -> **+ Add** -> **Scene Component**, rename it **`SawRoot`**.
+2. Components -> **+ Add** -> **Scene Component**, rename it **`TrapRoot`**.
    It stays a child of `DefaultSceneRoot`; leave its relative transform at
    `(0,0,0)`, scale `1`.
-3. Drag **`Sprite`** onto **`SawRoot`**, then drag **`Trigger`** onto
-   **`SawRoot`**. These components are local to `BP_TrapBase`, so the editor
+3. Drag **`Sprite`** onto **`TrapRoot`**, then drag **`Trigger`** onto
+   **`TrapRoot`**. These components are local to `BP_TrapBase`, so the editor
    allows the reparent.
 4. Compile and save `BP_TrapBase`.
-5. Open `BP_Trap_Saw_New`; `SawRoot` is now inherited, and `Sprite`/`Trigger`
-   are already under it. Do not add a second `SawRoot`, and do not try to
+5. Open `BP_Trap_Saw_New`; `TrapRoot` is now inherited, and `Sprite`/`Trigger`
+   are already under it. Do not add a second `TrapRoot`, and do not try to
    reparent inherited components in the child.
 6. In `BP_Trap_Saw_New`, add the local components:
    **+ Add** -> **Box Collision**, rename it **`RevealBox`**;
@@ -163,7 +163,7 @@ Create the pivot once in the parent, where `Sprite` and `Trigger` are local:
    **+ Add** -> **Scene Component**, rename it **`SweepEnd`**.
 
 All three local components must be children of **`DefaultSceneRoot`**, **never**
-of `SawRoot`:
+of `TrapRoot`:
 
 - `RevealBox` is a proximity sensor, so it should not scale or move with the
   blade.
@@ -174,7 +174,7 @@ This is a shared base-class change: `BP_Trap_Spikes` and `BP_Trap_FallPlat`
 inherit the new identity pivot too. Their relative transforms are unchanged,
 but PIE one instance of each after the edit.
 
-`SawRoot` is the single animation pivot: moving or scaling it moves/scales the
+`TrapRoot` is the single animation pivot: moving or scaling it moves/scales the
 blade and the lethal trigger together. `RevealBox`, `SweepStart` and `SweepEnd`
 stay at the original actor position.
 
@@ -183,14 +183,14 @@ stay at the original actor position.
 **Set the `Sprite`/`Trigger` rows in `BP_Trap_Saw_New`, not in `BP_TrapBase`.**
 They are inherited overrides; changing them in the parent would also change
 `BP_Trap_Spikes` and `BP_Trap_FallPlat`. In `BP_TrapBase`, the only change is
-the identity `SawRoot` pivot and the two attachment links.
+the identity `TrapRoot` pivot and the two attachment links.
 
 | Component | Parent | Relative location | Relative scale | Key settings |
 |---|---|---|---|---|
 | `DefaultSceneRoot` | - | `(0,0,0)` | `(1,1,1)` | - |
-| `SawRoot` | `DefaultSceneRoot` | `(0,0,0)` | `(1,1,1)` | - |
-| `Sprite` | `SawRoot` | `(-50, 0, 50)` | `(0.4211, 0.4211, 0.4211)` | Flipbook = **`FLB_Saw`**; **Looping = on**; Collision Presets = **`NoCollision`** |
-| `Trigger` | `SawRoot` | `(0, 0, 0)` | `(1,1,1)` | Collision Presets = **`OverlapAllDynamic`**; Generate Overlap Events = **on**; Box Extent = `(50, 50, 50)` |
+| `TrapRoot` | `DefaultSceneRoot` | `(0,0,0)` | `(1,1,1)` | - |
+| `Sprite` | `TrapRoot` | `(-50, 0, 50)` | `(0.4211, 0.4211, 0.4211)` | Flipbook = **`FLB_Saw`**; **Looping = on**; Collision Presets = **`NoCollision`** |
+| `Trigger` | `TrapRoot` | `(0, 0, 0)` | `(1,1,1)` | Collision Presets = **`OverlapAllDynamic`**; Generate Overlap Events = **on**; Box Extent = `(50, 50, 50)` |
 | `RevealBox` | `DefaultSceneRoot` | `(0, 0, 0)` | `(1,1,1)` | Collision Presets = **`OverlapAllDynamic`**; Collision Enabled = **Query Only**; Generate Overlap Events = **on**; Box Extent = `(300, 100, 300)` (tune per instance) |
 | `SweepStart` | `DefaultSceneRoot` | per instance | `(1,1,1)` | Scene Component; **movable gizmo**, no collision |
 | `SweepEnd` | `DefaultSceneRoot` | per instance | `(1,1,1)` | Scene Component; **movable gizmo**, no collision |
@@ -205,8 +205,8 @@ if you also call `Sprite -> Play` yourself after activation. Leaving it on is
 what the current build does and the result was accepted in PIE; do not change
 it without re-testing the blade animation.
 
-**Why `Trigger` is `(50,50,50)`:** with `SawRoot` scale 1 the box is a
-100x100x100 uu volume around the one-tile blade. Scaling `SawRoot` to
+**Why `Trigger` is `(50,50,50)`:** with `TrapRoot` scale 1 the box is a
+100x100x100 uu volume around the one-tile blade. Scaling `TrapRoot` to
 `TargetScale = 2` scales the box to 200 uu, so the hitbox always matches the
 new blade size.
 
@@ -218,7 +218,7 @@ trap, raise Z (for example `(250, 100, 350)`). Keep `RevealBox` off the
 initialization edge case.
 
 **Compile** `BP_TrapBase` after the pivot, then compile `BP_Trap_Saw_New` after
-adding the local components and the variables. Click the inherited `SawRoot`
+adding the local components and the variables. Click the inherited `TrapRoot`
 component and confirm its relative transform is still `(0,0,0)` with scale `1`.
 
 ---
@@ -246,9 +246,9 @@ Editable** where noted, then **Compile** before wiring anything.
 | 14 | `bTransitioning` | Boolean | `false` | no | **Legacy.** Kept at `false`; the morph lane never runs. |
 | 15 | `MorphElapsed` | Float | `0.0` | no | **Legacy**, unused. |
 | 16 | `MorphAlpha` | Float | `0.0` | no | **Legacy**, unused. |
-| 17 | `StartLocation` | Vector | `(0,0,0)` | no | Internal. `SawRoot` position when static, `SweepStart` when movable. |
+| 17 | `StartLocation` | Vector | `(0,0,0)` | no | Internal. `TrapRoot` position when static, `SweepStart` when movable. |
 | 18 | `TargetLocation` | Vector | `(0,0,0)` | no | Internal. Always `SweepEnd`. |
-| 19 | `StartScale3D` | Vector | `(1,1,1)` | no | Internal. Captured from `SawRoot` at activation. |
+| 19 | `StartScale3D` | Vector | `(1,1,1)` | no | Internal. Captured from `TrapRoot` at activation. |
 | 20 | `TargetScale3D` | Vector | `(1,1,1)` | no | Internal. `Make Vector(TargetScale,TargetScale,TargetScale)`. |
 
 Deleting the legacy rows (6, 10, 11, 14, 15, 16) is safe once `ChaseStep`,
@@ -296,16 +296,14 @@ Function Entry (ActivateSaw)
                     New Type = QueryOnly
                 RevealBox -> Set Collision Enabled
                     New Type = NoCollision
-                Sprite -> Stop
-                Sprite -> Set Playback Position
-                    New Position = 0.0
-                    Fire Events = false
                 Sprite -> Play
                 SET StartLocation = Select (Vector)
                     Index    = GET bMovable
-                    Option 0 = SawRoot -> Get Relative Location     (static: stay put)
+                    Option 0 = TrapRoot -> Get Relative Location     (static: stay put)
                     Option 1 = SweepStart -> Get Relative Location  (movable: line start)
-                SET StartScale3D = SawRoot -> Get Relative Scale 3D
+                SET StartScale3D = TrapRoot -> Get Relative Scale 3D
+                TrapRoot -> Set Relative Scale 3D
+                    New Scale 3D = StartScale3D
                 SET TargetLocation = SweepEnd -> Get Relative Location
                 SET TargetScale3D = Make Vector
                     X = GET TargetScale
@@ -315,16 +313,17 @@ Function Entry (ActivateSaw)
                 SET bTransitioning = false
 ```
 
-**There is no snap.** Nothing in `ActivateSaw` writes `SawRoot`'s transform;
+**There is no snap.** Nothing in `ActivateSaw` writes `TrapRoot`'s **location**;
 the first tick after activation places the blade on the rail at the phase
 `SweepProgress` already holds, which is the blade's own spot. That is what makes
-a mid-rail placement safe.
+a mid-rail placement safe. (The function does reset `TrapRoot`'s **scale** to
+`StartScale3D`, which is a no-op while the blade keeps its BeginPlay size.)
 
 **Seeding `SweepProgress` (pure math, no exec):**
 
 ```
 Seg  = SweepEnd.RelativeLocation  - SweepStart.RelativeLocation     (Vector)
-Off  = SawRoot.RelativeLocation   - SweepStart.RelativeLocation     (Vector)
+Off  = TrapRoot.RelativeLocation   - SweepStart.RelativeLocation     (Vector)
 Num  = DotProduct(Off, Seg)
 Den  = DotProduct(Seg, Seg)
 Safe = Max(Den, 0.01)                       // guards a zero-length rail
@@ -350,7 +349,7 @@ keeps one execution chain.
 
 **Why the projection and not `SweepProgress = 0`:** with `0` the first tick
 would jump the blade to `SweepStart`; the old code did that explicitly with a
-`SawRoot -> Set Relative Location (StartLocation)` call, which is exactly the
+`TrapRoot -> Set Relative Location (StartLocation)` call, which is exactly the
 "teleports when I walk near it" bug. Do not put that call back. If a blade is
 placed off the rail, the projection clamps it to the nearest end and the first
 tick pulls it onto the line - a perpendicular hop, by design.
@@ -366,10 +365,10 @@ The function body can stay - it is harmless while `bTransitioning` is never
 set - or be deleted. It is kept in the current asset only to avoid a risky
 graph edit late in the feature.
 
-It used to own the `Sprite -> Play` call. That call now lives at the end of
-`ActivateSaw` (after `Stop` + `Set Playback Position(0)`), so the blade starts
-spinning as soon as the trap fires, not when a morph completes. Do not add a
-second `Play` elsewhere.
+It used to own the `Sprite -> Play` call. That call now lives in `ActivateSaw`
+(right after the visibility and collision setup), so the blade starts spinning
+as soon as the trap fires, not when a morph completes. Do not add a second
+`Play` elsewhere.
 
 ### 5.3 `Event BeginPlay`
 
@@ -383,10 +382,11 @@ Event BeginPlay
          SET bActive = false
          SET bTransitioning = false
          SET StartScale3D = Make Vector(StartScale, StartScale, StartScale)
-         SawRoot -> Set Relative Scale 3D (New Scale 3D = StartScale3D)
-         SET StartLocation = SawRoot -> Get Relative Location
+         TrapRoot -> Set Relative Scale 3D (New Scale 3D = StartScale3D)
+         SET StartLocation = TrapRoot -> Get Relative Location
          Sprite -> Set Collision Enabled (New Type = NoCollision)
          Sprite -> Set Looping (bNewLooping = true)
+         Sprite -> Play
 
        Then 1:
          Branch (Condition = GET bStartHidden)
@@ -472,10 +472,10 @@ Event Tick
              Option 1 = PingAlpha
 
          VLerp (A = StartLocation, B = TargetLocation, Alpha = Alpha)
-           -> SawRoot -> Set Relative Location
+           -> TrapRoot -> Set Relative Location
 
          VLerp (A = StartScale3D, B = TargetScale3D, Alpha = Alpha)
-           -> SawRoot -> Set Relative Scale 3D
+           -> TrapRoot -> Set Relative Scale 3D
 
        False:
          (existing chase gate; unreachable, see 5.6)
@@ -666,7 +666,7 @@ py -3 Scripts\_export_base_t3d.py
 :: placed-instance switches + gizmo offsets
 py -3 Scripts\_probe_saw_instance2.py
 
-:: per-tick SawRoot.x sampler (the probe that proved the sweep)
+:: per-tick TrapRoot.x sampler (the probe that proved the sweep)
 py -3 Scripts\_probe_saw_speed.py
 
 :: activation state after a reveal (MorphElapsed/MorphAlpha are legacy now)
@@ -677,13 +677,13 @@ py -3 Scripts\_probe_saw_all.py
 What to look for in the export:
 
 - `ActivateSaw` `Select` (Vector): `Option 1` linked to `SweepStart`'s
-  `RelativeLocation`, `Option 0` to `SawRoot`'s, `Index` to `bMovable`.
+  `RelativeLocation`, `Option 0` to `TrapRoot`'s, `Index` to `bMovable`.
 - `Set TargetLocation` linked to `SweepEnd`'s `RelativeLocation`.
 - `Set SweepProgress` linked to the `SelectFloat` result - not to a `0.0`
   literal.
 - `ActivateSaw` contains **no** `Set Relative Location` call. If it does, the
   blade will jump to `SweepStart` on activation - that was the open bug.
-- The phase chain: `Subtract(SweepEnd, SweepStart)`, `Subtract(SawRoot,
+- The phase chain: `Subtract(SweepEnd, SweepStart)`, `Subtract(TrapRoot,
   SweepStart)`, two `DotProduct`s, `Max(x, 0.01)`, `Divide`, `FClamp(0,1)`,
   `2 - A0`, `SelectFloat`.
 - `SelectFloat.bPickA` = `bSweepTowardEnd`, with `A = A0` and `B = 2 - A0`
@@ -705,16 +705,16 @@ printed a reversal every ~10 ms.
 | Does not move | `bMovable = false`, `bActive = false` (never activated), or `TransitionDuration` clamped to `0.01` (looks instant). |
 | Moves once and stops | `bPingPong = false` and you are seeing the wrap as a stop; set it true for a rail saw. |
 | Jumps between the endpoints every frame | the old morph path is running again: `bTransitioning` must stay `false`, and the tick gate must be `bActive AND bMovable`, not `bTransitioning`. |
-| Teleports to `SweepStart` when the player walks near | a `SawRoot -> Set Relative Location` node is still in `ActivateSaw` (this is the bug fixed in 5.1). Delete it; nothing in `ActivateSaw` should write `SawRoot`'s transform. |
+| Teleports to `SweepStart` when the player walks near | a `TrapRoot -> Set Relative Location` node is still in `ActivateSaw` (this is the bug fixed in 5.1). Delete it; nothing in `ActivateSaw` should write `TrapRoot`'s transform. |
 | First slide goes the wrong way | `SelectFloat`'s `A`/`B` are swapped. That function returns `bPickA ? A : B`, so `A` must be `A0` (toward `SweepEnd`) and `B` must be `2 - A0`. |
 | Small sideways hop on the first frame | the blade is parked off the rail (Y or Z differs from the gizmos); the phase clamps to the nearest end and the tick pulls it onto the line. |
-| Only half the rail is ever used | `StartLocation` is reading `SawRoot` instead of `SweepStart`, or `TargetLocation` is not `SweepEnd`; check the `Select` (Vector) polarity and the target getter. |
+| Only half the rail is ever used | `StartLocation` is reading `TrapRoot` instead of `SweepStart`, or `TargetLocation` is not `SweepEnd`; check the `Select` (Vector) polarity and the target getter. |
 | Sweeps on the wrong axis | `SweepStart`/`SweepEnd` differ in the wrong component; drag the gizmos with the level viewport in the XZ plane. |
-| Blade leaves the line | `SweepStart`/`SweepEnd` are parented under `SawRoot` instead of `DefaultSceneRoot`. |
+| Blade leaves the line | `SweepStart`/`SweepEnd` are parented under `TrapRoot` instead of `DefaultSceneRoot`. |
 | Blade is off-centre on the line | `Sprite` relative location is not `(-50,0,50)` or its scale is not `0.4211`. |
 | Size pulses during the sweep | `StartScale != TargetScale`; the lerp is applied to scale too. Set them equal for a pure move. |
 | It never changes size | resizing needs `bMovable = true` (the scale lerp is inside the sweep lane); a `bMovable = false` saw keeps its `StartScale`. |
-| Hitbox stays behind | `Trigger` was not attached to `SawRoot`; reattach it. |
+| Hitbox stays behind | `Trigger` was not attached to `TrapRoot`; reattach it. |
 | Hidden saw kills before it is revealed | `BeginPlay`'s `bStartHidden` True branch did not set `Trigger` to `NoCollision`. |
 | Hidden saw never appears | `RevealBox` collision is `NoCollision`, the overlap event is missing, or `bActivateOnPlayerNear` is false. |
 | Bullets or enemies reveal the saw | the `Equal` node is missing or wired to the wrong actor; use `OtherActor` and `Get Player Character(0)`. |
@@ -739,7 +739,7 @@ printed a reversal every ~10 ms.
 - **Reveal and damage are different volumes.** `RevealBox` is a proximity
   sensor; `Trigger` is the lethal hitbox. Do not make one volume do both, or a
   hidden saw becomes lethal before it is shown.
-- **`SawRoot` is the animation pivot.** `Sprite` and `Trigger` are its
+- **`TrapRoot` is the animation pivot.** `Sprite` and `Trigger` are its
   children. Scaling it grows the visual and the hitbox together; moving it
   moves both - which is exactly what makes a sweeping saw lethal along its
   whole line.
@@ -782,7 +782,7 @@ Three separate faults were behind the reports in this document:
    `0.0` (a fresh instance default), which took the "finish immediately"
    branch anyway.
 3. **`ActivateSaw` snapped the blade to `SweepStart`.** A plain
-   `SawRoot -> Set Relative Location (StartLocation)` call (not a branch) ran on
+   `TrapRoot -> Set Relative Location (StartLocation)` call (not a branch) ran on
    every activation, so a saw placed anywhere except on the start gizmo
    teleported the moment `RevealBox` fired. It is deleted; `ActivateSaw` now
    seeds `SweepProgress` from the blade's own phase instead (5.1).

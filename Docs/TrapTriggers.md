@@ -98,7 +98,7 @@ A hidden saw must never be lethal before it is visible.
 
 Movement is a separate concern: `bMovable=true` makes the blade sweep between
 the two designer-placed gizmos `SweepStart` and `SweepEnd`, and the inherited
-`Trigger` is a child of `SawRoot`, so the lethal volume travels with the blade.
+`Trigger` is a child of `TrapRoot`, so the lethal volume travels with the blade.
 That does not change the contract above - the sweep is still player-only
 damage, and `RevealBox` is still the only thing that starts the trap.
 

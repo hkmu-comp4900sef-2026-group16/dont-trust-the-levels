@@ -834,6 +834,10 @@ it*. Regenerate and re-check with
 `py -3 Scripts/_check_wires_html.py Scripts/player_graph.html` (currently
 **PASS**, 4 boards / 34 nodes / 32 wires).
 
+> **Ammo gate (20 Nov 2026):** the fire chain also spends ammo. `Ammo` lives on
+> `BP_Player`, the `Shoot` branch is gated by `Can Fire AND Ammo > 0`, and a
+> pickup gives +5. The full build sheet is `Docs/AmmoHUD.md`.
+
 Open `/Game/DontTrustTheLevels/Player/Blueprints/BP_Player`. One owner at a
 time on this asset — build Parts 2–5 first, then come here in one sitting.
 
