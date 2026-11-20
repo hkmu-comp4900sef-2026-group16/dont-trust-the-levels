@@ -60,7 +60,7 @@ below.
 | `BP_EnemyProjectile` | `PaperSpriteActor` | enemy bullet base | — (5 s lifespan) |
 | `BP_EnemyProjectile_Pea` | `BP_EnemyProjectile` | pea bullet | `SPR_Plant_Bullet` |
 | `BP_EnemyProjectile_Wood` | `BP_EnemyProjectile` | wood bullet | `SPR_Trunk_Bullet` |
-| `BP_ToxicPuddle` | `PaperSpriteActor` | slime trail hazard | `SPR_Slime_Particles` (3 s lifespan) |
+| `BP_ToxicPuddle` | `PaperSpriteActor` | slime trail hazard | `SPR_ToxicPuddleArt` (8 s lifespan) |
 
 **Tags already set on the CDOs**
 
@@ -662,19 +662,23 @@ the attack pauses movement. `AttackFlipbook` is one-shot; `EndAttack` resumes.
 
 Add a `BoxCollision` named `ToxicBox`:
 
-- Box Extent `(100, 50, 20)` (scale the inherited sprite separately if needed)
+- Box Extent `(30, 15, 20)` (matches the 0.3-scaled puddle sprite)
 - Collision Preset **OverlapAllDynamic**
 - Generate Overlap Events ✓
 
-`InitialLifeSpan` is already **3.0** on the shell, so it self-destroys.
+`InitialLifeSpan` is **8.0** on the shell, so it self-destroys after eight
+seconds.
 
 `Event ActorBeginOverlap` → `OtherActor == Get Player Character(0)` →
 `Does Implement Interface(BPI_Killable)` → `Kill` message. Optional: start a
 0.5 s timer that applies damage while the player stands in it; clear it on
 `ActorEndOverlap`.
 
-The shell's default art is `SPR_Slime_Particles` (64×16 strip). Treat it as a
-placeholder: create a dedicated puddle sprite later if the strip reads wrong.
+The puddle art is `SPR_ToxicPuddleArt`, built from the dedicated 32x16 pixel
+puddle texture `T_Slime_Puddle_D` (`ppu = 0.16`, pivot center) at
+`RenderComponent` scale `0.3` (~60x30 uu). The full `SPR_Slime_Particles` strip
+is left untouched for particle VFX. This puddle texture is still a generated
+placeholder; replace it when final art exists.
 
 ---
 
@@ -1055,16 +1059,16 @@ state.
 
 ### 6.5 Toxic Slime — `BP_ToxicSlime`
 
-**Goal:** leaves toxic tracks that exist for 3 seconds.
+**Goal:** leaves toxic tracks that exist for 8 seconds.
 
 **Extra variables**
 
 | Name | Type | Default |
 |---|---|---|
 | `PuddleClass` | Class (Actor) | `BP_ToxicPuddle` |
-| `PuddleInterval` | Float | `0.75` |
+| `PuddleInterval` | Float | `0.4` |
 | `NextPuddleTime` | Float | `0.0` |
-| `PuddleOffset` | Vector | `(0, 0, -60)` |
+| `PuddleOffset` | Vector | `(0, 0, 2)` |
 | `bLeaveTracks` | Boolean | `true` |
 
 **Defaults:** `ChaseSpeed=0`, `MaxHealth=3`, `MoveSpeed=70`, `ContactDamage=1`,
@@ -1091,9 +1095,16 @@ Spawn Actor from Class:
 Set NextPuddleTime = Get Game Time in Seconds + PuddleInterval
 ```
 
-`BP_ToxicPuddle` already has `InitialLifeSpan=3.0`, so the track disappears
-after three seconds without any graph in the slime. If the puddle reads too
-large/small, set `Spawn Transform → Scale` to `(0.75, 0.75, 0.75)`.
+`BP_ToxicPuddle` has `InitialLifeSpan=8.0`, so the track disappears after eight
+seconds without any graph in the slime. At `MoveSpeed=70` that is a trail about
+560 uu long, and `PuddleInterval=0.4` drops one every ~28 uu. The puddle's size
+is the `RenderComponent` scale (`0.3`, ~60x30 uu); the slime's spawn transform is
+left at scale 1 so the puddle blueprint owns its visual size.
+
+`PuddleOffset` must stay at `(0, 0, 2)`. The slime's spawn code traces downward
+from `GetActorLocation + PuddleOffset` and snaps the puddle to the ground; a
+negative offset puts that trace below the floor, the ground check fails, and no
+puddle (and no `NextPuddleTime` update) happens.
 
 `BP_ToxicPuddle` itself needs the `ToxicBox` overlap from §5.4; that is where
 the player is killed. Slime contact damage is the normal base `ContactBox`
@@ -1777,7 +1788,7 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
 | Rocks | Kill Rock1 | 2× Rock2; kill both → 4× Rock3; cap ≤ 8 live |
 | Rocks | Kill Rock3 | no split; normal death |
 | Rocks | Player enters 700×500 on same platform | chases; stops at ledge; de-aggros after 2 s unreachable |
-| Toxic Slime | Walk around | puddles spawn; each disappears after 3 s; no detection |
+| Toxic Slime | Walk around | puddles spawn; each disappears after 8 s; no detection |
 | Toxic Slime | Step in puddle | player killed by `BP_ToxicPuddle` |
 | Rhino | Shoot repeatedly | no damage (`bInvulnerable=true`) |
 | Rhino | Lead it into a wall | `-1` health, turn around, `FLB_Rino_HitWall`; 4th wall hit dies |
@@ -1789,7 +1800,7 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
 | Bat | Enter 1000 sphere | `CeilingOut` → `Flying` → direct chase with collision; contact kills; no de-aggro |
 | Bat | Shoot twice | 2 hits kills; `FLB_Bat_Hit` |
 | Enemy projectile | Fire near a wall | destroys on wall, no self-hit, 5 s lifespan |
-| Toxic puddle | Spawn and wait | destroyed at 3 s via `InitialLifeSpan` |
+| Toxic puddle | Spawn and wait | destroyed at 8 s via `InitialLifeSpan` |
 
 ---
 
@@ -1833,8 +1844,9 @@ non-Pawn responses are `Ignore`: **44 PASS / 0 FAIL / 2 PENDING** until the
 - **Capsule sizes are art-derived, not gameplay-tuned.** They fit the frame
   sizes but are narrower than the widest art (a capsule cannot be flat/wide);
   tune per enemy after the first PIE pass.
-- **Toxic puddle art is a placeholder.** `SPR_Slime_Particles` is a 64×16
-  particle strip, not a purpose-made puddle. Replace it when the art exists.
+- **Toxic puddle art is a placeholder.** `SPR_ToxicPuddleArt` is a generated
+  32x16 puddle (`T_Slime_Puddle_D`), not final art. Replace it when the art
+  exists.
 - **Rock cap is best-effort.** `Get All Actors of Class` is not atomic across
   simultaneous deaths; the natural 1 → 2 → 4 tree stays at 7 live pieces.
 - **Rhino uses 4 wall health, not player damage.** `bInvulnerable=true` makes
