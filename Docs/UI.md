@@ -458,3 +458,6 @@ re-derives automatically. Nothing else spawns UI.
   §4 rule 4, agree changes with pillar 1).
 - Commit with the **editor closed** on `branch/Jones`.
 - Suggested message — `feat: modular UI (title/settings/levels) + settings persistence`
+## Current timer and records implementation
+
+See [LevelTimer.md](LevelTimer.md) for the implemented timer, records, result popup, current page indices, extension rules and validation. Its current implementation notes supersede the original setup instructions above where they differ.
