@@ -151,8 +151,12 @@ total).
 > - Row 0 is the map's top edge and never becomes a marker.
 > - `--apply` refuses to delete markers when no colliding tile is found, so a
 >   half-rebuilt tile map cannot wipe the zones.
+> - The collision probe starts just **inside** the cell. Starting above it can
+>   hit the bottom edge of the tile in the row above and falsely mark
+>   non-colliding fill as solid; that produced 52 phantom L5 background markers
+>   on the first pass.
 >
-> Rebaked L3/L4: `L_Level_03` 8→6 markers, `L_Level_04` 28→7.
+> Rebaked: `L_Level_03` 8→6 markers, `L_Level_04` 28→7, `L_Level_05` 52→25.
 
 Add `--apply` to delete the previous auto markers and create the new ones, and
 `--save` to save the level immediately:

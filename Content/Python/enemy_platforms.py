@@ -274,9 +274,13 @@ def _classify_tile_collision(actor, component, tile_map, cells, scale,
         center_z = location.z + local.z * scale.z
         top = center_z + tile_world_z / 2.0
         bottom = center_z - tile_world_z / 2.0
+        # Start just *inside* the cell. Starting above it can catch the
+        # bottom edge of a tile in the row above, which made non-colliding
+        # background fill (e.g. L5 Floor index 65) look solid and put markers
+        # in the empty background.
         hit = unreal.SystemLibrary.line_trace_single(
             world,
-            unreal.Vector(center_x, location.y, top + 2.0),
+            unreal.Vector(center_x, location.y, top - 2.0),
             unreal.Vector(center_x, location.y, bottom - 2.0),
             unreal.TraceTypeQuery.TRACE_TYPE_QUERY1,
             True, ignore, unreal.DrawDebugTrace.NONE, True)
