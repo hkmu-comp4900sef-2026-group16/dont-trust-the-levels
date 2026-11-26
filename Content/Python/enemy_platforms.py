@@ -1,23 +1,31 @@
-"""Editor-time BP_EnemyPlatform generation from Paper2D floor tiles.
+"""Editor-time BP_EnemyPlatform generation from colliding Paper2D tiles.
 
 This module is imported by the editor's ``init_unreal.py`` (live auto-sync) and
 by ``Scripts/_plan_enemy_platforms.py`` through the Unreal remote-execution
 bridge. It only uses the editor Python API; it is never shipped or run in a
 packaged game.
 
-The tile map is the source of truth: one floor tile is 100 uu in L_Level_01.
-Every Floor tile whose tile above is empty is a walkable surface, unless a tile
-on the obstacle layer (``Wall`` by default) occupies that cell or the cell
-directly above it. That finds floating platforms and the ground, and stops a
-marker run at a solid wall/block tile.
+The tile map is the source of truth: one tile is 100 uu in the level maps.
+A cell is walkable when a tile on a collision-enabled layer has real collision
+and the cell directly above it is not solid. The scan tests the tile set's
+collision instead of trusting the painted tile: background fill and black
+filler tiles are painted with tile indices that have no collision, so they no
+longer create phantom platforms. By default every colliding layer is a
+surface source (some levels paint platforms on the ``Wall`` layer); pass
+``layer_match`` / ``--layer`` to restrict surfaces to one layer. All colliding
+layers still block, so a marker run stops at walls on any layer.
 """
 import hashlib
 
 import unreal
 
 DEFAULT_ACTOR = "TM_Background"
-DEFAULT_LAYER = "Floor"
-DEFAULT_OBSTACLE_LAYER = "Wall"
+# Empty means "all collision-enabled layers". Pass a layer name to restrict
+# surfaces to that layer (for example a hand-painted EnemyZones layer).
+DEFAULT_LAYER = ""
+# Kept for API/CLI compatibility. Collision now decides what blocks a cell;
+# the old Wall blocker heuristic is no longer needed.
+DEFAULT_OBSTACLE_LAYER = ""
 DEFAULT_Y_EXTENT = 50.0
 DEFAULT_Z_EXTENT = 20.0
 DEFAULT_MIN_WIDTH = 300.0
@@ -45,10 +53,12 @@ DEFAULT_BRIDGE_Z_TOLERANCE = 60.0   # bridge/zone surface Z distance (uu)
 def find_tile_map(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER):
     """Return (actor, component, tile_map, layer_names) or Nones.
 
-    An actor with an exact layer name wins over one with only a partial match,
-    so a decorative ``FloorDeco`` layer cannot hide the real ``Floor``.
+    With no ``layer_match`` the first matching actor is returned regardless of
+    its layer names (the plan scans all colliding layers). When a layer name is
+    supplied, an actor with an exact layer name wins over one with only a
+    partial match, so a decorative ``FloorDeco`` layer cannot hide ``Floor``.
     """
-    match = layer_match.lower()
+    match = layer_match.lower() if layer_match else ""
     fallback = None
     for actor in unreal.EditorLevelLibrary.get_all_level_actors():
         if not isinstance(actor, unreal.PaperTileMapActor):
@@ -63,6 +73,8 @@ def find_tile_map(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER):
                 str(layer.get_editor_property("layer_name"))
                 for layer in tile_map.get_editor_property("tile_layers")
             ]
+            if not match:
+                return actor, component, tile_map, names
             if any(name.lower() == match for name in names):
                 return actor, component, tile_map, names
             if fallback is None and any(match in name.lower() for name in names):
@@ -192,29 +204,116 @@ def merge_bridge_gaps(plan, bridges, min_width=DEFAULT_MIN_WIDTH, tile_uu=100.0,
     return merged
 
 
+def _tile_key(info):
+    """Return (tile_set_path, packed_index) for a non-empty tile, else None."""
+    if not info:
+        return None
+    tile_set = info.get_editor_property("tile_set")
+    if tile_set is None:
+        return None
+    packed = info.get_editor_property("packed_tile_index")
+    if packed is None or packed < 0:
+        return None
+    return (tile_set.get_path_name(), packed)
+
+
+def _collect_cells(component, tile_map, layers):
+    """Map (x, y) -> [(layer_index, tile_key)] for collision-enabled layers.
+
+    Decorative/background tiles on a non-colliding layer are ignored. A tile on
+    a colliding layer is still kept here; ``_classify_tile_collision`` decides
+    whether that particular tile set entry is actually solid.
+    """
+    map_width = tile_map.get_editor_property("map_width")
+    map_height = tile_map.get_editor_property("map_height")
+    cells = {}
+    for layer_index, layer in enumerate(layers):
+        try:
+            collides = layer.get_editor_property("layer_collides")
+        except Exception:
+            collides = True
+        if not collides:
+            continue
+        for y in range(map_height):
+            for x in range(map_width):
+                key = _tile_key(component.get_tile(x, y, layer_index))
+                if key is not None:
+                    cells.setdefault((x, y), []).append((layer_index, key))
+    return cells
+
+
+def _classify_tile_collision(actor, component, tile_map, cells, scale,
+                             world):
+    """Return {tile_key: bool} telling which tile-set entries are solid.
+
+    Collision belongs to the tile-set entry, not the map cell, so one isolated
+    sample per key is enough. Sampling a cell that holds only one layer avoids
+    attributing another layer's collision to the key. Every other actor is
+    ignored during the trace (fake floors, props, the player), so only tile-map
+    collision can make a tile look solid.
+    """
+    tile_height = tile_map.get_editor_property("tile_height")
+    tile_world_z = tile_height * scale.z
+    samples = {}
+    for (x, y), entries in cells.items():
+        if len(entries) == 1:
+            layer_index, key = entries[0]
+            samples.setdefault(key, (x, y, layer_index))
+    # A key that only ever overlaps another layer still needs a sample.
+    for (x, y), entries in cells.items():
+        for layer_index, key in entries:
+            samples.setdefault(key, (x, y, layer_index))
+
+    ignore = [other for other in unreal.EditorLevelLibrary.get_all_level_actors()
+              if other != actor]
+    location = actor.get_actor_location()
+    collides = {}
+    for key, (x, y, layer_index) in samples.items():
+        local = component.get_tile_center_position(x, y, layer_index)
+        center_x = location.x + local.x * scale.x
+        center_z = location.z + local.z * scale.z
+        top = center_z + tile_world_z / 2.0
+        bottom = center_z - tile_world_z / 2.0
+        hit = unreal.SystemLibrary.line_trace_single(
+            world,
+            unreal.Vector(center_x, location.y, top + 2.0),
+            unreal.Vector(center_x, location.y, bottom - 2.0),
+            unreal.TraceTypeQuery.TRACE_TYPE_QUERY1,
+            True, ignore, unreal.DrawDebugTrace.NONE, True)
+        solid = False
+        if hit:
+            result = hit.to_tuple()
+            if result and result[0]:
+                hit_z = result[4].z
+                solid = bottom - 3.0 <= hit_z <= top + 3.0
+        collides[key] = solid
+    return collides
+
+
 def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
                max_width=DEFAULT_MAX_WIDTH, min_width=DEFAULT_MIN_WIDTH,
                y_extent=DEFAULT_Y_EXTENT, z_extent=DEFAULT_Z_EXTENT,
                obstacle_layer=DEFAULT_OBSTACLE_LAYER,
                bridge_class=DEFAULT_BRIDGE_CLASS):
-    """Scan the tile map and return a JSON-serializable placement plan."""
+    """Scan the colliding tile map and return a JSON-serializable plan.
+
+    ``layer_match`` empty scans every collision-enabled layer (the levels paint
+    platforms on both Floor and Wall). A name restricts the *surfaces* to that
+    layer; all colliding layers still block. ``obstacle_layer`` is accepted for
+    backwards compatibility but is no longer used: collision decides blockers.
+    """
     actor, component, tile_map, names = find_tile_map(actor_label, layer_match)
     if not component:
-        return {"error": "no tile map actor/layer found"}
+        return {"error": "no tile map actor found"}
 
     map_width = tile_map.get_editor_property("map_width")
     map_height = tile_map.get_editor_property("map_height")
     tile_width = tile_map.get_editor_property("tile_width")
     tile_height = tile_map.get_editor_property("tile_height")
     layers = tile_map.get_editor_property("tile_layers")
-    floor_index, floor_name = _match_layer(layers, layer_match)
-    if floor_index is None:
+    source_index, source_name = _match_layer(layers, layer_match)
+    if layer_match and source_index is None:
         return {"error": "layer not found: " + layer_match}
-
-    obstacle_index, obstacle_name = _match_layer(layers, obstacle_layer)
-    if obstacle_index == floor_index:
-        obstacle_index = None
-        obstacle_name = ""
 
     location = actor.get_actor_location()
     scale = actor.get_actor_scale3d()
@@ -222,33 +321,44 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
     tile_world_z = tile_height * scale.z
     if tile_world_x <= 0.0 or tile_world_z <= 0.0:
         return {"error": "tile map has zero scale"}
-    # A Floor tile is walkable when the tile above it is empty. This finds
-    # floating platforms as well as the ground and ignores the interior of a
-    # thick floor. A Wall tile on the same cell, or directly above it, blocks
-    # that cell so a run cannot continue through a solid prop.
-    floors = set()
-    for x in range(map_width):
-        for y in range(map_height):
-            info = component.get_tile(x, y, floor_index)
-            if info and info.get_editor_property("tile_set") is not None:
-                floors.add((x, y))
 
-    obstacles = set()
-    if obstacle_index is not None:
-        for x in range(map_width):
-            for y in range(map_height):
-                info = component.get_tile(x, y, obstacle_index)
-                if info and info.get_editor_property("tile_set") is not None:
-                    obstacles.add((x, y))
+    cells = _collect_cells(component, tile_map, layers)
+    if not cells:
+        return {"error": "no tiles on collision-enabled layers"}
+
+    world = unreal.EditorLevelLibrary.get_editor_world()
+    collides = _classify_tile_collision(
+        actor, component, tile_map, cells, scale, world)
+    if not any(collides.values()):
+        return {
+            "error": (
+                "no colliding tiles found; tile collision may not be built. "
+                "Open the level in the editor and rebuild the tile map."
+            )
+        }
+
+    # Solid cells block anything below them. A surface is a solid cell with an
+    # empty cell above it. Non-colliding filler tiles are not solid, so they
+    # neither render a phantom marker nor hide the real platform below.
+    occupied = set()
+    source_cells = set()
+    for (x, y), entries in cells.items():
+        solid_layers = [layer_index for layer_index, key in entries
+                        if collides.get(key)]
+        if not solid_layers:
+            continue
+        occupied.add((x, y))
+        if source_index is None or source_index in solid_layers:
+            source_cells.add((x, y))
 
     surfaces = set()
-    blocked_floor_tiles = 0
-    for (x, y) in floors:
-        if obstacle_index is not None and (
-                (x, y) in obstacles or (x, y - 1) in obstacles):
-            blocked_floor_tiles += 1
+    for (x, y) in source_cells:
+        # Row 0 is the map's top edge; a "surface" there is the outer frame,
+        # not a platform an enemy can patrol. Skip it so a full-width ceiling
+        # does not become a marker.
+        if y == 0:
             continue
-        if y == 0 or (x, y - 1) not in floors:
+        if (x, y - 1) not in occupied:
             surfaces.add((x, y))
 
     # One run per contiguous horizontal surface. Different rows have different
@@ -270,6 +380,13 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
     if max_width > 0.0:
         tiles_per_segment = max(1, int(max_width // tile_world_x))
 
+    def _source_layer(cell_x, row):
+        for layer_index, key in cells[(cell_x, row)]:
+            if collides.get(key) and (source_index is None
+                                      or layer_index == source_index):
+                return layer_index
+        return next(iter(cells[(cell_x, row)]))[0]
+
     plan = []
     for run in runs:
         start = run["start"]
@@ -278,11 +395,12 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
             if tiles_per_segment:
                 end = min(end, start + tiles_per_segment - 1)
             count = end - start + 1
-            local0 = component.get_tile_center_position(start, run["row"])
-            local1 = component.get_tile_center_position(end, run["row"])
+            local0 = component.get_tile_center_position(
+                start, run["row"], _source_layer(start, run["row"]))
+            local1 = component.get_tile_center_position(
+                end, run["row"], _source_layer(end, run["row"]))
             world_x0 = location.x + local0.x * scale.x
             world_x1 = location.x + local1.x * scale.x
-            world_y = location.y + local0.y * scale.y
             world_z = location.z + local0.z * scale.z
             surface_z = world_z + tile_world_z / 2.0
             width = count * tile_world_x
@@ -294,7 +412,7 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
                 "row": run["row"],
                 "width": round(width, 1),
                 "center_x": round((world_x0 + world_x1) / 2.0, 1),
-                "center_y": round(world_y, 1),
+                "center_y": round(location.y, 1),
                 "surface_z": round(surface_z, 1),
                 "box_extent_x": round(width / 2.0, 1),
                 "box_extent_y": round(y_extent, 1),
@@ -310,10 +428,10 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
 
     return {
         "actor": actor.get_actor_label(),
-        "layer": floor_name,
+        "layer": source_name or "(all colliding layers)",
         "layers": names,
-        "obstacle_layer": obstacle_name,
-        "blocked_floor_tiles": blocked_floor_tiles,
+        "obstacle_layer": "",
+        "blocked_floor_tiles": 0,
         "map_width": map_width,
         "map_height": map_height,
         "tile_uu": round(tile_world_x, 1),
@@ -324,6 +442,7 @@ def build_plan(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
         "bridge_class": bridge_class or "",
         "bridges_found": len(bridges),
         "bridged_zones": len(bridged),
+        "colliding_tiles": sum(1 for solid in collides.values() if solid),
         "zones": plan,
     }
 
@@ -503,7 +622,11 @@ def markers_match_plan(data, auto_tag=DEFAULT_AUTO_TAG):
 def tile_signature(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
                    obstacle_layer=DEFAULT_OBSTACLE_LAYER,
                    bridge_class=DEFAULT_BRIDGE_CLASS):
-    """Hash the floor and obstacle layers so the watcher sees edits cheaply."""
+    """Hash every tile layer so the watcher sees edits cheaply.
+
+    The plan now depends on the collision of any layer, so painting a platform
+    on a layer that is not the old "Floor" source must trigger a re-bake too.
+    """
     actor, component, tile_map, names = find_tile_map(actor_label, layer_match)
     if not component:
         return None
@@ -512,39 +635,33 @@ def tile_signature(actor_label=DEFAULT_ACTOR, layer_match=DEFAULT_LAYER,
     tile_width = tile_map.get_editor_property("tile_width")
     tile_height = tile_map.get_editor_property("tile_height")
     layers = tile_map.get_editor_property("tile_layers")
-    floor_index, _floor_name = _match_layer(layers, layer_match)
-    if floor_index is None:
-        return None
 
-    obstacle_index, _obstacle_name = _match_layer(layers, obstacle_layer)
-    if obstacle_index == floor_index:
-        obstacle_index = None
+    flags = []
+    for layer in layers:
+        try:
+            flags.append("1" if layer.get_editor_property("layer_collides")
+                         else "0")
+        except Exception:
+            flags.append("1")
 
     location = actor.get_actor_location()
     scale = actor.get_actor_scale3d()
     digest = hashlib.sha1()
-    header = "{},{},{},{},{},{},{},{},{},{},{},{},{}".format(
-        map_width, map_height, tile_width, tile_height, floor_index,
-        -1 if obstacle_index is None else obstacle_index,
-        "|".join(names), location.x, location.y, location.z,
+    header = "{},{},{},{},{},{},{},{},{},{},{},{}".format(
+        map_width, map_height, tile_width, tile_height,
+        "|".join(names), "".join(flags), location.x, location.y, location.z,
         scale.x, scale.y, scale.z)
     digest.update(header.encode("utf-8"))
 
-    for layer_index in (floor_index, obstacle_index):
-        if layer_index is None:
-            continue
+    for layer_index in range(len(layers)):
         digest.update("LAYER:{};".format(layer_index).encode("utf-8"))
         for x in range(map_width):
             for y in range(map_height):
-                info = component.get_tile(x, y, layer_index)
-                if not info:
+                key = _tile_key(component.get_tile(x, y, layer_index))
+                if key is None:
                     continue
-                tile_set = info.get_editor_property("tile_set")
-                if tile_set is None:
-                    continue
-                packed = info.get_editor_property("packed_tile_index")
                 digest.update("{}:{}:{}:{};".format(
-                    x, y, tile_set.get_path_name(), packed).encode("utf-8"))
+                    x, y, key[0], key[1]).encode("utf-8"))
 
     # A bridge actor changes the plan without touching a tile, so its transform
     # is part of the signature: moving or deleting a fake floor re-bakes.
