@@ -131,11 +131,32 @@ py -3 Scripts/_plan_enemy_platforms.py
 py -3 Scripts/_plan_enemy_platforms.py --max-width 900
 ```
 
-It scans every walkable Floor surface and prints each marker's `centerX`,
-`centerY`, `surfaceZ` and `BoxExtent.X`. By default it keeps one marker per
-run; `--max-width` optionally splits long floors into non-overlapping patrol
-segments (with `--max-width 900`, the 2700-uu run becomes three 900-uu
-markers, so the level gets four markers total).
+It scans every solid, colliding surface on every collision-enabled layer and
+prints each marker's `centerX`, `centerY`, `surfaceZ` and `BoxExtent.X`. By
+default it keeps one marker per run; `--max-width` optionally splits long
+floors into non-overlapping patrol segments (with `--max-width 900`, the
+2700-uu run becomes three 900-uu markers, so the level gets four markers
+total).
+
+> **27 Nov 2026 — collision-based scan.** The art-pass levels paint background
+> fill and filler/erase tiles on the same tile maps as the platforms (`Floor`
+> in L3/L4, plus real platforms on `Wall`). Counting painted tiles therefore
+> put markers on invisible black/pink fill and missed platforms on the other
+> layer. `build_plan` now tests the **tile set collision** and reads every
+> collision-enabled layer by default:
+>
+> - Non-colliding tiles (background fill, black filler) are ignored.
+> - `--layer <name>` restricts *surfaces* to that layer; every colliding layer
+>   still blocks a run. `--obstacle-layer` is deprecated and ignored.
+> - Row 0 is the map's top edge and never becomes a marker.
+> - `--apply` refuses to delete markers when no colliding tile is found, so a
+>   half-rebuilt tile map cannot wipe the zones.
+> - The collision probe starts just **inside** the cell. Starting above it can
+>   hit the bottom edge of the tile in the row above and falsely mark
+>   non-colliding fill as solid; that produced 52 phantom L5 background markers
+>   on the first pass.
+>
+> Rebaked: `L_Level_03` 8→6 markers, `L_Level_04` 28→7, `L_Level_05` 52→25.
 
 Add `--apply` to delete the previous auto markers and create the new ones, and
 `--save` to save the level immediately:
@@ -144,9 +165,10 @@ Add `--apply` to delete the previous auto markers and create the new ones, and
 py -3 Scripts/_plan_enemy_platforms.py --apply --save
 ```
 
-`--apply` refuses to run if `BP_EnemyPlatform` has no `Zone` component, and it
-only deletes markers tagged `EnemyPlatform.Auto`. Manual markers such as the
-`BP_Trap_FakeFloor` zone are left alone.
+`--apply` refuses to run if `BP_EnemyPlatform` has no `Zone` component or if
+the scan finds no colliding tile (for example while tile collision is still
+rebuilding). It only deletes markers tagged `EnemyPlatform.Auto`; manual
+markers such as the `BP_Trap_FakeFloor` zone are left alone.
 
 ### Fake floors bridge two runs into one platform (7 Nov 2026)
 

@@ -1,0 +1,140 @@
+CAMERA CROSSHAIR LEAD - COMPLETE GRAPH BUILD SHEET
+Applies to: Content/DontTrustTheLevels/Player/Blueprints/BP_DeadZoneCamera
+           Content/DontTrustTheLevels/Player/Blueprints/BP_Level03_DeadZoneCamera1
+=====================================================================
+
+WHY THE LAST VERSION FAILED
+  "Get Aim World Location was pruned because its Exec pin is not connected"
+  Get Aim World Location is an IMPURE function. With no exec wire the compiler
+  deletes it and returns (0,0,0), so the lead was computed from AimX = 0.
+  This sheet keeps it on the exec path. (Alt fix: mark the function Pure in
+  BP_PlayerController, then also rewire BP_Player -> Dash Logic
+  Cast.then -> Branch.execute. Do NOT do both.)
+
+
+STEP 0 - VARIABLES (both float, Instance Editable ON)
+  MaxLead       = 400
+  LeadStrength  = 0.5
+
+  Already there, leave alone:
+  ActorToFollow, CameraX, CameraZ, XDeadZone (800), ZDeadZone (0),
+  YOffset (1000), FixedZValue (589)
+
+  Functions GetNewXValue / GetNewZValue stay unchanged.
+
+
+STEP 1 - DELETE THESE BEFORE WIRING
+  - every exec wire that goes: Get New X Value -> Cast -> Get Aim World Location
+    -> Get New Z Value  (they are replaced below, do not leave duplicates)
+  - any stray "Get New Z Value" node that does not feed Make Vector.Z
+  - the old "Is Valid" function + Branch at the start of Tick, if still there
+    (replaced by the Is Valid MACRO below)
+
+
+STEP 2 - EVENT BEGINPLAY (exec chain)
+  Event BeginPlay
+   -> Set Actor Rotation
+        New Rotation      = Make Rotator (Roll 0, Pitch 0, Yaw -90)
+        bTeleportPhysics  = false
+   -> Set View Target with Blend
+        Target            = Get Player Controller (Player Index 0)
+        New View Target   = self
+        Blend Time        = 0
+        Blend Func        = VTBlend_Linear
+        Blend Exp         = 0
+        bLockOutgoing     = false
+   -> Get All Actors of Class
+        Actor Class       = BP_Player
+        Out Actors        -> Get (0)  (Get Array Item, index 0)
+        -> Set ActorToFollow   (value = the Get (0) output)
+
+
+STEP 3 - EVENT TICK (exec chain, in this exact order)
+  Event Tick
+   -> Is Valid            (MACRO, not the function)
+        Input Object     = Get ActorToFollow
+        Is Valid         -> Get New X Value
+        Is Not Valid     -> Set ActorToFollow
+
+  On the Is Not Valid path:
+        Set ActorToFollow
+           value         = Get Player Pawn (Player Index 0)
+        then             -> Get New X Value
+
+  Then the common path:
+        Get New X Value              (function, target self)
+        then             -> Cast To BP_PlayerController
+
+        Cast To BP_PlayerController
+           Object        = Get Player Controller (Player Index 0)
+        then             -> Get Aim World Location
+
+        Get Aim World Location
+           Target        = As BP Player Controller   (output of the Cast)
+        then             -> Get New Z Value
+
+        Get New Z Value              (function, target self)
+        then             -> Set Actor Location
+
+        Set Actor Location
+           New Location  = Make Vector (see STEP 4)
+           bSweep        = false
+           bTeleport     = false
+
+
+STEP 4 - DATA NODES (no exec wires at all)
+
+  Make Vector
+     X  <- Add (float).Result
+     Y  <- Get YOffset                (or type 1000.0 into the pin)
+     Z  <- Get New Z Value.New Z
+     Return Value -> Set Actor Location.New Location
+
+  Add (float)                        [X + lead]
+     A  <- Get New X Value.New X
+     B  <- Multiply (float) [lead].Result
+
+  Multiply (float) [lead]
+     A  <- Clamp (float).Result
+     B  <- Get LeadStrength
+
+  Clamp (float)                      [ClampMin/ClampMax default 0/1, unused]
+     Value <- Subtract (float).Result
+     Min   <- Multiply (float) [min].Result
+     Max   <- Get MaxLead
+
+  Multiply (float) [min]             [MaxLead * -1]
+     A  <- Get MaxLead
+     B  = -1.0
+
+  Subtract (float)                   [AimX - PlayerX]
+     A  <- Break Vector [aim].X
+     B  <- Break Vector [player].X
+
+  Break Vector [aim]
+     In Vec <- Get Aim World Location.Vector
+
+  Break Vector [player]
+     In Vec <- Get Actor Location.Return Value
+                Get Actor Location Target = Get ActorToFollow
+
+  Get Player Controller            (Player Index 0)
+     Return Value -> Cast To BP_PlayerController.Object
+     (this is the same cast node used in the Tick chain)
+
+
+RESULT
+  Camera X = dead-zone X + clamp(AimX - PlayerX, -MaxLead, +MaxLead) * LeadStrength
+  = up to 400 * 0.5 = 200 uu of lean toward the crosshair.
+
+
+VERIFY
+  1. Compile BP_DeadZoneCamera and BP_Level03_DeadZoneCamera1.
+     The warning "Get Aim World Location was pruned" must be GONE.
+  2. Make Vector.Y must be 1000 (YOffset). If it is 0 the ortho camera sits on
+     the gameplay plane and renders nothing.
+  3. PIE level 1 and level 3:
+     - camera follows the player as soon as he moves (XDeadZone 800)
+     - camera leans slightly toward the cursor
+  4. If the lean is too strong: LeadStrength 0.5 -> 0.25
+     If the lean range is too small: MaxLead 400 -> 600
